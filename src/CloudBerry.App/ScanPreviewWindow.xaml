@@ -1,0 +1,532 @@
+<Window
+    x:Class="CloudBerry.App.ScanPreviewWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sys="clr-namespace:System;assembly=netstandard"
+    xmlns:conv="clr-namespace:CloudBerry.App.Converters"
+    xmlns:effects="clr-namespace:CloudBerry.App.Effects"
+    Title="Import Games from Scan"
+    Icon="pack://application:,,,/Resources/Icons/cloudberry_app_icon_256.png"
+    Width="1200"
+    Height="800"
+    Background="{DynamicResource AppBackgroundBrush}"
+    Foreground="{DynamicResource TextPrimaryBrush}"
+    WindowStartupLocation="CenterOwner"
+    ResizeMode="CanResize"
+    Opacity="0">
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                     From="0"
+                                     To="1"
+                                     Duration="0:0:0.28">
+                        <DoubleAnimation.EasingFunction>
+                            <CubicEase EasingMode="EaseOut"/>
+                        </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
+    <Window.Resources>
+        <conv:IsGreaterThanZeroConverter x:Key="IsGreaterThanZeroConverter" />
+        <conv:NotNullConverter x:Key="NotNullConverter" />
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Rectangle Grid.RowSpan="3"
+                   Fill="{DynamicResource NostalgiaAtmosphereBrush}"
+                   Opacity="0.82"
+                   IsHitTestVisible="False"/>
+        <Rectangle Grid.RowSpan="3"
+                   Fill="{DynamicResource AuroraVeilBrush}"
+                   Opacity="0.12"
+                   IsHitTestVisible="False"/>
+        <Rectangle Grid.RowSpan="3"
+                   Fill="{DynamicResource NostalgiaScanlineBrush}"
+                   Opacity="0.035"
+                   IsHitTestVisible="False"/>
+        <effects:ThemeEffectLayer Grid.RowSpan="3"
+                                  ThemeKey="{Binding AppearanceThemeKey}"
+                                  IsEffectActive="{Binding VisualEffectsEnabled}"
+                                  Intensity="0.62"
+                                  Opacity="0.36"
+                                  IsHitTestVisible="False"/>
+
+        <!-- Header / Status Bar -->
+        <Border
+            Grid.Row="0"
+            Background="{DynamicResource BladeGlassBrush}"
+            Padding="22,16"
+            BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource GlassPanelBorderBrush}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Vertical" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="Import Games from Scan"
+                        FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                        FontSize="20"
+                        FontWeight="SemiBold"
+                        Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock
+                        Text="{Binding StatusMessage}"
+                        FontSize="12"
+                        Foreground="{DynamicResource TextMutedBrush}"
+                        Margin="0,4,0,0" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="{Binding PreparationSummary}"
+                        FontSize="13"
+                        Foreground="{DynamicResource TextSecondaryBrush}"
+                        Margin="0,0,16,0" />
+                    <TextBlock
+                        Text="{Binding CandidatesSelected,StringFormat='{}{0} selected'}"
+                        FontSize="13"
+                        Foreground="{DynamicResource TextSecondaryBrush}"
+                        Margin="0,0,16,0" />
+                    <TextBlock
+                        Text="{Binding TotalCandidatesFound,StringFormat='of {}{0} found'}"
+                        FontSize="13"
+                        Foreground="{DynamicResource TextSecondaryBrush}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="400" MinWidth="300" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="400" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Panel: Candidates List -->
+            <Grid Grid.Column="0" Margin="18,18,0,18">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Candidates Header -->
+                <Border
+                    Grid.Row="0"
+                    Background="{DynamicResource BladeGlassBrush}"
+                    Padding="16,12"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource ThemeCornerRadiusPanel}"
+                    BorderBrush="{DynamicResource ThemePanelEdgeBrush}">
+                    <TextBlock
+                        Text="Games Found"
+                        FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                        FontSize="14"
+                        FontWeight="SemiBold"
+                        Foreground="{DynamicResource TextPrimaryBrush}" />
+                </Border>
+
+                <!-- Candidates ListBox -->
+                <ListBox
+                    Grid.Row="1"
+                    ItemsSource="{Binding Candidates}"
+                    SelectedItem="{Binding SelectedCandidate}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Margin="0,12,0,0"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border
+                                x:Name="CandCard"
+                                Padding="12,10"
+                                Margin="0,0,0,8"
+                                BorderThickness="1"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
+                                Background="{DynamicResource CardBrush}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                RenderTransformOrigin="0.5,0.5"
+                                SnapsToDevicePixels="True">
+                                <Border.RenderTransform>
+                                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                </Border.RenderTransform>
+                                <Border.Triggers>
+                                    <EventTrigger RoutedEvent="Border.MouseEnter">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="CandHoverOverlay" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12"/>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.012" Duration="0:0:0.12"/>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.012" Duration="0:0:0.12"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                    <EventTrigger RoutedEvent="Border.MouseLeave">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="CandHoverOverlay" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16"/>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.16"/>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.16"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Border.Triggers>
+                                <Grid>
+                                    <Border x:Name="CandHoverOverlay" IsHitTestVisible="False" CornerRadius="{DynamicResource ThemeCornerRadiusControl}" Background="{DynamicResource CardHoverBrush}" Opacity="0"/>
+                                    <Border x:Name="CandSelectedAccent" IsHitTestVisible="False" CornerRadius="{DynamicResource ThemeCornerRadiusControl}" BorderThickness="1" BorderBrush="{DynamicResource BerryBrush}" Opacity="0"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Checkbox -->
+                                        <CheckBox
+                                            Grid.Column="0"
+                                            IsChecked="{Binding IsSelected}"
+                                            Checked="CandidateCheckBoxChanged"
+                                            Unchecked="CandidateCheckBoxChanged"
+                                            Foreground="{DynamicResource TextPrimaryBrush}"
+                                            Margin="0,0,12,0" />
+
+                                        <!-- Game Info -->
+                                        <StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Center">
+                                            <TextBlock
+                                                Text="{Binding Title}"
+                                                FontSize="12"
+                                                FontWeight="SemiBold"
+                                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Text="{Binding Platform}"
+                                                FontSize="10"
+                                                Foreground="{DynamicResource BerryDimBrush}"
+                                                Margin="0,2,0,0" />
+                                            <TextBlock
+                                                Text="{Binding StagedMetadataLabel}"
+                                                FontSize="10"
+                                                Foreground="{DynamicResource MintBrush}"
+                                                Margin="0,3,0,0"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Text="{Binding StagedMediaLabel}"
+                                                FontSize="10"
+                                                Foreground="{DynamicResource TextMutedBrush}"
+                                                Margin="0,2,0,0"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+
+                                    <!-- Confidence Badge -->
+                                    <TextBlock
+                                        Grid.Column="2"
+                                        Text="{Binding ConfidenceLabel}"
+                                        FontSize="11"
+                                        Foreground="{DynamicResource BerryBrush}"
+                                        VerticalAlignment="Center"
+                                        Margin="8,0,0,0" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                    <Setter TargetName="CandSelectedAccent" Property="Opacity" Value="1"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" Width="8" Background="Transparent" />
+
+            <!-- Right Panel: Metadata & Media Search -->
+            <Grid Grid.Column="2" Margin="10,18,18,18">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Game Selection Display -->
+                <Border
+                    Grid.Row="0"
+                    Background="{DynamicResource BladeGlassBrush}"
+                    Padding="16,12"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource ThemeCornerRadiusPanel}"
+                    BorderBrush="{DynamicResource ThemePanelEdgeBrush}">
+                    <TextBlock
+                        Text="{Binding SelectedCandidate.Title,StringFormat='Selected: {}{0}'}"
+                        FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                        FontSize="13"
+                        FontWeight="SemiBold"
+                        Foreground="{DynamicResource TextPrimaryBrush}" />
+                </Border>
+
+                <!-- Metadata Search Section -->
+                <Border Grid.Row="1" Style="{StaticResource PanelBorderStyle}" Margin="0,12,0,0">
+                <StackPanel Orientation="Vertical">
+                    <TextBlock Text="Find Metadata" Style="{StaticResource SectionHeadingStyle}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox
+                            Grid.Column="0"
+                            x:Name="MetadataSearchBox"
+                            Text="{Binding MetadataSearchText,UpdateSourceTrigger=PropertyChanged}"
+                            KeyDown="MetadataSearchBoxKeyDown"
+                            Style="{StaticResource TextFieldStyle}"
+                            Margin="0" />
+
+                        <WrapPanel Grid.Column="1" Margin="8,0,0,0">
+                            <Button
+                                Content="Search"
+                                Margin="0,0,8,0"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Click="SearchMetadataClick" />
+                            <Button
+                                Content="Apply"
+                                Margin="0,0,8,0"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Click="ApplyMetadataClick"
+                                IsEnabled="{Binding SelectedMetadataResult,Converter={StaticResource NotNullConverter}}" />
+                            <Button
+                                Content="Prepare Selected"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Click="AutoPrepareSelectedClick" />
+                        </WrapPanel>
+                    </Grid>
+                </StackPanel>
+                </Border>
+
+                <!-- Metadata Results -->
+                <ListBox
+                    Grid.Row="3"
+                    ItemsSource="{Binding MetadataResults}"
+                    SelectedItem="{Binding SelectedMetadataResult}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    Margin="16,8,16,0"
+                    MaxHeight="200">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Padding="10,8" Margin="0,0,0,8" BorderThickness="1" CornerRadius="{DynamicResource ThemeCornerRadiusControl}" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" SnapsToDevicePixels="True">
+                                <Border.Triggers>
+                                    <EventTrigger RoutedEvent="Border.MouseEnter">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="MetaHoverOverlay" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                    <EventTrigger RoutedEvent="Border.MouseLeave">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="MetaHoverOverlay" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Border.Triggers>
+                                <Grid>
+                                <Border x:Name="MetaHoverOverlay" IsHitTestVisible="False" CornerRadius="{DynamicResource ThemeCornerRadiusControl}" Background="{DynamicResource CardHoverBrush}" Opacity="0"/>
+                                <Border x:Name="MetaSelectedAccent" IsHitTestVisible="False" CornerRadius="{DynamicResource ThemeCornerRadiusControl}" BorderThickness="1" BorderBrush="{DynamicResource BerryBrush}" Opacity="0"/>
+                                <StackPanel Orientation="Vertical">
+                                    <TextBlock
+                                        Text="{Binding Title}"
+                                        FontSize="11"
+                                        FontWeight="SemiBold"
+                                        Foreground="{DynamicResource TextPrimaryBrush}"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <TextBlock
+                                        Text="{Binding PlatformsLabel}"
+                                        FontSize="10"
+                                        Foreground="{DynamicResource BerryDimBrush}"
+                                        Margin="0,2,0,0" />
+                                </StackPanel>
+                                </Grid>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                    <Setter TargetName="MetaSelectedAccent" Property="Opacity" Value="1"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Media Search Section -->
+                <Border Grid.Row="4" Style="{StaticResource PanelBorderStyle}" Margin="0,12,0,0">
+                    <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Find Artwork" Style="{StaticResource SectionHeadingStyle}" VerticalAlignment="Center" Margin="0,0,12,0" />
+
+                    <ComboBox
+                        x:Name="MediaKindCombo"
+                        SelectedValuePath="Content"
+                        SelectedValue="{Binding SelectedMediaKind}"
+                        Style="{StaticResource ComboFieldStyle}"
+                        Width="100"
+                        Margin="0,0,8,0">
+                        <ComboBoxItem>cover</ComboBoxItem>
+                        <ComboBoxItem>background</ComboBoxItem>
+                        <ComboBoxItem>banner</ComboBoxItem>
+                        <ComboBoxItem>icon</ComboBoxItem>
+                    </ComboBox>
+
+                    <Button
+                        Content="Search Media"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Margin="0,0,8,0"
+                        Click="SearchMediaClick"
+                        IsEnabled="{Binding SelectedMetadataResult,Converter={StaticResource NotNullConverter}}" />
+                    <Button
+                        Content="Apply Art"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Click="ApplyMediaClick"
+                        IsEnabled="{Binding SelectedMediaResult,Converter={StaticResource NotNullConverter}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Media Results -->
+                <ListBox
+                    Grid.Row="5"
+                    ItemsSource="{Binding MediaResults}"
+                    SelectedItem="{Binding SelectedMediaResult}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    Margin="16,8,16,0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Padding="10,8" Margin="0,0,0,8" BorderThickness="1" CornerRadius="{DynamicResource ThemeCornerRadiusControl}" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}" SnapsToDevicePixels="True">
+                                <Border.Triggers>
+                                    <EventTrigger RoutedEvent="Border.MouseEnter">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="MediaHoverOverlay" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                    <EventTrigger RoutedEvent="Border.MouseLeave">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="MediaHoverOverlay" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Border.Triggers>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border x:Name="MediaHoverOverlay" Grid.ColumnSpan="2" IsHitTestVisible="False" CornerRadius="{DynamicResource ThemeCornerRadiusControl}" Background="{DynamicResource CardHoverBrush}" Opacity="0"/>
+                                    <Border x:Name="MediaSelectedAccent" Grid.ColumnSpan="2" IsHitTestVisible="False" CornerRadius="{DynamicResource ThemeCornerRadiusControl}" BorderThickness="1" BorderBrush="{DynamicResource BerryBrush}" Opacity="0"/>
+
+                                    <Border Grid.Column="0" Width="50" Height="50" CornerRadius="4" Margin="0,0,8,0" ClipToBounds="True">
+                                        <Image
+                                            Source="{Binding ThumbnailUrl}"
+                                            Stretch="UniformToFill" />
+                                    </Border>
+
+                                    <StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Center">
+                                        <TextBlock
+                                            Text="{Binding SourceName}"
+                                            FontSize="10"
+                                            Foreground="{DynamicResource BerryDimBrush}"
+                                            Margin="0,0,0,2" />
+                                        <TextBlock
+                                        Text="{Binding ResolutionLabel}"
+                                        FontSize="9"
+                                        Foreground="{DynamicResource BerryDimBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                    <Setter TargetName="MediaSelectedAccent" Property="Opacity" Value="1"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Grid>
+
+        <!-- Footer / Action Buttons -->
+        <Border
+            Grid.Row="2"
+            Padding="18,12"
+            Background="{DynamicResource SidebarBrush}"
+            BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource BorderBrush}">
+            <Grid>
+                <Border Height="1" VerticalAlignment="Top" Margin="0,-1,0,0" Background="{DynamicResource BerryBrush}" Opacity="0.35" IsHitTestVisible="False"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Quick Selection Buttons -->
+                <Button
+                    Grid.Column="0"
+                    Content="Select Suggested"
+                    Style="{StaticResource SecondaryButtonStyle}"
+                    Click="SelectSuggestedClick"
+                    Margin="0,0,8,0" />
+
+                <Button
+                    Grid.Column="1"
+                    Content="Select All"
+                    Style="{StaticResource SecondaryButtonStyle}"
+                    Click="SelectAllClick"
+                    Margin="0,0,8,0" />
+
+                <Button
+                    Grid.Column="2"
+                    Content="Clear"
+                    Style="{StaticResource GhostButtonStyle}"
+                    Click="ClearClick" />
+
+                <!-- Import Button -->
+                <Button
+                    Grid.Column="4"
+                    Content="Import Selected"
+                    Style="{StaticResource PrimaryButtonStyle}"
+                    Click="ImportClick"
+                    IsEnabled="{Binding CandidatesSelected,Converter={StaticResource IsGreaterThanZeroConverter}}"
+                    Margin="0,0,8,0" />
+
+                <!-- Cancel Button -->
+                <Button
+                    Grid.Column="5"
+                    Content="Cancel"
+                    Style="{StaticResource GhostButtonStyle}"
+                    Click="CancelClick" />
+            </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

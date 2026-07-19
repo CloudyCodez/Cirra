@@ -1,0 +1,37 @@
+# Aider
+.aider*
+
+# Build output
+[Bb]in/
+[Oo]bj/
+publish/
+*.pdb
+*.dll
+*.exe
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+
+# Test results
+[Tt]est[Rr]esults/
+*.trx
+
+# Decompiled / scratch / recovery artifacts
+decompiled_app/
+tmp_probe/
+recovered_*.cs
+.codex_video_refs/
+.wrangler/
+.agents/
+
+# User-specific settings / local data
+*.local.json
+appsettings.local.json
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,192 @@
+<Window x:Class="CloudBerry.App.CollectionEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:effects="clr-namespace:CloudBerry.App.Effects"
+        Title="CloudBerry — Collection"
+        Icon="pack://application:,,,/Resources/Icons/cloudberry_app_icon_256.png"
+        Width="760"
+        Height="700"
+        MinWidth="620"
+        MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Opacity="0">
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                     From="0"
+                                     To="1"
+                                     Duration="0:0:0.28">
+                        <DoubleAnimation.EasingFunction>
+                            <CubicEase EasingMode="EaseOut"/>
+                        </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
+    <Grid>
+        <Rectangle Fill="{DynamicResource NostalgiaAtmosphereBrush}"
+                   Opacity="0.85"
+                   IsHitTestVisible="False"/>
+        <Rectangle Fill="{DynamicResource AuroraVeilBrush}"
+                   Opacity="0.12"
+                   IsHitTestVisible="False"/>
+        <Rectangle Fill="{DynamicResource NostalgiaScanlineBrush}"
+                   Opacity="0.03"
+                   IsHitTestVisible="False"/>
+        <Rectangle Fill="{DynamicResource MatrixRainBrush}"
+                   Opacity="{DynamicResource ThemeRainOverlayOpacity}"
+                   IsHitTestVisible="False"/>
+        <effects:ThemeEffectLayer ThemeKey="{Binding AppearanceThemeKey}"
+                                  IsEffectActive="{Binding VisualEffectsEnabled}"
+                                  Intensity="0.62"
+                                  Opacity="0.36"
+                                  IsHitTestVisible="False"/>
+
+        <Grid Margin="22">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header: title + name field, the premium "this is the important part" surface -->
+            <Border Style="{StaticResource PanelBorderStyle}" Padding="20">
+                <StackPanel>
+                    <TextBlock FontSize="22"
+                               FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               x:Name="HeaderTitleText"
+                               Text="New Collection"/>
+                    <TextBlock Margin="0,4,0,16"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Text="Name it, then check off the games that belong. Fully yours — nothing auto-sorts in or out."/>
+                    <TextBlock Style="{StaticResource FieldLabelStyle}" Text="COLLECTION NAME"/>
+                    <TextBox x:Name="NameTextBox"
+                             Style="{StaticResource TextFieldStyle}"
+                             Margin="0,6,0,0"
+                             Height="40"
+                             FontSize="16"
+                             VerticalContentAlignment="Center"
+                             Padding="14,0"
+                             Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Toolbar: search + live selection count -->
+            <Grid Grid.Row="1" Margin="0,14,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Column="0"
+                         Style="{StaticResource TextFieldStyle}"
+                         Height="34"
+                         VerticalContentAlignment="Center"
+                         Padding="12,0"
+                         FontSize="12"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Grid.Column="1"
+                           Margin="14,0,4,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           x:Name="SelectionCountText"
+                           Text="0 games selected"/>
+            </Grid>
+
+            <!-- Game picker grid: cover-thumbnail cards, checkbox overlay -->
+            <Border Grid.Row="2"
+                    Style="{StaticResource PanelBorderStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4">
+                    <ItemsControl x:Name="EntriesList" ItemsSource="{Binding EntriesView}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border x:Name="EntryCard"
+                                        Width="128"
+                                        Margin="8"
+                                        Padding="8"
+                                        CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
+                                        Background="{DynamicResource CardBrush}"
+                                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                        BorderThickness="1"
+                                        Cursor="Hand"
+                                        MouseLeftButtonUp="EntryCardClick">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Border CornerRadius="4" ClipToBounds="True">
+                                                <Image Source="{Binding DisplayCoverImagePath}"
+                                                       Height="140"
+                                                       Stretch="UniformToFill"/>
+                                            </Border>
+                                            <Border HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    Margin="6"
+                                                    Width="24" Height="24"
+                                                    CornerRadius="12"
+                                                    Background="{DynamicResource AppBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource BerryBrush}"
+                                                    BorderThickness="1.5">
+                                                <TextBlock HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="13"
+                                                           FontWeight="Bold"
+                                                           Foreground="{DynamicResource BerryBrush}"
+                                                           Visibility="{Binding IsSelected, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                           Text="&#x2713;"/>
+                                            </Border>
+                                        </Grid>
+                                        <TextBlock Margin="0,6,0,0"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Text="{Binding Title}"/>
+                                        <TextBlock FontSize="10"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Text="{Binding Platform}"/>
+                                    </StackPanel>
+                                </Border>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                        <Setter TargetName="EntryCard" Property="BorderBrush" Value="{DynamicResource BerryBrush}"/>
+                                        <Setter TargetName="EntryCard" Property="BorderThickness" Value="2"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Footer actions -->
+            <DockPanel Grid.Row="3" Margin="0,14,0,0">
+                <Button DockPanel.Dock="Left"
+                        Style="{StaticResource GhostButtonStyle}"
+                        Visibility="{Binding IsEditMode, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        Click="DeleteCollectionClick"
+                        Foreground="{DynamicResource ErrorBrush}"
+                        Content="Delete Collection"/>
+                <WrapPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
+                    <Button Style="{StaticResource SecondaryButtonStyle}"
+                            Margin="0,0,8,0"
+                            Click="CancelClick"
+                            Content="Cancel"/>
+                    <Button x:Name="ConfirmButton"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Click="ConfirmClick"
+                            Content="Create Collection"/>
+                </WrapPanel>
+            </DockPanel>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,69 @@
+<Window x:Class="CloudBerry.App.WrappedWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:effects="clr-namespace:CloudBerry.App.Effects"
+        Title="Year Wrapped"
+        Icon="pack://application:,,,/Resources/Icons/cloudberry_app_icon_256.png"
+        Width="860" Height="640"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        AllowsTransparency="False"
+        Opacity="0">
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                     From="0" To="1" Duration="0:0:0.28">
+                        <DoubleAnimation.EasingFunction>
+                            <CubicEase EasingMode="EaseOut"/>
+                        </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Ambient theme atmosphere behind the whole window -->
+        <Rectangle Grid.RowSpan="2"
+                   Fill="{DynamicResource NostalgiaAtmosphereBrush}"
+                   Opacity="0.5"
+                   IsHitTestVisible="False"/>
+        <effects:ThemeEffectLayer Grid.RowSpan="2"
+                                  ThemeKey="{Binding AppearanceThemeKey}"
+                                  IsEffectActive="{Binding VisualEffectsEnabled}"
+                                  Intensity="0.5"
+                                  Opacity="0.3"
+                                  IsHitTestVisible="False"/>
+
+        <!-- Title bar -->
+        <Grid Grid.Row="0" Background="{DynamicResource SidebarBrush}" MouseLeftButtonDown="TitleBarDrag">
+            <Border VerticalAlignment="Bottom" Height="1" Background="{DynamicResource BorderSubtleBrush}"/>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                <TextBlock Text="&#x2728;" FontSize="13" VerticalAlignment="Center"
+                           Foreground="{DynamicResource BerryBrush}" Margin="0,0,8,0"/>
+                <TextBlock Text="Year Wrapped"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                           FontSize="13" FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+            <Button Content="&#xE711;" HorizontalAlignment="Right"
+                    Style="{StaticResource WindowControlCloseButtonStyle}"
+                    Click="CloseClick"/>
+        </Grid>
+
+        <!-- WebView2 renders the full Wrapped HTML card -->
+        <wv2:WebView2 x:Name="WrappedBrowser" Grid.Row="1"
+                      CoreWebView2InitializationCompleted="OnBrowserReady"/>
+    </Grid>
+</Window>

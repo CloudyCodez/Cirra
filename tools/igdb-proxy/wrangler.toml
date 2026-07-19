@@ -1,0 +1,6 @@
+name = "cloudberry-igdb-proxy"
+main = "worker.js"
+compatibility_date = "2026-05-20"
+
+[observability]
+enabled = true

@@ -1,0 +1,7 @@
+name = "cloudberry-social"
+main = "worker.js"
+compatibility_date = "2026-05-24"
+
+[[kv_namespaces]]
+binding = "SOCIAL_KV"
+id = "25464e5f50f542beb94efae5e560b963"

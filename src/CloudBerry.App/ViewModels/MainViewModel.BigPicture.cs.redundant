@@ -1,0 +1,341 @@
+using System.Collections.ObjectModel;
+using CloudBerry.App.Models;
+
+namespace CloudBerry.App.ViewModels;
+
+public sealed partial class MainViewModel
+{
+    private CollectionOption? _selectedBigPictureLibraryCategory;
+
+    public ObservableCollection<CollectionOption> BigPictureLibraryCategories { get; } = [];
+
+    public ObservableCollection<BigPictureShelfViewModel> BigPictureHomeShelves { get; } = [];
+
+    public ObservableCollection<BigPictureShelfViewModel> BigPictureLibraryShelves { get; } = [];
+
+    public ObservableCollection<BigPictureShelfViewModel> BigPictureAchievementShelves { get; } = [];
+
+    public CollectionOption? SelectedBigPictureLibraryCategory
+    {
+        get => _selectedBigPictureLibraryCategory;
+        set
+        {
+            if (SetProperty(ref _selectedBigPictureLibraryCategory, value))
+            {
+                RebuildBigPictureLibraryShelves();
+                OnPropertyChanged(nameof(BigPictureSelectedCategorySummary));
+            }
+        }
+    }
+
+    public GameEntryViewModel? BigPictureHeroGame =>
+        SelectedGame ??
+        ContinuePlayingGame ??
+        RecommendedGame ??
+        RandomBacklogGame ??
+        Games.FirstOrDefault();
+
+    public bool HasBigPictureHeroGame => BigPictureHeroGame is not null;
+
+    public string BigPictureHeroSummary => BigPictureHeroGame?.SummaryOrPlaceholder
+        ?? "Scan a folder, import a game, and CloudBerry will turn your collection into a full-screen dashboard.";
+
+    public string BigPictureHeroContextLabel => BigPictureHeroGame is null
+        ? "CloudBerry Cloudscape"
+        : $"{BigPictureHeroGame.Platform}  •  {BigPictureHeroGame.Status}  •  {BigPictureHeroGame.SourceKind}";
+
+    public string BigPictureSelectedCategorySummary => SelectedBigPictureLibraryCategory is null
+        ? "Every title in your library"
+        : $"{SelectedBigPictureLibraryCategory.Subtitle} • {SelectedBigPictureLibraryCategory.Count} title(s)";
+
+    public string BigPictureAchievementSummary =>
+        $"{GamesWithAchievementsCount} synced game(s) • {UnlockedAchievementsCount}/{TotalAchievementsCount} achievements unlocked • {LibraryGamerScoreLabel}";
+
+    private void RefreshBigPictureContent()
+    {
+        RefreshBigPictureLibraryCategories();
+        RebuildBigPictureHomeShelves();
+        RebuildBigPictureLibraryShelves();
+        RebuildBigPictureAchievementShelves();
+
+        OnPropertyChanged(nameof(BigPictureHeroGame));
+        OnPropertyChanged(nameof(HasBigPictureHeroGame));
+        OnPropertyChanged(nameof(BigPictureHeroSummary));
+        OnPropertyChanged(nameof(BigPictureHeroContextLabel));
+        OnPropertyChanged(nameof(BigPictureSelectedCategorySummary));
+        OnPropertyChanged(nameof(BigPictureAchievementSummary));
+    }
+
+    private void RefreshBigPictureLibraryCategories()
+    {
+        var previousKey = SelectedBigPictureLibraryCategory?.Key;
+        BigPictureLibraryCategories.Clear();
+
+        foreach (var option in BuildBigPictureLibraryCategories())
+        {
+            BigPictureLibraryCategories.Add(option);
+        }
+
+        SelectedBigPictureLibraryCategory = BigPictureLibraryCategories
+            .FirstOrDefault(option => option.Key.Equals(previousKey, StringComparison.OrdinalIgnoreCase))
+            ?? BigPictureLibraryCategories.FirstOrDefault();
+    }
+
+    private IEnumerable<CollectionOption> BuildBigPictureLibraryCategories()
+    {
+        yield return new CollectionOption
+        {
+            Key = "all",
+            Title = "All Games",
+            Subtitle = "Everything CloudBerry knows about",
+            Count = Games.Count
+        };
+
+        yield return new CollectionOption
+        {
+            Key = "installed",
+            Title = "Ready to Play",
+            Subtitle = "Installed or currently running",
+            Count = Games.Count(game => game.IsInstalled || game.IsRunning)
+        };
+
+        yield return new CollectionOption
+        {
+            Key = "favorites",
+            Title = "Favorites",
+            Subtitle = "Pinned picks and comfort launches",
+            Count = Games.Count(game => game.IsFavorite)
+        };
+
+        yield return new CollectionOption
+        {
+            Key = "backlog",
+            Title = "Backlog",
+            Subtitle = "Waiting for their next session",
+            Count = Games.Count(game => game.Status.Equals("Backlog", StringComparison.OrdinalIgnoreCase) ||
+                                        game.Status.Equals("Paused", StringComparison.OrdinalIgnoreCase))
+        };
+
+        yield return new CollectionOption
+        {
+            Key = "recent",
+            Title = "Recent",
+            Subtitle = "Recently played or recently added",
+            Count = Games.Count(game => game.LastPlayedOn is not null || game.AddedOn >= DateTime.Now.AddDays(-30))
+        };
+
+        yield return new CollectionOption
+        {
+            Key = "achievements",
+            Title = "Achievement Ready",
+            Subtitle = "Titles with progress or sync support",
+            Count = Games.Count(game => game.HasAchievements || game.CanSyncAchievements)
+        };
+
+        yield return new CollectionOption
+        {
+            Key = "needs_metadata",
+            Title = "Needs Polish",
+            Subtitle = "Still missing art or summary details",
+            Count = Games.Count(game => game.NeedsMetadataRefresh)
+        };
+    }
+
+    private void RebuildBigPictureHomeShelves()
+    {
+        ReplaceShelves(
+            BigPictureHomeShelves,
+            [
+                CreateShelf(
+                    "Continue playing",
+                    "Recent sessions and in-progress games",
+                    DistinctGames(
+                        ContinuePlayingGame is null ? [] : [ContinuePlayingGame],
+                        Games.Where(game => game.IsRunning)
+                             .OrderByDescending(game => game.ActiveSessionStartedAt ?? DateTime.MinValue),
+                        Games.Where(game => game.LastPlayedOn is not null)
+                             .OrderByDescending(game => game.LastPlayedOn ?? DateTime.MinValue))),
+                CreateShelf(
+                    "Tonight's picks",
+                    "CloudBerry's strongest launch suggestions right now",
+                    DistinctGames(
+                        RecommendedGame is null ? [] : [RecommendedGame],
+                        RandomBacklogGame is null ? [] : [RandomBacklogGame],
+                        Games.Where(game => game.IsInstalled && !game.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
+                             .OrderByDescending(game => game.IsFavorite)
+                             .ThenByDescending(game => game.CriticRating ?? game.CommunityRating ?? 0)
+                             .ThenBy(game => game.Title))),
+                CreateShelf(
+                    "Favorites",
+                    "Pinned titles for fast couch-mode access",
+                    Games.Where(game => game.IsFavorite)
+                         .OrderByDescending(game => game.IsRunning)
+                         .ThenByDescending(game => game.LastPlayedOn ?? DateTime.MinValue)
+                         .ThenBy(game => game.Title)),
+                CreateShelf(
+                    "Recently added",
+                    "Fresh imports and manual additions",
+                    Games.OrderByDescending(game => game.AddedOn)
+                         .ThenBy(game => game.Title)),
+                CreateShelf(
+                    "Achievement ready",
+                    "Local tracking or storefront fallback is available",
+                    Games.Where(game => game.HasAchievements || game.CanSyncAchievements)
+                         .OrderByDescending(game => game.HasAchievements)
+                         .ThenByDescending(game => game.AchievementCompletionPercent)
+                         .ThenBy(game => game.Title))
+            ]);
+    }
+
+    private void RebuildBigPictureLibraryShelves()
+    {
+        var category = SelectedBigPictureLibraryCategory;
+        var categoryGames = BuildBigPictureCategoryGames(category?.Key ?? "all");
+
+        ReplaceShelves(
+            BigPictureLibraryShelves,
+            [
+                CreateShelf(
+                    category?.Title ?? "All Games",
+                    category?.Subtitle ?? "Everything in your library",
+                    categoryGames),
+                CreateShelf(
+                    "Top rated",
+                    "High-review titles with art and metadata already in shape",
+                    Games.Where(game => !game.NeedsMetadataRefresh)
+                         .OrderByDescending(game => game.CriticRating ?? game.CommunityRating ?? 0)
+                         .ThenByDescending(game => game.IsInstalled)
+                         .ThenBy(game => game.Title)),
+                CreateShelf(
+                    "Ready now",
+                    "Installed titles that can launch immediately",
+                    Games.Where(game => game.IsInstalled || game.IsRunning)
+                         .OrderByDescending(game => game.IsRunning)
+                         .ThenByDescending(game => game.LastPlayedOn ?? DateTime.MinValue)
+                         .ThenBy(game => game.Title)),
+                CreateShelf(
+                    "Needs cleanup",
+                    "Great candidates for metadata and art improvements",
+                    Games.Where(game => game.NeedsMetadataRefresh)
+                         .OrderByDescending(game => game.IsFavorite)
+                         .ThenBy(game => game.Title))
+            ]);
+    }
+
+    private void RebuildBigPictureAchievementShelves()
+    {
+        ReplaceShelves(
+            BigPictureAchievementShelves,
+            [
+                CreateShelf(
+                    "In progress",
+                    "Games with active achievement progress",
+                    Games.Where(game => game.HasAchievements &&
+                                        game.AchievementsUnlockedCount > 0 &&
+                                        game.AchievementsUnlockedCount < game.AchievementCount)
+                         .OrderByDescending(game => game.AchievementCompletionPercent)
+                         .ThenByDescending(game => game.LastPlayedOn ?? DateTime.MinValue)
+                         .ThenBy(game => game.Title)),
+                CreateShelf(
+                    "Completionists",
+                    "Fully cleared achievement sets",
+                    Games.Where(game => game.HasAchievements &&
+                                        game.AchievementCount > 0 &&
+                                        game.AchievementsUnlockedCount == game.AchievementCount)
+                         .OrderByDescending(game => game.AchievementsLastSyncedUtc ?? DateTime.MinValue)
+                         .ThenBy(game => game.Title)),
+                CreateShelf(
+                    "Needs sync",
+                    "Installed games that still need their first achievement pass",
+                    Games.Where(game => game.CanSyncAchievements && !game.HasAchievements)
+                         .OrderByDescending(game => game.IsInstalled)
+                         .ThenBy(game => game.Title)),
+                CreateShelf(
+                    "High gamer score",
+                    "Achievement-rich titles worth revisiting",
+                    Games.Where(game => game.HasAchievements)
+                         .OrderByDescending(game => game.TotalGamerScore)
+                         .ThenByDescending(game => game.EarnedGamerScore)
+                         .ThenBy(game => game.Title))
+            ]);
+    }
+
+    private IReadOnlyList<GameEntryViewModel> BuildBigPictureCategoryGames(string categoryKey)
+    {
+        IEnumerable<GameEntryViewModel> query = categoryKey.ToLowerInvariant() switch
+        {
+            "installed" => Games.Where(game => game.IsInstalled || game.IsRunning)
+                .OrderByDescending(game => game.IsRunning)
+                .ThenByDescending(game => game.LastPlayedOn ?? DateTime.MinValue)
+                .ThenBy(game => game.Title),
+            "favorites" => Games.Where(game => game.IsFavorite)
+                .OrderByDescending(game => game.IsRunning)
+                .ThenByDescending(game => game.LastPlayedOn ?? DateTime.MinValue)
+                .ThenBy(game => game.Title),
+            "backlog" => Games.Where(game => game.Status.Equals("Backlog", StringComparison.OrdinalIgnoreCase) ||
+                                             game.Status.Equals("Paused", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(game => game.IsInstalled)
+                .ThenByDescending(game => game.CriticRating ?? game.CommunityRating ?? 0)
+                .ThenBy(game => game.Title),
+            "recent" => Games.Where(game => game.LastPlayedOn is not null || game.AddedOn >= DateTime.Now.AddDays(-30))
+                .OrderByDescending(game => game.LastPlayedOn ?? game.AddedOn)
+                .ThenBy(game => game.Title),
+            "achievements" => Games.Where(game => game.HasAchievements || game.CanSyncAchievements)
+                .OrderByDescending(game => game.HasAchievements)
+                .ThenByDescending(game => game.AchievementCompletionPercent)
+                .ThenBy(game => game.Title),
+            "needs_metadata" => Games.Where(game => game.NeedsMetadataRefresh)
+                .OrderByDescending(game => game.IsFavorite)
+                .ThenBy(game => game.Title),
+            _ => Games.OrderByDescending(game => game.IsRunning)
+                .ThenByDescending(game => game.IsFavorite)
+                .ThenByDescending(game => game.IsInstalled)
+                .ThenByDescending(game => game.LastPlayedOn ?? DateTime.MinValue)
+                .ThenByDescending(game => game.AddedOn)
+                .ThenBy(game => game.Title)
+        };
+
+        return query.Take(24).ToList();
+    }
+
+    private static BigPictureShelfViewModel? CreateShelf(
+        string title,
+        string subtitle,
+        IEnumerable<GameEntryViewModel> games,
+        int maxItems = 16)
+    {
+        var slice = games
+            .Where(game => game is not null)
+            .DistinctBy(game => game.Id)
+            .Take(maxItems)
+            .ToList();
+
+        return slice.Count == 0
+            ? null
+            : new BigPictureShelfViewModel
+            {
+                Title = title,
+                Subtitle = subtitle,
+                Games = slice
+            };
+    }
+
+    private static IEnumerable<GameEntryViewModel> DistinctGames(params IEnumerable<GameEntryViewModel>[] groups)
+    {
+        return groups.SelectMany(group => group)
+            .Where(game => game is not null)
+            .DistinctBy(game => game.Id);
+    }
+
+    private static void ReplaceShelves(
+        ObservableCollection<BigPictureShelfViewModel> target,
+        IEnumerable<BigPictureShelfViewModel?> shelves)
+    {
+        target.Clear();
+
+        foreach (var shelf in shelves.Where(shelf => shelf?.HasGames == true))
+        {
+            target.Add(shelf!);
+        }
+    }
+}

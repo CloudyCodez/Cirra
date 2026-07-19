@@ -1,0 +1,224 @@
+using System.IO;
+using System.Windows;
+using System.Diagnostics;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using Microsoft.Win32;
+using CloudBerry.App.Models;
+using CloudBerry.App.Services;
+using CloudBerry.App.ViewModels;
+using CloudBerry.Core.Services;
+
+namespace CloudBerry.App;
+
+public partial class App : Application
+{
+    // Static constructor fires before ANY instance construction or XAML loading.
+    // This catches crashes that happen before OnStartup (e.g. XAML resource failures).
+    static App()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            try
+            {
+                var logDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "CloudBerry", "logs");
+                Directory.CreateDirectory(logDir);
+                var msg = args.ExceptionObject is Exception ex
+                    ? $"{ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}\nInner: {ex.InnerException?.Message}\n{ex.InnerException?.StackTrace}"
+                    : args.ExceptionObject?.ToString() ?? "(null)";
+                File.AppendAllText(
+                    Path.Combine(logDir, "cloudberry.log"),
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [FATAL] [pre-startup] {msg}{Environment.NewLine}");
+            }
+            catch { /* last resort — can't do anything if this fails */ }
+        };
+    }
+
+    private readonly AppDiagnostics _diagnostics = new();
+    private const int MinimumSplashDurationMilliseconds = 1350;
+    private static ProcessPriorityClass _currentPriorityClass = ProcessPriorityClass.Normal;
+
+    protected override async void OnStartup(StartupEventArgs e)
+    {
+        SetBrowserEmulationMode();
+        ConfigureDesktopPerformance();
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnCurrentDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        base.OnStartup(e);
+
+        // Private testing gate: blocks the app from ever reaching the splash/main window
+        // until this Windows account has redeemed a valid personal key. See
+        // AccessGateService for the one-time, machine/account-bound redemption logic.
+        if (!AccessGateService.HasValidAccess())
+        {
+            var gate = new AccessGateWindow();
+            var accepted = gate.ShowDialog();
+            if (accepted != true || !gate.AccessGranted)
+            {
+                Shutdown();
+                return;
+            }
+        }
+
+        var splashViewModel = new SplashViewModel();
+        var splashWindow = new SplashWindow
+        {
+            DataContext = splashViewModel
+        };
+
+        splashWindow.Show();
+
+        var startupTimer = Stopwatch.StartNew();
+
+        try
+        {
+            var mainViewModel = new MainViewModel();
+            var progress = new Progress<StartupProgressUpdate>(splashViewModel.Apply);
+            await mainViewModel.InitializeAsync(progress);
+
+            var remainingDelay = MinimumSplashDurationMilliseconds - (int)startupTimer.ElapsedMilliseconds;
+            if (remainingDelay > 0)
+            {
+                await Task.Delay(remainingDelay);
+            }
+
+            var mainWindow = new MainWindow(mainViewModel);
+            MainWindow = mainWindow;
+            mainWindow.Opacity = 0;
+            mainWindow.Show();
+            await splashWindow.PlayCloseTransitionAsync();
+            splashWindow.Close();
+            mainWindow.BeginAnimation(Window.OpacityProperty, new DoubleAnimation
+            {
+                From = 0,
+                To = 1,
+                Duration = TimeSpan.FromMilliseconds(180),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+        }
+        catch (Exception exception)
+        {
+            _diagnostics.WriteException("startup", exception);
+            splashWindow.Close();
+
+            MessageBox.Show(
+                $"CloudBerry couldn't finish starting up.\n\n{exception.Message}",
+                "CloudBerry",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+
+            Shutdown();
+        }
+    }
+
+    private void SetBrowserEmulationMode()
+    {
+        try
+        {
+            var processName = Process.GetCurrentProcess().ProcessName + ".exe";
+            using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION", true);
+            if (key != null)
+            {
+                key.SetValue(processName, 11001, RegistryValueKind.DWord);
+            }
+        }
+        catch (Exception exception)
+        {
+            _diagnostics.WriteException("browser-emulation", exception);
+        }
+    }
+
+    private void ConfigureDesktopPerformance()
+    {
+        try
+        {
+            RenderOptions.ProcessRenderMode = RenderMode.Default;
+            Timeline.DesiredFrameRateProperty.OverrideMetadata(
+                typeof(Timeline),
+                new FrameworkPropertyMetadata { DefaultValue = 60 });
+        }
+        catch (Exception exception)
+        {
+            _diagnostics.WriteException("performance-rendering", exception);
+        }
+
+        try
+        {
+            ApplyProcessPriority(ProcessPriorityClass.AboveNormal);
+        }
+        catch (Exception exception)
+        {
+            _diagnostics.WriteException("performance-priority", exception);
+        }
+    }
+
+    public static void ApplyInteractivePerformanceMode(bool isInteractive)
+    {
+        ApplyProcessPriority(isInteractive ? ProcessPriorityClass.AboveNormal : ProcessPriorityClass.Normal);
+    }
+
+    private static void ApplyProcessPriority(ProcessPriorityClass priorityClass)
+    {
+        if (_currentPriorityClass == priorityClass)
+        {
+            return;
+        }
+
+        try
+        {
+            using var process = Process.GetCurrentProcess();
+            process.PriorityClass = priorityClass;
+            _currentPriorityClass = priorityClass;
+        }
+        catch
+        {
+            // Windows can reject priority changes under some launch contexts; keep the app running.
+        }
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        try
+        {
+            if (MainWindow?.DataContext is MainViewModel viewModel)
+            {
+                viewModel.TryLaunchQueuedUpdateOnExit();
+            }
+        }
+        catch (Exception exception)
+        {
+            _diagnostics.WriteException("shutdown-update", exception);
+        }
+
+        base.OnExit(e);
+    }
+
+    private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        _diagnostics.WriteException("dispatcher", e.Exception);
+
+        if (e.Exception is InvalidOperationException &&
+            (e.Exception.Message.Contains("name cannot be found in the name scope", StringComparison.OrdinalIgnoreCase) ||
+             e.Exception.Message.Contains("sealed or frozen", StringComparison.OrdinalIgnoreCase)))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void OnCurrentDomainUnhandledException(object? sender, UnhandledExceptionEventArgs e)
+    {
+        if (e.ExceptionObject is Exception exception)
+        {
+            _diagnostics.WriteException("app-domain", exception);
+        }
+    }
+
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        _diagnostics.WriteException("task-scheduler", e.Exception);
+    }
+}
