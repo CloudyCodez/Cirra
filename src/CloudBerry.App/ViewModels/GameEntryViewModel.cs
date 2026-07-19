@@ -1244,18 +1244,29 @@ public sealed class GameEntryViewModel : ViewModelBase
     private static string BuildTrailerEmbedUrl(string url)
     {
         if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+        string? id = null;
         if (url.Contains("youtu.be/", StringComparison.OrdinalIgnoreCase))
         {
-            var id = url.Split("youtu.be/").LastOrDefault()?.Split('?').FirstOrDefault();
-            return string.IsNullOrWhiteSpace(id) ? string.Empty : $"https://www.youtube.com/embed/{id}";
+            id = url.Split("youtu.be/").LastOrDefault()?.Split('?').FirstOrDefault();
         }
-        if (url.Contains("youtube.com/watch", StringComparison.OrdinalIgnoreCase))
+        else if (url.Contains("youtube.com/watch", StringComparison.OrdinalIgnoreCase))
         {
             var query = System.Web.HttpUtility.ParseQueryString(new Uri(url).Query);
-            var id = query["v"];
-            return string.IsNullOrWhiteSpace(id) ? string.Empty : $"https://www.youtube.com/embed/{id}";
+            id = query["v"];
         }
-        return string.Empty;
+
+        if (string.IsNullOrWhiteSpace(id)) return string.Empty;
+
+        // This URL is only ever used for the silent, click-through card hover preview
+        // (see GameEntryViewModel.HasEmbeddableTrailer / BigPictureWindow's trailer overlay) —
+        // never for a trailer the user opens to actually watch, since OpenSelectedGameTrailer()
+        // opens the raw TrailerUrl in the system browser instead. So it's safe, and necessary,
+        // to bake every "no visible player chrome" param straight into the URL itself: this is
+        // what protects the preview even when the local shielding server (BigPictureWindow's
+        // trailer HttpListener) isn't running and the raw URL gets navigated to directly.
+        return $"https://www.youtube.com/embed/{id}" +
+               "?autoplay=1&mute=1&controls=0&rel=0&modestbranding=1" +
+               "&iv_load_policy=3&disablekb=1&fs=0&playsinline=1&showinfo=0";
     }
 
     private static string NormalizeStatus(string status) => status switch

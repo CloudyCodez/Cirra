@@ -11,8 +11,11 @@ using System.Windows.Threading;
 using System.Diagnostics;
 using System.IO;
 using System.Globalization;
+using System.Net;
+using System.Text;
 using CloudBerry.App.Services;
 using CloudBerry.App.ViewModels;
+using CloudBerry.Core.Services;
 using CloudBerry.App.Models;
 
 namespace CloudBerry.App;
@@ -31,6 +34,7 @@ public partial class MainWindow : Window
     private int _lastNonMetadataPage;
     private readonly DispatcherTimer _homeSuggestionTimer = new();
     private readonly DispatcherTimer _socialHeartbeatTimer = new();
+    private readonly AppDiagnostics _diagnostics = new();
     private readonly SoundDesignService _sound;
     private bool _startupUpdatePromptShown;
     private double _lastSidebarWidth = DefaultSidebarWidth;
@@ -69,7 +73,23 @@ public partial class MainWindow : Window
         Loaded += OnStartupUpdatePromptLoaded;
         _homeSuggestionTimer.Tick += OnHomeSuggestionTimerTick;
         _socialHeartbeatTimer.Interval = TimeSpan.FromSeconds(70);
-        _socialHeartbeatTimer.Tick += async (_, _) => await ViewModel.PublishActiveProfilePresenceAsync();
+        _socialHeartbeatTimer.Tick += async (_, _) =>
+        {
+            // async-void event handler boundary: PublishActiveProfilePresenceAsync already
+            // catches its own network/service exceptions, but this outer lambda is still an
+            // unguarded async-void tick that fires every 70s whether or not the user is at
+            // the keyboard. Belt-and-suspenders guard so nothing thrown before/around the
+            // await (or a future change that removes the inner try/catch) can take the app
+            // down during an idle stretch.
+            try
+            {
+                await ViewModel.PublishActiveProfilePresenceAsync();
+            }
+            catch (Exception ex)
+            {
+                _diagnostics.WriteException("social-heartbeat-timer", ex);
+            }
+        };
         RestartHomeSuggestionTimer();
         ApplySidebarLayout();
     }
@@ -681,6 +701,13 @@ public partial class MainWindow : Window
     private void SelectAllCandidatesClick(object sender, RoutedEventArgs e)       => ViewModel.SelectAllCandidates();
     private void ClearImportReviewClick(object sender, RoutedEventArgs e)         => ViewModel.ClearImportReview();
     private void ToggleHomeCustomizeClick(object sender, RoutedEventArgs e)       => ViewModel.ToggleHomeCustomize();
+
+    // ── Settings page category nav ──────────────────────────────────────
+    private void SelectSettingsProfileClick(object sender, RoutedEventArgs e)    { ViewModel.SelectedSettingsCategoryIndex = 0; _sound.PlaySoftClick(); }
+    private void SelectSettingsAppearanceClick(object sender, RoutedEventArgs e) { ViewModel.SelectedSettingsCategoryIndex = 1; _sound.PlaySoftClick(); }
+    private void SelectSettingsLibraryClick(object sender, RoutedEventArgs e)    { ViewModel.SelectedSettingsCategoryIndex = 2; _sound.PlaySoftClick(); }
+    private void SelectSettingsEmulatorsClick(object sender, RoutedEventArgs e)  { ViewModel.SelectedSettingsCategoryIndex = 3; _sound.PlaySoftClick(); }
+    private void SelectSettingsUpdatesClick(object sender, RoutedEventArgs e)    { ViewModel.SelectedSettingsCategoryIndex = 4; _sound.PlaySoftClick(); }
     private void SetLibraryListViewClick(object sender, RoutedEventArgs e)        => ViewModel.IsLibraryGridView = false;
     private void SetLibraryGridViewClick(object sender, RoutedEventArgs e)        => ViewModel.IsLibraryGridView = true;
 
@@ -1855,9 +1882,22 @@ public partial class MainWindow : Window
 
     private void OnHomeSuggestionTimerTick(object? sender, EventArgs e)
     {
-        if (ViewModel.SelectedPrimaryPage == 0)
+        // This fires unattended while the user is idling on the Home page - any exception
+        // here previously had nowhere safe to land (see App.OnDispatcherUnhandledException,
+        // which only whitelists two specific InvalidOperationException messages), so a
+        // transient failure mid-rotation could take down the whole app with no user action
+        // to correlate it to. Guarded the same way ThemeEffectLayer.OnRender guards its
+        // per-frame work: log and skip this tick, try again next interval.
+        try
         {
-            ViewModel.RotateHomeSuggestion();
+            if (ViewModel.SelectedPrimaryPage == 0)
+            {
+                ViewModel.RotateHomeSuggestion();
+            }
+        }
+        catch (Exception ex)
+        {
+            _diagnostics.WriteException("home-suggestion-timer", ex);
         }
     }
 
@@ -2147,21 +2187,27 @@ public partial class MainWindow : Window
         SetResource("ThemeShellOverlayOpacity", isNierTheme ? 0.42d : isWutheringTheme ? 0.54d : isBlackFlashTheme ? 0.44d : isMatrixTheme ? 0.74d : isGlitchTheme ? 0.72d : 0.82d);
         SetResource("ThemeBodyFontFamily", new FontFamily(themeKey switch
         {
-            "NieR Automata" => "Yu Gothic UI, Segoe UI, Calibri",
-            "Neon Matrix" => "Cascadia Mono, Consolas, Segoe UI",
-            "Retro Glitch" => "Bahnschrift, Segoe UI Variable Text, Segoe UI",
-            "Wuthering Waves" => "Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI",
-            "Black Flash" => "Yu Gothic UI, Segoe UI Variable Text, Segoe UI",
-            _ => "Segoe UI Variable Text, Segoe UI"
+        "NieR Automata" => "Yu Gothic UI, Segoe UI, Calibri", 
+        "Neon Matrix" => "Cascadia Mono, Consolas, Segoe UI", 
+        "Retro Glitch" => "Bahnschrift, Segoe UI Variable Text, Segoe UI", 
+        "Wuthering Waves" => "Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI", 
+        "Black Flash" => "Yu Gothic UI, Segoe UI Variable Text, Segoe UI", 
+        "Mint Cloud" => "Calibri, Segoe UI", 
+            "Blueberry Midnight" => "Candara, Segoe UI", 
+            "High Contrast" => "Segoe UI, Arial", 
+            _ => "Corbel, Segoe UI Variable Text, Segoe UI"
         }));
         SetResource("ThemeDisplayFontFamily", new FontFamily(themeKey switch
         {
-            "NieR Automata" => "Yu Gothic UI Semibold, Segoe UI Semibold, Segoe UI",
-            "Neon Matrix" => "Cascadia Mono SemiBold, Consolas, Segoe UI Semibold",
-            "Retro Glitch" => "Bahnschrift SemiBold, Segoe UI Black, Segoe UI",
-            "Wuthering Waves" => "Bahnschrift SemiBold, Segoe UI Semibold, Segoe UI",
-            "Black Flash" => "Bahnschrift SemiBold, Yu Gothic UI Semibold, Segoe UI Semibold",
-            _ => "Bahnschrift SemiBold, Segoe UI Semibold, Segoe UI"
+        "NieR Automata" => "Yu Gothic UI Semibold, Segoe UI Semibold, Segoe UI", 
+        "Neon Matrix" => "Cascadia Mono SemiBold, Consolas, Segoe UI Semibold", 
+        "Retro Glitch" => "Bahnschrift SemiBold, Segoe UI Black, Segoe UI", 
+            "Wuthering Waves" => "Bahnschrift SemiBold, Segoe UI Semibold, Segoe UI", 
+            "Black Flash" => "Bahnschrift SemiBold, Yu Gothic UI Semibold, Segoe UI Semibold", 
+            "Mint Cloud" => "Calibri Light, Calibri, Segoe UI Semibold", 
+            "Blueberry Midnight" => "Candara, Segoe UI Semibold", 
+            "High Contrast" => "Segoe UI Semibold, Segoe UI, Arial", 
+            _ => "Corbel, Segoe UI Semibold, Segoe UI"
         }));
 
         var squareTheme = isNierTheme || isHighContrastTheme;
@@ -3657,7 +3703,7 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(ViewModel.TheatreBrowserUrl) ||
                 string.Equals(ViewModel.TheatreBrowserUrl, "about:blank", StringComparison.OrdinalIgnoreCase))
             {
-                MainTheatreBrowser.NavigateToString(MainTheatrePlaceholderHtml);
+                MainTheatreBrowser.NavigateToString(BuildTheatreHomeHtml());
                 return;
             }
             MainTheatreBrowser.Source = new Uri(ViewModel.TheatreBrowserUrl);
@@ -3665,27 +3711,65 @@ public partial class MainWindow : Window
         catch { /* navigation failures are surfaced via TheatreStatusMessage */ }
     }
 
-    private const string MainTheatrePlaceholderHtml = """
-        <!doctype html><html><head><meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <style>
-        html,body{width:100%;height:100%;margin:0;overflow:hidden;
-        background:radial-gradient(circle at 18% 18%,rgba(83,255,196,.18),transparent 36%),
-        linear-gradient(135deg,#06120d 0%,#071b13 48%,#020806 100%);
-        color:#c8f7df;font-family:"Segoe UI",Arial,sans-serif;}
-        .shell{box-sizing:border-box;height:100%;padding:34px;
-        border:1px solid rgba(96,255,194,.26);
-        box-shadow:inset 0 0 80px rgba(20,255,153,.08);}
-        .eyebrow{color:rgba(111,190,255,.78);font-size:11px;font-weight:700;
-        letter-spacing:.16em;text-transform:uppercase;}
-        h1{margin:10px 0 8px;font-size:34px;line-height:1.05;}
-        p{max-width:620px;color:rgba(203,230,220,.78);font-size:14px;line-height:1.55;}
-        </style></head><body>
-        <div class="shell">
-        <div class="eyebrow">Cloud's Theatre</div>
-        <h1>Save a site or type a URL to begin.</h1>
-        <p>Use the address bar above, or save your favourite streaming sites with the &#x2605; Save Site button.</p>
-        </div></body></html>
-        """;
+    /// <summary>
+    /// Builds Theatre's home/new-tab page: a real HTML page with a native Google search
+    /// form and tiles linking straight to the player's saved sites. Both work with a plain
+    /// WebView2.NavigateToString call, no host-object/JS interop needed, since a GET form
+    /// and an anchor tag both just trigger a normal top-level navigation in the browser.
+    /// </summary>
+    private string BuildTheatreHomeHtml()
+    {
+        var tiles = new StringBuilder();
+        foreach (var site in ViewModel.SavedTheatreSites)
+        {
+            var name = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(site.DisplayName) ? site.Url : site.DisplayName);
+            var url = WebUtility.HtmlEncode(site.Url);
+            tiles.Append($"<a class=\"tile\" href=\"{url}\">{name}</a>");
+        }
+
+        var tilesSection = tiles.Length > 0
+            ? $"<div class=\"eyebrow\" style=\"margin-top:36px;\">Saved sites</div><div class=\"tiles\">{tiles}</div>"
+            : "<p style=\"margin-top:20px;\">Save a site with the &#x2605; Save Site button and it'll show up here.</p>";
+
+        return $$"""
+            <!doctype html><html><head><meta http-equiv="X-UA-Compatible" content="IE=edge">
+            <style>
+            html,body{width:100%;height:100%;margin:0;overflow:auto;
+            background:radial-gradient(circle at 18% 18%,rgba(83,255,196,.18),transparent 36%),
+            linear-gradient(135deg,#06120d 0%,#071b13 48%,#020806 100%);
+            color:#c8f7df;font-family:"Segoe UI",Arial,sans-serif;}
+            .shell{box-sizing:border-box;min-height:100%;padding:34px;
+            border:1px solid rgba(96,255,194,.26);
+            box-shadow:inset 0 0 80px rgba(20,255,153,.08);}
+            .eyebrow{color:rgba(111,190,255,.78);font-size:11px;font-weight:700;
+            letter-spacing:.16em;text-transform:uppercase;}
+            h1{margin:10px 0 8px;font-size:34px;line-height:1.05;}
+            p{max-width:620px;color:rgba(203,230,220,.78);font-size:14px;line-height:1.55;}
+            form{margin-top:22px;max-width:560px;display:flex;gap:8px;}
+            input[type=text]{flex:1;padding:12px 14px;border-radius:8px;border:1px solid rgba(96,255,194,.3);
+            background:rgba(255,255,255,.04);color:#eafff4;font-size:14px;outline:none;}
+            input[type=text]::placeholder{color:rgba(203,230,220,.45);}
+            button{padding:12px 20px;border-radius:8px;border:none;background:#53ffc4;color:#04140d;
+            font-weight:700;font-size:13px;cursor:pointer;}
+            .tiles{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;}
+            .tile{display:inline-block;padding:10px 16px;border-radius:8px;
+            border:1px solid rgba(96,255,194,.25);background:rgba(255,255,255,.03);
+            color:#c8f7df;text-decoration:none;font-size:13px;max-width:220px;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+            .tile:hover{border-color:rgba(96,255,194,.6);background:rgba(83,255,196,.08);}
+            </style></head><body>
+            <div class="shell">
+            <div class="eyebrow">Cloud's Theatre</div>
+            <h1>Type a site, or search the web.</h1>
+            <p>Use the address bar above, or search right here - both take direct URLs and plain search terms.</p>
+            <form action="https://www.google.com/search" method="get">
+            <input type="text" name="q" placeholder="Search Google, or type a URL above" autofocus>
+            <button type="submit">Search</button>
+            </form>
+            {{tilesSection}}
+            </div></body></html>
+            """;
+    }
 
     private void MainTheatreAddressKeyDown(object sender, KeyEventArgs e)
     {
@@ -3736,7 +3820,7 @@ public partial class MainWindow : Window
     private void MainTheatreHomeClick(object sender, RoutedEventArgs e)
     {
         ViewModel.ResetTheatrePlayer();
-        MainTheatreBrowser.NavigateToString(MainTheatrePlaceholderHtml);
+        MainTheatreBrowser.NavigateToString(BuildTheatreHomeHtml());
         _sound.PlaySoftClick();
     }
 

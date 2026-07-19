@@ -47,6 +47,8 @@ public sealed class MainViewModel : ViewModelBase
 
 	private CollectionOption? _selectedBigPictureLibraryCategory;
 
+	private CollectionOption? _selectedBigPictureEmulationPlatform;
+
 	private bool _isGenreMenuExpanded;
 
 	private bool _isTagMenuExpanded;
@@ -121,7 +123,11 @@ public sealed class MainViewModel : ViewModelBase
 
 	private int _selectedPrimaryPage;
 
+	/// <summary>A5 fix: Cloudscape's own page index, independent from MainWindow's SelectedPrimaryPage.</summary>
+	private int _selectedCloudscapePage;
+
 	private bool _isCloudscapeCompact;
+	private int _selectedSettingsCategoryIndex;
 	private string _bigPictureSearchText = string.Empty;
 	private string _bigPictureLibrarySortKey = "default";
 
@@ -177,7 +183,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private string _achievementStatusMessage = "Local achievements first. Online references fill the gaps.";
 
-	private string _appearanceThemeKey = "CloudBerry Dark";
+	private string _appearanceThemeKey = "Mint Cloud";
 
 	private string _appearanceDensityKey = "Comfortable";
 
@@ -206,6 +212,14 @@ public sealed class MainViewModel : ViewModelBase
 	private string _libraryViewMode = "List";
 
 	private string _libraryGridTileSize = "Normal";
+
+	private bool _attractModeEnabled = true;
+
+	private int _attractModeIdleSeconds = 100;
+
+	private bool _isAttractModeActive;
+
+	private GameEntryViewModel? _attractModeGame;
 
 	private bool _isHomeCustomizeOpen;
 
@@ -259,7 +273,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private string _profileShellStyle = "Blade";
 
-	private string _profilePreferredTheme = "CloudBerry Dark";
+	private string _profilePreferredTheme = "Mint Cloud";
 
 	private string _profileIconKey = "Controller";
 
@@ -419,6 +433,12 @@ public sealed class MainViewModel : ViewModelBase
 
 	public ObservableCollection<BigPictureShelfViewModel> BigPictureAchievementShelves { get; } = new ObservableCollection<BigPictureShelfViewModel>();
 
+	/// <summary>A5: platform tiles for the Cloudscape Emulation tab — one per ROM platform plus "All ROMs".</summary>
+	public ObservableCollection<CollectionOption> BigPictureEmulationPlatforms { get; } = new ObservableCollection<CollectionOption>();
+
+	/// <summary>A5: shelves shown on the Cloudscape Emulation tab (selected platform, needs-a-core, recently added).</summary>
+	public ObservableCollection<BigPictureShelfViewModel> BigPictureEmulationShelves { get; } = new ObservableCollection<BigPictureShelfViewModel>();
+
 	public CollectionOption? SelectedBigPictureLibraryCategory
 	{
 		get
@@ -431,6 +451,23 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				RebuildBigPictureLibraryShelves();
 				OnPropertyChanged("BigPictureSelectedCategorySummary");
+			}
+		}
+	}
+
+	/// <summary>A5: the platform currently selected on the Cloudscape Emulation tab.</summary>
+	public CollectionOption? SelectedBigPictureEmulationPlatform
+	{
+		get
+		{
+			return _selectedBigPictureEmulationPlatform;
+		}
+		set
+		{
+			if (SetProperty(ref _selectedBigPictureEmulationPlatform, value, "SelectedBigPictureEmulationPlatform"))
+			{
+				RebuildBigPictureEmulationShelves();
+				OnPropertyChanged("BigPictureEmulationSummary");
 			}
 		}
 	}
@@ -464,6 +501,27 @@ public sealed class MainViewModel : ViewModelBase
 			return "Every title in your library";
 		}
 	}
+
+	/// <summary>A5: subtitle line for the Cloudscape Emulation tab header.</summary>
+	public string BigPictureEmulationSummary
+	{
+		get
+		{
+			if (SelectedBigPictureEmulationPlatform != null)
+			{
+				return $"{SelectedBigPictureEmulationPlatform.Subtitle} • {SelectedBigPictureEmulationPlatform.Count} title(s)";
+			}
+			return $"{EmulationRomCount} ROM(s) across your library";
+		}
+	}
+
+	/// <summary>A5: total ROM-backed titles in the library, regardless of platform.</summary>
+	public int EmulationRomCount => Games.Count((GameEntryViewModel game) => game.IsRom);
+
+	/// <summary>A5: ROM titles that don't yet resolve to a configured emulator core.</summary>
+	public int EmulationNeedsCoreCount => Games.Count(NeedsEmulatorCore);
+
+	public bool HasEmulationGamesNeedingCore => EmulationNeedsCoreCount > 0;
 
 	public string BigPictureAchievementSummary => $"{GamesWithAchievementsCount} synced game(s) • {UnlockedAchievementsCount}/{TotalAchievementsCount} achievements unlocked • {LibraryGamerScoreLabel}";
 
@@ -516,7 +574,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	public IReadOnlyList<int> AchievementPollingChoices { get; } = Array.AsReadOnly(new int[6] { 15, 30, 45, 60, 90, 120 });
 
-	public IReadOnlyList<string> AppearanceThemeOptions { get; } = Array.AsReadOnly(new string[9] { "CloudBerry Dark", "Neon Matrix", "Retro Glitch", "NieR Automata", "Wuthering Waves", "Blueberry Midnight", "Mint Cloud", "High Contrast", "Black Flash" });
+	public IReadOnlyList<string> AppearanceThemeOptions { get; } = Array.AsReadOnly(new string[8] { "Neon Matrix", "Retro Glitch", "NieR Automata", "Wuthering Waves", "Blueberry Midnight", "Mint Cloud", "High Contrast", "Black Flash" }); // "CloudBerry Dark" parked — hidden from picker pending a visual overhaul, not deleted; still fully functional as ApplyAppearanceTheme()'s default/else case for any profile that already has it saved.
 
 	public IReadOnlyList<string> AppearanceDensityOptions { get; } = Array.AsReadOnly(new string[3] { "Comfortable", "Compact", "Cinematic" });
 
@@ -795,6 +853,24 @@ public sealed class MainViewModel : ViewModelBase
 					RefreshEmulatorPlatformCards();
 				}
 			}
+		}
+	}
+
+	/// <summary>
+	/// A5 fix: Cloudscape (BigPictureWindow) used to reuse SelectedPrimaryPage for its own tab index,
+	/// which collided with MainWindow's sidebar (same shared MainViewModel, two different index schemes —
+	/// e.g. index 3 meant "Achievements" in MainWindow but "Settings" in Cloudscape). Cloudscape now gets
+	/// its own independent index: 0 Home, 1 Library, 2 Achievements, 3 Settings, 4 Emulation, 5 Theatre.
+	/// </summary>
+	public int SelectedCloudscapePage
+	{
+		get
+		{
+			return _selectedCloudscapePage;
+		}
+		set
+		{
+			SetProperty(ref _selectedCloudscapePage, value, "SelectedCloudscapePage");
 		}
 	}
 
@@ -2027,6 +2103,112 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
+	// ── Attract Mode (Xbox/PS5-dashboard-style ambient showcase) ───────────────────────────
+
+	/// <summary>Whether Attract Mode is allowed to engage after idling on Cloudscape's Home tab.</summary>
+	public bool AttractModeEnabled
+	{
+		get => _attractModeEnabled;
+		set
+		{
+			if (SetProperty(ref _attractModeEnabled, value, "AttractModeEnabled"))
+			{
+				if (!value)
+					IsAttractModeActive = false;
+				SchedulePersist();
+			}
+		}
+	}
+
+	/// <summary>Seconds of idle time on Cloudscape's Home tab before Attract Mode engages. Clamped 20-600.</summary>
+	public int AttractModeIdleSeconds
+	{
+		get => _attractModeIdleSeconds;
+		set
+		{
+			var clamped = Math.Clamp(value, 20, 600);
+			if (SetProperty(ref _attractModeIdleSeconds, clamped, "AttractModeIdleSeconds"))
+			{
+				SchedulePersist();
+			}
+		}
+	}
+
+	/// <summary>True while the full-screen ambient showcase is currently taking over Cloudscape.</summary>
+	public bool IsAttractModeActive
+	{
+		get => _isAttractModeActive;
+		set => SetProperty(ref _isAttractModeActive, value, "IsAttractModeActive");
+	}
+
+	/// <summary>The game Attract Mode is currently showcasing. Falls back to <see cref="BigPictureHeroGame"/> when unset.</summary>
+	public GameEntryViewModel? AttractModeGame
+	{
+		get => _attractModeGame ?? BigPictureHeroGame;
+		set
+		{
+			if (SetProperty(ref _attractModeGame, value, "AttractModeGame"))
+			{
+				OnPropertyChanged("AttractModeContextLabel");
+			}
+		}
+	}
+
+	public string AttractModeContextLabel => AttractModeGame is null
+		? "CloudBerry Cloudscape"
+		: $"{AttractModeGame.Platform}  •  {AttractModeGame.SourceKind}";
+
+	/// <summary>
+	/// Builds a curated rotation for Attract Mode: favorites first, then most-played, then most
+	/// recently added, each de-duplicated, so the ambient showcase leads with a library's best
+	/// material rather than a flat random shuffle. Falls back to the full library if the curated
+	/// pools are too small (e.g. a fresh install with few favorites/playtime yet).
+	/// </summary>
+	public IReadOnlyList<GameEntryViewModel> BuildAttractModeRotation()
+	{
+		var pool = new List<GameEntryViewModel>();
+		var seen = new HashSet<Guid>();
+
+		void AddRange(IEnumerable<GameEntryViewModel> games)
+		{
+			foreach (var g in games)
+			{
+				if (seen.Add(g.Id))
+					pool.Add(g);
+			}
+		}
+
+		AddRange(Games.Where(g => g.IsFavorite).OrderByDescending(g => g.PlaytimeMinutes));
+		AddRange(Games.Where(g => g.PlaytimeMinutes > 0).OrderByDescending(g => g.PlaytimeMinutes).Take(10));
+		AddRange(Games.OrderByDescending(g => g.AddedOn).Take(10));
+		AddRange(Games);
+
+		return pool.Where(g => g.HasBackgroundImage || g.HasScreenshots).ToList() is { Count: > 0 } withArt
+			? withArt
+			: pool;
+	}
+
+	/// <summary>
+	/// Every showcase-worthy image for a game — its background/banner art plus every IGDB
+	/// screenshot — so Attract Mode can linger on one great game across several images instead of
+	/// jumping to the next title every cycle. De-duplicated and empty entries filtered out.
+	/// </summary>
+	public static IReadOnlyList<string> BuildAttractShowcaseImages(GameEntryViewModel? game)
+	{
+		if (game is null) return Array.Empty<string>();
+		var images = new List<string>();
+		void AddIfNew(string? path)
+		{
+			if (!string.IsNullOrWhiteSpace(path) && !images.Contains(path))
+				images.Add(path);
+		}
+		AddIfNew(game.DisplayBackgroundImagePath);
+		AddIfNew(game.DisplayBannerImagePath);
+		foreach (var shot in game.ScreenshotUrls)
+			AddIfNew(shot);
+		return images;
+	}
+
 	/// <summary>Card width in device-independent pixels for the current grid tile size.</summary>
 	public double LibraryGridCardWidth => _libraryGridTileSize switch
 	{
@@ -2053,6 +2235,32 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		IsHomeCustomizeOpen = false;
 	}
+
+	// ── Settings page category nav (modular Settings overhaul) ─────────────────────
+	// Session-only UI state (not persisted), same convention as the sidebar's "More maintenance"
+	// toggle — which category was open last isn't meaningful enough to round-trip to disk.
+	// 0 = Profile, 1 = Appearance, 2 = Library & Data, 3 = Emulators, 4 = Updates.
+	public int SelectedSettingsCategoryIndex
+	{
+		get => _selectedSettingsCategoryIndex;
+		set
+		{
+			if (SetProperty(ref _selectedSettingsCategoryIndex, value, "SelectedSettingsCategoryIndex"))
+			{
+				OnPropertyChanged("IsSettingsProfileCategory");
+				OnPropertyChanged("IsSettingsAppearanceCategory");
+				OnPropertyChanged("IsSettingsLibraryCategory");
+				OnPropertyChanged("IsSettingsEmulatorsCategory");
+				OnPropertyChanged("IsSettingsUpdatesCategory");
+			}
+		}
+	}
+
+	public bool IsSettingsProfileCategory    => SelectedSettingsCategoryIndex == 0;
+	public bool IsSettingsAppearanceCategory => SelectedSettingsCategoryIndex == 1;
+	public bool IsSettingsLibraryCategory    => SelectedSettingsCategoryIndex == 2;
+	public bool IsSettingsEmulatorsCategory  => SelectedSettingsCategoryIndex == 3;
+	public bool IsSettingsUpdatesCategory    => SelectedSettingsCategoryIndex == 4;
 
 	public string VisualEffectIntensityLabel
 	{
@@ -3594,12 +3802,18 @@ public sealed class MainViewModel : ViewModelBase
 		RebuildBigPictureHomeShelves();
 		RebuildBigPictureLibraryShelves();
 		RebuildBigPictureAchievementShelves();
+		RefreshBigPictureEmulationPlatforms();
+		RebuildBigPictureEmulationShelves();
 		OnPropertyChanged("BigPictureHeroGame");
 		OnPropertyChanged("HasBigPictureHeroGame");
 		OnPropertyChanged("BigPictureHeroSummary");
 		OnPropertyChanged("BigPictureHeroContextLabel");
 		OnPropertyChanged("BigPictureSelectedCategorySummary");
 		OnPropertyChanged("BigPictureAchievementSummary");
+		OnPropertyChanged("BigPictureEmulationSummary");
+		OnPropertyChanged(nameof(EmulationRomCount));
+		OnPropertyChanged(nameof(EmulationNeedsCoreCount));
+		OnPropertyChanged(nameof(HasEmulationGamesNeedingCore));
 	}
 
 	private void RefreshBigPictureLibraryCategories()
@@ -3611,6 +3825,71 @@ public sealed class MainViewModel : ViewModelBase
 			BigPictureLibraryCategories.Add(item);
 		}
 		SelectedBigPictureLibraryCategory = BigPictureLibraryCategories.FirstOrDefault((CollectionOption option) => option.Key.Equals(previousKey, StringComparison.OrdinalIgnoreCase)) ?? BigPictureLibraryCategories.FirstOrDefault();
+	}
+
+	/// <summary>A5: whether a ROM title still has no configured emulator — neither a per-game override nor a platform default.</summary>
+	private bool NeedsEmulatorCore(GameEntryViewModel game) => game.IsRom && string.IsNullOrWhiteSpace(game.EmulatorPath) && string.IsNullOrWhiteSpace(_settings.Emulators.Resolve(game.Platform));
+
+	/// <summary>A5: rebuilds the platform tile list for the Cloudscape Emulation tab from the current ROM set.</summary>
+	private void RefreshBigPictureEmulationPlatforms()
+	{
+		string previousKey = SelectedBigPictureEmulationPlatform?.Key;
+		BigPictureEmulationPlatforms.Clear();
+		foreach (CollectionOption item in BuildBigPictureEmulationPlatforms())
+		{
+			BigPictureEmulationPlatforms.Add(item);
+		}
+		SelectedBigPictureEmulationPlatform = BigPictureEmulationPlatforms.FirstOrDefault((CollectionOption option) => option.Key.Equals(previousKey, StringComparison.OrdinalIgnoreCase)) ?? BigPictureEmulationPlatforms.FirstOrDefault();
+	}
+
+	/// <summary>A5: one tile per ROM platform (largest first) plus an "All ROMs" tile up front.</summary>
+	private IEnumerable<CollectionOption> BuildBigPictureEmulationPlatforms()
+	{
+		List<GameEntryViewModel> roms = Games.Where((GameEntryViewModel game) => game.IsRom).ToList();
+		yield return new CollectionOption
+		{
+			Key = "all",
+			Title = "All ROMs",
+			Subtitle = "Every emulated title in your library",
+			Count = roms.Count
+		};
+		foreach (var item in (from game in roms
+			group game by game.Platform into @group
+			orderby @group.Count() descending, @group.Key
+			select @group))
+		{
+			bool hasCore = !string.IsNullOrWhiteSpace(_settings.Emulators.Resolve(item.Key)) || item.Any((GameEntryViewModel game) => !string.IsNullOrWhiteSpace(game.EmulatorPath));
+			yield return new CollectionOption
+			{
+				Key = "platform:" + item.Key,
+				Title = item.Key,
+				Subtitle = hasCore ? "Core configured" : "Needs a core — open Emulation Station",
+				Count = item.Count()
+			};
+		}
+	}
+
+	/// <summary>A5: shelves for the Cloudscape Emulation tab — selected platform, titles needing a core, and recently added ROMs.</summary>
+	private void RebuildBigPictureEmulationShelves()
+	{
+		CollectionOption selectedPlatform = SelectedBigPictureEmulationPlatform;
+		string platformKey = selectedPlatform?.Key ?? "all";
+		IEnumerable<GameEntryViewModel> platformGames = (from game in Games
+			where game.IsRom && (platformKey == "all" || game.Platform.Equals(platformKey.StartsWith("platform:") ? platformKey.Substring("platform:".Length) : platformKey, StringComparison.OrdinalIgnoreCase))
+			orderby game.IsRunning descending, game.LastPlayedOn ?? DateTime.MinValue descending, game.Title
+			select game);
+		ReplaceShelves(BigPictureEmulationShelves, new BigPictureShelfViewModel[3]
+		{
+			CreateShelf(selectedPlatform?.Title ?? "All ROMs", selectedPlatform?.Subtitle ?? "Every emulated title in your library", platformGames),
+			CreateShelf("Needs a core", "ROMs with no emulator resolved yet — set one up in Emulation Station", from game in Games
+				where NeedsEmulatorCore(game)
+				orderby game.Platform, game.Title
+				select game),
+			CreateShelf("Recently added", "Newest ROMs in your library", from game in Games
+				where game.IsRom
+				orderby game.AddedOn descending, game.Title
+				select game)
+		});
 	}
 
 	private IEnumerable<CollectionOption> BuildBigPictureLibraryCategories()
@@ -4023,7 +4302,7 @@ public sealed class MainViewModel : ViewModelBase
 			_achievementPollingSeconds = ((_settings.Steam.PollingIntervalSeconds <= 0) ? 30 : _settings.Steam.PollingIntervalSeconds);
 			_retroAchievementsApiKey = _settings.RetroAchievementsApiKey ?? string.Empty;
 			_retroAchievementsUsername = _settings.RetroAchievementsUsername ?? string.Empty;
-			_appearanceThemeKey = (string.IsNullOrWhiteSpace(_settings.Appearance.ThemePreset) ? "CloudBerry Dark" : _settings.Appearance.ThemePreset);
+			_appearanceThemeKey = (string.IsNullOrWhiteSpace(_settings.Appearance.ThemePreset) ? "Mint Cloud" : _settings.Appearance.ThemePreset);
 			_appearanceDensityKey = (string.IsNullOrWhiteSpace(_settings.Appearance.Density) ? "Comfortable" : _settings.Appearance.Density);
 			_startupView = (string.IsNullOrWhiteSpace(_settings.Appearance.StartupView) ? "CloudBerry" : _settings.Appearance.StartupView);
 			_homeRotationSeconds = ((_settings.Appearance.HomeRotationSeconds < 0) ? 18 : _settings.Appearance.HomeRotationSeconds);
@@ -4039,6 +4318,8 @@ public sealed class MainViewModel : ViewModelBase
 			_libraryViewMode = (string.IsNullOrWhiteSpace(_settings.Appearance.LibraryViewMode) ? "List" : _settings.Appearance.LibraryViewMode);
 			_libraryGridTileSize = (string.IsNullOrWhiteSpace(_settings.Appearance.LibraryGridTileSize) ? "Normal" : _settings.Appearance.LibraryGridTileSize);
 			_sidebarMaintenanceExpanded = _settings.Appearance.SidebarMaintenanceExpanded;
+			_attractModeEnabled = _settings.Appearance.AttractModeEnabled;
+			_attractModeIdleSeconds = _settings.Appearance.AttractModeIdleSeconds <= 0 ? 100 : Math.Clamp(_settings.Appearance.AttractModeIdleSeconds, 20, 600);
 			_settings.Collections ??= new CollectionSettings();
 			UserCollections.Clear();
 			foreach (CloudBerryCollection collection in _settings.Collections.Items)
@@ -4810,13 +5091,15 @@ public sealed class MainViewModel : ViewModelBase
 		foreach ((string Platform, string Glyph) entry in EmulatorPlatformCatalog)
 		{
 			detectedByPlatform.TryGetValue(entry.Platform, out DetectedEmulatorMappingViewModel detected);
+			int gameCount = Games.Count((GameEntryViewModel g) => string.Equals(g.Platform, entry.Platform, StringComparison.OrdinalIgnoreCase));
 			EmulatorPlatformCards.Add(new EmulatorPlatformCardViewModel(
 				this,
 				entry.Platform,
 				entry.Glyph,
 				GetConfiguredMappingForPlatform(entry.Platform),
 				detected?.EmulatorName,
-				detected?.UsesRetroArch ?? false));
+				detected?.UsesRetroArch ?? false,
+				gameCount));
 		}
 
 		RefreshEmulatorStationSummary();
@@ -6065,7 +6348,7 @@ public sealed class MainViewModel : ViewModelBase
 			PresenceLine = "Signed in locally",
 			HighlightTone = InferHighlightTone(AppearanceThemeKey),
 			ShellStyle = InferShellStyle(AppearanceThemeKey),
-			PreferredTheme = (string.IsNullOrWhiteSpace(AppearanceThemeKey) ? "CloudBerry Dark" : AppearanceThemeKey),
+			PreferredTheme = (string.IsNullOrWhiteSpace(AppearanceThemeKey) ? "Mint Cloud" : AppearanceThemeKey),
 			BroadcastPresence = true,
 			CreatedAtUtc = DateTime.UtcNow,
 			LastUsedAtUtc = DateTime.UtcNow
@@ -6568,7 +6851,10 @@ public sealed class MainViewModel : ViewModelBase
 			TheatreStatusMessage = "Cloud's Theatre unlocked.";
 			SchedulePersist();
 		}
-		SelectedPrimaryPage = 4;
+		// A5 fix: this is only ever triggered from Cloudscape's Ctrl+K, so it should navigate
+		// Cloudscape's own page index, not MainWindow's SelectedPrimaryPage (index 4 there is Theatre too,
+		// but that's a coincidence from before this fix — the two indices are independent now).
+		SelectedCloudscapePage = 5;
 	}
 
 	public void EnterTheatreWatchMode()
@@ -6594,7 +6880,13 @@ public sealed class MainViewModel : ViewModelBase
 
 	public void NavigateTheatreAddress()
 	{
-		string text = NormalizeTheatreUrl(TheatreAddressText);
+		string raw = (TheatreAddressText ?? string.Empty).Trim();
+		if (string.IsNullOrWhiteSpace(raw))
+		{
+			TheatreStatusMessage = "Type a site, or a search, first.";
+			return;
+		}
+		string text = LooksLikeUrlOrHost(raw) ? NormalizeTheatreUrl(raw) : BuildTheatreSearchUrl(raw);
 		if (string.IsNullOrWhiteSpace(text))
 		{
 			TheatreStatusMessage = "Enter a host address first.";
@@ -6612,6 +6904,37 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		IsTheatreWatchMode = true;
 		TheatreStatusMessage = "Opened " + text + ".";
+	}
+
+	/// <summary>
+	/// True when the typed text looks like an actual address (has a scheme, contains a dot like
+	/// a real hostname, or is literally "localhost") rather than a search phrase. Anything else —
+	/// multiple words, or a single word with no dot — is treated as something to search for,
+	/// same as a normal browser's address bar does with unrecognized input.
+	/// </summary>
+	private static bool LooksLikeUrlOrHost(string text)
+	{
+		if (text.Contains("://", StringComparison.Ordinal) || text.StartsWith("//", StringComparison.Ordinal))
+		{
+			return true;
+		}
+		if (text.Contains(' '))
+		{
+			return false;
+		}
+		if (text.Contains('.') || string.Equals(text, "localhost", StringComparison.OrdinalIgnoreCase))
+		{
+			return true;
+		}
+		// A lone word with no dot ("github", "cat videos" already excluded above by the space check)
+		// is ambiguous between a search term and a bare intranet hostname; treat it as a search,
+		// since that's what every normal browser's address bar does with unrecognized single words.
+		return false;
+	}
+
+	private static string BuildTheatreSearchUrl(string query)
+	{
+		return "https://www.google.com/search?q=" + Uri.EscapeDataString(query);
 	}
 
 	private static bool IsDirectVideoUrl(string url)
@@ -6728,6 +7051,8 @@ public sealed class MainViewModel : ViewModelBase
 		_settings.Appearance.LibraryViewMode = _libraryViewMode;
 		_settings.Appearance.LibraryGridTileSize = _libraryGridTileSize;
 		_settings.Appearance.SidebarMaintenanceExpanded = _sidebarMaintenanceExpanded;
+		_settings.Appearance.AttractModeEnabled = _attractModeEnabled;
+		_settings.Appearance.AttractModeIdleSeconds = _attractModeIdleSeconds;
 		_settings.Collections.Items = UserCollections.ToList();
 		_settings.Audio.Enabled = AudioEnabled;
 		_settings.Audio.Profile = (string.IsNullOrWhiteSpace(AudioProfile) ? "Subtle" : AudioProfile.Trim());

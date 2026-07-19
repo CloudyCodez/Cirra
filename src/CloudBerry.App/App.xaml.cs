@@ -1,4 +1,6 @@
 using System.IO;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Windows;
 using System.Diagnostics;
 using System.Windows.Interop;
@@ -204,6 +206,25 @@ public partial class App : Application
         if (e.Exception is InvalidOperationException &&
             (e.Exception.Message.Contains("name cannot be found in the name scope", StringComparison.OrdinalIgnoreCase) ||
              e.Exception.Message.Contains("sealed or frozen", StringComparison.OrdinalIgnoreCase)))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        // Defensive floor for transient/network exceptions. These are exactly the class of
+        // failure unattended idle-time background work throws (the social presence heartbeat,
+        // achievement polling, metadata refresh) when Wi-Fi drops, DNS hiccups, or Windows
+        // suspends/changes network state during a long idle stretch - never something a normal
+        // user action caused, and never something that leaves app state corrupted. A desktop
+        // game library shouldn't crash the whole session over a dropped network call nobody
+        // was watching. Genuine state-corruption bugs still fall through and crash below, same
+        // as before - this only widens the safety net for exception types that are inherently
+        // recoverable-by-nature, not a blanket catch-all.
+        if (e.Exception is HttpRequestException ||
+            e.Exception is SocketException ||
+            e.Exception is TaskCanceledException ||
+            e.Exception is OperationCanceledException ||
+            e.Exception is System.Net.WebException)
         {
             e.Handled = true;
         }

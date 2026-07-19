@@ -650,13 +650,14 @@
                         Background="{DynamicResource ThemePanelFillSoftBrush}"
                         BorderBrush="{DynamicResource GlassPanelBorderBrush}" BorderThickness="1"
                         CornerRadius="{DynamicResource ThemeCornerRadiusPanel}">
-                    <ListBox Style="{StaticResource BigPictureNavListStyle}" SelectedIndex="{Binding SelectedPrimaryPage}">
+                    <ListBox Style="{StaticResource BigPictureNavListStyle}" SelectedIndex="{Binding SelectedCloudscapePage}">
                         <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
                         <ListBox.ItemContainerStyle><StaticResource ResourceKey="BigPictureNavItemStyle"/></ListBox.ItemContainerStyle>
                         <ListBoxItem><TextBlock Text="Home" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/></ListBoxItem>
                         <ListBoxItem><TextBlock Text="Library" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/></ListBoxItem>
                         <ListBoxItem><TextBlock Text="Achievements" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/></ListBoxItem>
                         <ListBoxItem><TextBlock Text="Settings" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/></ListBoxItem>
+                        <ListBoxItem><TextBlock Text="Emulation" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/></ListBoxItem>
                         <ListBoxItem Visibility="{Binding CloudTheatreNavVisibility}">
                             <TextBlock Text="Cloud's Theatre" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
                         </ListBoxItem>
@@ -859,7 +860,7 @@
 
             <!-- ── Page content ── -->
             <TabControl x:Name="CloudscapePageShell" Grid.Row="2"
-                        SelectedIndex="{Binding SelectedPrimaryPage}"
+                        SelectedIndex="{Binding SelectedCloudscapePage}"
                         Style="{StaticResource InvisibleTabControlStyle}"
                         Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <TabControl.RenderTransform><TranslateTransform x:Name="CloudscapePageLift" Y="16"/></TabControl.RenderTransform>
@@ -1458,6 +1459,77 @@
                     </ScrollViewer>
                 </TabItem>
 
+                <!-- Emulation Station -->
+                <TabItem>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Background="{DynamicResource ThemePanelFillSoftBrush}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusPanel}" Padding="22,16" Margin="0,0,0,16">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Emulation Station" FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                                                   FontSize="22" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        <TextBlock Margin="0,4,0,12" Text="{Binding BigPictureEmulationSummary}"
+                                                   FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="Configure Emulators" Click="OpenEmulatorSettingsClick"
+                                            Style="{StaticResource SecondaryButtonStyle}" Padding="14,7" FontSize="12"
+                                            VerticalAlignment="Top"/>
+                                </Grid>
+                                <ListBox ItemsSource="{Binding BigPictureEmulationPlatforms}"
+                                         Style="{StaticResource BigPictureNavListStyle}"
+                                         SelectedItem="{Binding SelectedBigPictureEmulationPlatform}">
+                                    <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
+                                    <ListBox.ItemContainerStyle><StaticResource ResourceKey="BigPictureCategoryItemStyle"/></ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <Rectangle HorizontalAlignment="Right" Width="68" Fill="{DynamicResource ThemeSweepBrush}" Opacity="0.20" IsHitTestVisible="False"/>
+                                                <StackPanel Grid.RowSpan="2">
+                                                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Margin="0,3,0,0" Text="{Binding Subtitle}" FontSize="11"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                                <TextBlock Grid.Row="1" Text="{Binding Count, StringFormat={}{0} titles}"
+                                                           FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <!-- Quick stat row -->
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <TextBlock FontSize="11.5" Foreground="{DynamicResource TextMutedBrush}">
+                                        <Run Text="{Binding EmulationRomCount, Mode=OneWay}"/>
+                                        <Run Text=" ROM(s) total"/>
+                                    </TextBlock>
+                                    <TextBlock Margin="16,0,0,0" FontSize="11.5" Foreground="{DynamicResource GoldBrush}"
+                                               Visibility="{Binding HasEmulationGamesNeedingCore, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Run Text="{Binding EmulationNeedsCoreCount, Mode=OneWay}"/>
+                                        <Run Text=" need a core configured"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding BigPictureEmulationShelves}" ItemTemplate="{StaticResource BigPictureShelfTemplate}"/>
+                        </ScrollViewer>
+                    </Grid>
+                </TabItem>
+
                 <!-- Cloud's Theatre -->
                 <TabItem Visibility="{Binding CloudTheatreNavVisibility}">
                     <Grid>
@@ -1905,6 +1977,72 @@
                             Content="{Binding CloudscapeDetailGame.FavoriteGlyph}"/>
                 </StackPanel>
             </Grid>
+        </Grid>
+
+        <!-- Attract Mode: Xbox/PS5-dashboard-style ambient full-screen showcase, engaged after
+             extended idle on Cloudscape's Home tab. Two Ken-Burns-animated images crossfade
+             through a curated rotation of the library's best-looking games, pulling every
+             background/banner/screenshot IGDB gave us so a single game can hold the screen
+             across several images before advancing. Any input exits instantly (see
+             BigPictureWindow.xaml.cs ExitAttractMode). -->
+        <Grid x:Name="AttractModeOverlay"
+              Visibility="Collapsed"
+              Opacity="0"
+              Panel.ZIndex="95"
+              Background="Black">
+            <Image x:Name="AttractBgA" Stretch="UniformToFill" Opacity="1" CacheMode="BitmapCache"
+                   RenderOptions.BitmapScalingMode="HighQuality" RenderTransformOrigin="0.5,0.5">
+                <Image.RenderTransform>
+                    <ScaleTransform x:Name="AttractBgAScale" ScaleX="1" ScaleY="1"/>
+                </Image.RenderTransform>
+            </Image>
+            <Image x:Name="AttractBgB" Stretch="UniformToFill" Opacity="0" CacheMode="BitmapCache"
+                   RenderOptions.BitmapScalingMode="HighQuality" RenderTransformOrigin="0.5,0.5">
+                <Image.RenderTransform>
+                    <ScaleTransform x:Name="AttractBgBScale" ScaleX="1" ScaleY="1"/>
+                </Image.RenderTransform>
+            </Image>
+            <!-- Atmospheric scrim so title text stays readable over any artwork -->
+            <Rectangle IsHitTestVisible="False">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Offset="0" Color="#7A05070A"/>
+                        <GradientStop Offset="0.42" Color="#2005070A"/>
+                        <GradientStop Offset="0.7" Color="#4805070A"/>
+                        <GradientStop Offset="1" Color="#EE05070A"/>
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+
+            <!-- Title reveal, bottom-left -->
+            <StackPanel x:Name="AttractTitleBlock" VerticalAlignment="Bottom" HorizontalAlignment="Left"
+                        Margin="56,0,0,72" Opacity="0" IsHitTestVisible="False" MaxWidth="900">
+                <StackPanel.RenderTransform><TranslateTransform x:Name="AttractTitleLift" Y="26"/></StackPanel.RenderTransform>
+                <TextBlock Text="NOW SHOWCASING" FontSize="12" FontWeight="Bold"
+                           Foreground="{DynamicResource CloudBrush}" Opacity="0.9"
+                           Margin="2,0,0,10"/>
+                <TextBlock x:Name="AttractTitleText" FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                           FontSize="56" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="AttractSubtitleText" FontSize="15" Margin="3,10,0,0"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+            </StackPanel>
+
+            <!-- Corner badge -->
+            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,40,56,0"
+                    Padding="12,6" CornerRadius="{DynamicResource ThemeCornerRadiusPill}"
+                    Background="{DynamicResource ThemePillFillBrush}"
+                    BorderBrush="{DynamicResource ThemePillBorderBrush}" BorderThickness="1"
+                    IsHitTestVisible="False">
+                <TextBlock Text="ATTRACT MODE" FontSize="11" FontWeight="Bold"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+            </Border>
+
+            <!-- Wake hint, fades in a couple seconds after the takeover so it never fights the title reveal -->
+            <TextBlock x:Name="AttractWakeHint" Text="Press any key or move to browse"
+                       FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                       HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                       Margin="0,0,56,72" Opacity="0" IsHitTestVisible="False"/>
         </Grid>
 
         <!-- Launch handoff overlay: fills screen and fades to black on game launch -->

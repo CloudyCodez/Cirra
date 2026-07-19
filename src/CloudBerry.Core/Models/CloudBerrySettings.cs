@@ -169,6 +169,17 @@ public sealed class AppearanceSettings
     /// is expanded. Defaults to collapsed so a fresh sidebar stays short.
     /// </summary>
     public bool SidebarMaintenanceExpanded { get; set; } = false;
+
+    /// <summary>
+    /// Xbox/PS5-dashboard-style ambient showcase: after <see cref="AttractModeIdleSeconds"/> of no
+    /// input while sitting on Cloudscape's Home tab, CloudBerry takes over the full screen with a
+    /// slow Ken-Burns cycle through the library's best-looking games (favorites, most played,
+    /// recently added) using their IGDB artwork/screenshots. Any input exits instantly.
+    /// </summary>
+    public bool AttractModeEnabled { get; set; } = true;
+
+    /// <summary>Seconds of idle time on Cloudscape's Home tab before Attract Mode engages.</summary>
+    public int AttractModeIdleSeconds { get; set; } = 100;
 }
 
 /// <summary>

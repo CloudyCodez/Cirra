@@ -15,6 +15,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CloudBerry.App.Services;
 using CloudBerry.App.ViewModels;
+using CloudBerry.Core.Services;
 
 namespace CloudBerry.App;
 
@@ -22,6 +23,7 @@ public partial class BigPictureWindow : Window
 {
     private const double ShelfDragThreshold = 22;
     private readonly SoundDesignService _sound;
+    private readonly AppDiagnostics _diagnostics = new();
     private readonly DispatcherTimer _trailerPreviewTimer;
     private Point? _shelfDragStartPoint;
     private double _shelfDragStartOffset;
@@ -48,11 +50,28 @@ public partial class BigPictureWindow : Window
     private ScrollViewer? _lastVerticalScrollViewer;
     // Hero auto-advance
     private DispatcherTimer? _heroAdvanceTimer;
+    // Attract Mode: ambient full-screen showcase after extended idle on Home. Uses a simple
+    // polling timer (fixed 5s tick, elapsed-seconds counter) rather than recreating a DispatcherTimer
+    // whenever the user changes the idle-seconds setting.
+    private DispatcherTimer? _attractIdlePollTimer;
+    private int _attractIdleElapsedSeconds;
+    private DispatcherTimer? _attractCycleTimer;
+    private IReadOnlyList<GameEntryViewModel> _attractRotation = Array.Empty<GameEntryViewModel>();
+    private int _attractRotationIndex;
+    private IReadOnlyList<string> _attractImages = Array.Empty<string>();
+    private int _attractImageIndex;
+    private bool _attractUsingLayerA = true;
     // Live session timer — refreshes LiveSessionLabel on the running game every 30s
     private DispatcherTimer? _liveSessionTimer;
     // Cursor auto-hide after inactivity
     private DispatcherTimer? _cursorHideTimer;
     private bool _cursorHidden;
+    // Attract Mode idle-jitter filter — WPF MouseMove fires on sub-pixel deltas (hand resting on
+    // the mouse, trackpad noise), which previously reset the idle clock every ~16ms and made the
+    // configured idle threshold effectively unreachable. Only movement past this distance counts
+    // as "real" input for attract-mode purposes.
+    private Point? _lastAttractMouseCheckPoint;
+    private const double AttractMouseJitterThreshold = 6.0; // px
     // Gamepad navigation
     private DispatcherTimer? _gamepadTimer;
     private DispatcherTimer? _homeScrollTimer;
@@ -70,7 +89,7 @@ public partial class BigPictureWindow : Window
         SourceInitialized += (_, _) => ApplyWorkAreaBounds();
         StateChanged += (_, _) => ApplyWorkAreaBounds();
         Activated += (_, _) => ApplyWindowPerformanceState(isFocused: true);
-        Deactivated += (_, _) => { ApplyWindowPerformanceState(isFocused: false); StopTrailerPreview(); };
+        Deactivated += (_, _) => { ApplyWindowPerformanceState(isFocused: false); StopTrailerPreview(); ExitAttractMode(); };
         _sound = new SoundDesignService(() => ViewModel.AudioEnabled, () => ViewModel.AudioProfile, () => ViewModel.AppearanceThemeKey);
         _trailerPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
         _trailerPreviewTimer.Tick += TrailerPreviewTimerTick;
@@ -84,6 +103,7 @@ public partial class BigPictureWindow : Window
         StartTrailerServer();
         StartHeroAdvanceTimer();
         StartLiveSessionTimer();
+        StartAttractIdlePollTimer();
         // Cursor hide: hide cursor after 3 seconds of inactivity in Cloudscape.
         // The timer is NOT started here — it starts in OnActivated, so a pre-warmed
         // window that is never shown never hides the cursor in CloudBerry.
@@ -362,7 +382,7 @@ public partial class BigPictureWindow : Window
         if (e.PropertyName is nameof(MainViewModel.TheatreBrowserUrl))
             NavigateCloudTheatreBrowser();
 
-        if (e.PropertyName is nameof(MainViewModel.SelectedPrimaryPage))
+        if (e.PropertyName is nameof(MainViewModel.SelectedCloudscapePage))
             OnPageChanged();
 
         // Now Playing bar — show/hide when a session starts or ends.
@@ -381,10 +401,10 @@ public partial class BigPictureWindow : Window
         StopTrailerPreview();
 
         // Track direction for tab slide transition (used by UI if wired).
-        int newTab = ViewModel.SelectedPrimaryPage;
+        int newTab = ViewModel.SelectedCloudscapePage;
         _lastCloudscapeTabIndex = newTab;
 
-        var onTheatre = ViewModel.SelectedPrimaryPage == 4 && ViewModel.IsCloudTheatreUnlocked;
+        var onTheatre = ViewModel.SelectedCloudscapePage == 5 && ViewModel.IsCloudTheatreUnlocked;
         // Hero panel: hidden on Theatre tab, visible everywhere else
         CloudscapeHeroShell.Visibility = onTheatre ? Visibility.Collapsed : Visibility.Visible;
         // Nav bar: restore visibility when leaving Theatre (watch mode may have hidden it)
@@ -397,7 +417,7 @@ public partial class BigPictureWindow : Window
         }
 
         // Animate shelves in when landing on the Home tab.
-        if (ViewModel.SelectedPrimaryPage == 0)
+        if (ViewModel.SelectedCloudscapePage == 0)
         {
             // Defer until layout is complete so ItemContainerGenerator is ready.
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(AnimateShelvesFadeIn));
@@ -604,7 +624,7 @@ p {
         await RunUiTaskAsync(
             () => ViewModel.ScanFolderAsync(dialog.FolderName),
             "CloudBerry couldn't complete the folder scan.");
-        ViewModel.SelectedPrimaryPage = 1;
+        ViewModel.SelectedCloudscapePage = 1;
     }
 
     private async void BigPictureFillMetadataClick(object sender, RoutedEventArgs e)
@@ -619,6 +639,14 @@ p {
         await RunUiTaskAsync(
             () => ViewModel.SyncGamesMissingAchievementsAsync(),
             "CloudBerry couldn't sync missing achievements.");
+    }
+
+    // ── Emulation Station: jump to the Settings tab within Cloudscape (index 3) instead of
+    // closing the window — mirrors how DetailAchievementsClick jumps tabs without leaving Big Picture.
+    private void OpenEmulatorSettingsClick(object sender, RoutedEventArgs e)
+    {
+        ViewModel.SelectedCloudscapePage = 3;
+        _sound.PlaySoftClick();
     }
 
     private void OpenDesktopManagerClick(object sender, RoutedEventArgs e)
@@ -808,11 +836,51 @@ p {
     /// directly into that frame's document — bypassing the cross-origin wall — to
     /// kill every YouTube overlay element before they can ever render.
     /// </summary>
+    private static string BuildTrailerShieldCss() =>
+        ".ytp-chrome-top,.ytp-chrome-bottom,.ytp-title,.ytp-title-text,.ytp-title-expanded," +
+        ".ytp-watermark,.ytp-pause-overlay,.ytp-bezel,.ytp-bezel-text," +
+        ".ytp-cued-thumbnail-overlay,.ytp-ce-element,.ytp-endscreen-content," +
+        ".ytp-gradient-top,.ytp-gradient-bottom,.ytp-contextmenu," +
+        ".ytp-content-rating,.ytp-feature-list-container," +
+        ".ytp-cards-teaser,.ytp-iv-video-content" +
+        "{display:none!important;opacity:0!important;visibility:hidden!important}" +
+        "#movie_player,.html5-video-player,.ytp-large-play-button" +
+        "{pointer-events:none!important}";
+
+    /// <summary>
+    /// Registers a NavigationCompleted-based shield on the trailer browser's own top-level
+    /// document — the safety net for the raw-embedUrl fallback path in ShowCardTrailerPreview
+    /// (used when the local trailer proxy server isn't listening). Unlike the FrameCreated hook,
+    /// this targets the top document directly, since in the fallback case there is no wrapper
+    /// page/child iframe for FrameCreated to ever fire on — the WebView2's main navigation IS
+    /// the YouTube embed page. Harmless no-op on the proxy page (its own top document has no
+    /// ytp-*/movie_player elements to match).
+    /// </summary>
+    private void RegisterTrailerNavigationShieldHook()
+    {
+        if (CardTrailerPreviewBrowser?.CoreWebView2 == null) return;
+        CardTrailerPreviewBrowser.CoreWebView2.NavigationCompleted += async (_, args) =>
+        {
+            if (!args.IsSuccess || CardTrailerPreviewBrowser.CoreWebView2 == null) return;
+            try
+            {
+                await CardTrailerPreviewBrowser.CoreWebView2.ExecuteScriptAsync(
+                    "(function(){" +
+                    "var s=document.createElement('style');" +
+                    "s.textContent='" + BuildTrailerShieldCss() + "';" +
+                    "(document.head||document.documentElement).appendChild(s)" +
+                    "})()");
+            }
+            catch { /* page may be mid-teardown; safe to ignore */ }
+        };
+    }
+
     private void RegisterTrailerFrameHook()
     {
         if (_trailerFrameHookRegistered || CardTrailerPreviewBrowser?.CoreWebView2 == null) return;
         _trailerFrameHookRegistered = true;
         CardTrailerPreviewBrowser.CoreWebView2.FrameCreated += OnTrailerChildFrameCreated;
+        RegisterTrailerNavigationShieldHook();
     }
 
     private static void OnTrailerChildFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs e)
@@ -1013,7 +1081,7 @@ p {
             ViewModel.SelectedBigPictureLibraryCategory =
                 ViewModel.BigPictureLibraryCategories.FirstOrDefault();
 
-        ViewModel.SelectedPrimaryPage = 1; // jump to Library tab
+        ViewModel.SelectedCloudscapePage = 1; // jump to Library tab
         _sound.PlaySoftClick();
     }
 
@@ -1377,11 +1445,18 @@ p {
 
     private async void WindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (ViewModel.IsAttractModeActive)
+        {
+            ExitAttractMode();
+            e.Handled = true;
+            return;
+        }
+        ResetAttractIdleTimer();
         // ── Hero shelf arrow navigation ───────────────────────────────────────
         // Left/Right arrow keys when on the Home tab move hero selection through
         // the shelf, giving full couch-mode keyboard nav without needing a mouse.
         if (e.Key is Key.Left or Key.Right &&
-            ViewModel.SelectedPrimaryPage == 0 &&
+            ViewModel.SelectedCloudscapePage == 0 &&
             e.OriginalSource is not TextBox)
         {
             var games = ViewModel.Games;
@@ -1402,7 +1477,7 @@ p {
                 }
             }
         }
-        if (e.Key == Key.K && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && ViewModel.SelectedPrimaryPage == 3)
+        if (e.Key == Key.K && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && ViewModel.SelectedCloudscapePage == 3)
         {
             ViewModel.UnlockCloudTheatre();
             _sound.PlaySoftClick();
@@ -1425,7 +1500,7 @@ p {
                 return;
             case Key.F11:
                 // On Theatre tab: F11 toggles watch mode (full player) instead of closing
-                if (ViewModel.SelectedPrimaryPage == 4 && ViewModel.IsCloudTheatreUnlocked)
+                if (ViewModel.SelectedCloudscapePage == 5 && ViewModel.IsCloudTheatreUnlocked)
                 {
                     if (ViewModel.IsTheatreWatchMode)
                     {
@@ -1443,29 +1518,35 @@ p {
                 return;
             case Key.D1:
             case Key.NumPad1:
-                ViewModel.SelectedPrimaryPage = 0;
+                ViewModel.SelectedCloudscapePage = 0;
                 e.Handled = true;
                 return;
             case Key.D2:
             case Key.NumPad2:
-                ViewModel.SelectedPrimaryPage = 1;
+                ViewModel.SelectedCloudscapePage = 1;
                 e.Handled = true;
                 return;
             case Key.D3:
             case Key.NumPad3:
-                ViewModel.SelectedPrimaryPage = 2;
+                ViewModel.SelectedCloudscapePage = 2;
                 e.Handled = true;
                 return;
             case Key.D4:
             case Key.NumPad4:
-                ViewModel.SelectedPrimaryPage = 3;
+                ViewModel.SelectedCloudscapePage = 3;
                 e.Handled = true;
                 return;
             case Key.D5:
             case Key.NumPad5:
+                // A5: Emulation Station tab — always accessible, not gated like Theatre.
+                ViewModel.SelectedCloudscapePage = 4;
+                e.Handled = true;
+                return;
+            case Key.D6:
+            case Key.NumPad6:
                 if (ViewModel.IsCloudTheatreUnlocked)
                 {
-                    ViewModel.SelectedPrimaryPage = 4;
+                    ViewModel.SelectedCloudscapePage = 5;
                     e.Handled = true;
                     return;
                 }
@@ -1600,6 +1681,26 @@ p {
     private void OnBigPictureMouseMove(object sender, MouseEventArgs e)
     {
         ShowCursor();
+        if (ViewModel.IsAttractModeActive)
+        {
+            ExitAttractMode();
+            _lastAttractMouseCheckPoint = e.GetPosition(this);
+            return;
+        }
+
+        // Filter out mouse jitter — only a real, deliberate movement resets the idle clock.
+        var point = e.GetPosition(this);
+        if (_lastAttractMouseCheckPoint is { } last)
+        {
+            var dx = point.X - last.X;
+            var dy = point.Y - last.Y;
+            if ((dx * dx) + (dy * dy) < AttractMouseJitterThreshold * AttractMouseJitterThreshold)
+            {
+                return;
+            }
+        }
+        _lastAttractMouseCheckPoint = point;
+        ResetAttractIdleTimer();
     }
 
     private void ShowCursor()
@@ -1611,6 +1712,231 @@ p {
         }
         _cursorHideTimer?.Stop();
         _cursorHideTimer?.Start();
+    }
+
+    // ── Attract Mode engine ─────────────────────────────────────────────────
+    // Idle-detection poll (5s tick, elapsed-seconds counter) engages a full-screen ambient
+    // showcase after AttractModeIdleSeconds of no input while idling on Cloudscape's Home tab.
+    // Any real input (mouse move, key down, gamepad — see the three ExitAttractMode() call
+    // sites already wired above) exits instantly back to the normal shell.
+
+    private void StartAttractIdlePollTimer()
+    {
+        _attractIdlePollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _attractIdlePollTimer.Tick += (_, _) =>
+        {
+            try
+            {
+                // Never engage while effects are disabled, already active, off the Home tab,
+                // a game is running, or the detail overlay is open — attract mode should only
+                // ever take over an idle, empty-handed Home screen.
+                if (!ViewModel.AttractModeEnabled || ViewModel.IsAttractModeActive ||
+                    ViewModel.SelectedCloudscapePage != 0 || ViewModel.IsRunning || _isDetailOpen)
+                {
+                    return;
+                }
+                _attractIdleElapsedSeconds += 5;
+                if (_attractIdleElapsedSeconds >= ViewModel.AttractModeIdleSeconds)
+                {
+                    EnterAttractMode();
+                }
+            }
+            catch (Exception ex)
+            {
+                _diagnostics.WriteException("attract-idle-poll", ex);
+            }
+        };
+        _attractIdlePollTimer.Start();
+    }
+
+    /// <summary>Called from every real-input entry point (mouse move, key down, gamepad press) to keep the idle clock from tripping while the user is active.</summary>
+    private void ResetAttractIdleTimer()
+    {
+        _attractIdleElapsedSeconds = 0;
+    }
+
+    private void EnterAttractMode()
+    {
+        if (ViewModel.IsAttractModeActive) return;
+        try
+        {
+            _attractRotation = ViewModel.BuildAttractModeRotation();
+            if (_attractRotation.Count == 0)
+            {
+                // Nothing worth showcasing yet (fresh install, no art) — just keep waiting.
+                ResetAttractIdleTimer();
+                return;
+            }
+
+            _attractRotationIndex = 0;
+            var game = _attractRotation[0];
+            ViewModel.AttractModeGame = game;
+            _attractImages = MainViewModel.BuildAttractShowcaseImages(game);
+            _attractImageIndex = 0;
+            _attractUsingLayerA = true;
+
+            ViewModel.IsAttractModeActive = true;
+
+            LoadAttractImageAsync(AttractBgA, _attractImages.Count > 0 ? _attractImages[0] : null);
+            AttractBgA.Opacity = 1;
+            AttractBgB.Opacity = 0;
+            StartKenBurns(AttractBgAScale);
+
+            AttractTitleText.Text = game.Title;
+            AttractSubtitleText.Text = ViewModel.AttractModeContextLabel;
+            AttractTitleBlock.Opacity = 0;
+            AttractWakeHint.Opacity = 0;
+            AttractModeOverlay.Visibility = Visibility.Visible;
+
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            AttractModeOverlay.BeginAnimation(UIElement.OpacityProperty,
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(700)) { EasingFunction = ease });
+            AttractTitleBlock.BeginAnimation(UIElement.OpacityProperty,
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(600)) { BeginTime = TimeSpan.FromMilliseconds(300), EasingFunction = ease });
+            AttractTitleLift.BeginAnimation(TranslateTransform.YProperty,
+                new DoubleAnimation(26, 0, TimeSpan.FromMilliseconds(600)) { BeginTime = TimeSpan.FromMilliseconds(300), EasingFunction = ease });
+            AttractWakeHint.BeginAnimation(UIElement.OpacityProperty,
+                new DoubleAnimation(0, 0.8, TimeSpan.FromMilliseconds(600)) { BeginTime = TimeSpan.FromSeconds(2) });
+
+            _attractCycleTimer?.Stop();
+            _attractCycleTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(9) };
+            _attractCycleTimer.Tick += (_, _) => AdvanceAttractMode();
+            _attractCycleTimer.Start();
+
+            _sound.PlaySoftClick();
+        }
+        catch (Exception ex)
+        {
+            _diagnostics.WriteException("attract-enter", ex);
+            ExitAttractMode();
+        }
+    }
+
+    /// <summary>Advances to the next showcase image; once a game's images are exhausted, moves to the next game in the curated rotation.</summary>
+    private void AdvanceAttractMode()
+    {
+        try
+        {
+            if (!ViewModel.IsAttractModeActive) return;
+
+            _attractImageIndex++;
+            if (_attractImageIndex >= _attractImages.Count)
+            {
+                _attractRotationIndex = _attractRotation.Count > 0
+                    ? (_attractRotationIndex + 1) % _attractRotation.Count
+                    : 0;
+                var game = _attractRotation.Count > 0 ? _attractRotation[_attractRotationIndex] : null;
+                ViewModel.AttractModeGame = game;
+                _attractImages = MainViewModel.BuildAttractShowcaseImages(game);
+                _attractImageIndex = 0;
+
+                AttractTitleText.Text = game?.Title ?? "CloudBerry";
+                AttractSubtitleText.Text = ViewModel.AttractModeContextLabel;
+            }
+
+            var nextPath = _attractImages.Count > 0 ? _attractImages[_attractImageIndex] : null;
+            CrossfadeAttractImage(nextPath);
+        }
+        catch (Exception ex)
+        {
+            _diagnostics.WriteException("attract-advance", ex);
+        }
+    }
+
+    private void CrossfadeAttractImage(string? path)
+    {
+        var incoming = _attractUsingLayerA ? AttractBgB : AttractBgA;
+        var outgoing = _attractUsingLayerA ? AttractBgA : AttractBgB;
+        var incomingScale = _attractUsingLayerA ? AttractBgBScale : AttractBgAScale;
+        _attractUsingLayerA = !_attractUsingLayerA;
+
+        LoadAttractImageAsync(incoming, path);
+        StartKenBurns(incomingScale);
+
+        var dur = TimeSpan.FromMilliseconds(1200);
+        var ease = new QuarticEase { EasingMode = EasingMode.EaseOut };
+        incoming.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, dur) { EasingFunction = ease });
+        outgoing.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, 0, dur) { EasingFunction = ease });
+
+        // Title text crossfades on the same beat as the image, rather than snapping —
+        // avoids a jarring title swap mid-image-fade when the game itself changes.
+        var titleFadeOut = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(260));
+        titleFadeOut.Completed += (_, _) =>
+        {
+            AttractTitleBlock.BeginAnimation(UIElement.OpacityProperty,
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(420)) { EasingFunction = ease });
+        };
+        AttractTitleBlock.BeginAnimation(UIElement.OpacityProperty, titleFadeOut);
+    }
+
+    /// <summary>Slow, subtle zoom (Ken Burns) so a static showcase image never reads as a dead screenshot.</summary>
+    private static void StartKenBurns(ScaleTransform scale)
+    {
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        scale.ScaleX = 1.0;
+        scale.ScaleY = 1.0;
+        var dur = TimeSpan.FromSeconds(11);
+        var ease = new SineEase { EasingMode = EasingMode.EaseInOut };
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, 1.08, dur) { EasingFunction = ease });
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, 1.08, dur) { EasingFunction = ease });
+    }
+
+    /// <summary>Off-thread image load mirroring LoadDetailBgAsync's safety pattern — a bad/missing path never crashes the dispatcher, it just leaves the layer blank.</summary>
+    private async void LoadAttractImageAsync(System.Windows.Controls.Image target, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) { target.Source = null; return; }
+        BitmapImage? bmp = null;
+        try
+        {
+            bmp = await Task.Run(() =>
+            {
+                var img = new BitmapImage();
+                img.BeginInit();
+                img.UriSource = path.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                    ? new Uri(path)
+                    : new Uri(path, UriKind.RelativeOrAbsolute);
+                img.DecodePixelWidth = 1920;
+                img.CacheOption = BitmapCacheOption.OnLoad;
+                img.EndInit();
+                img.Freeze();
+                return img;
+            });
+        }
+        catch { /* bad path, unsupported format, or network error — leave source null */ }
+
+        // Attract mode may have been exited mid-load; only apply if still active.
+        if (ViewModel.IsAttractModeActive)
+            target.Source = bmp;
+    }
+
+    private void ExitAttractMode()
+    {
+        ResetAttractIdleTimer();
+        if (!ViewModel.IsAttractModeActive) return;
+        try
+        {
+            _attractCycleTimer?.Stop();
+            ViewModel.IsAttractModeActive = false;
+
+            var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
+            var fadeOut = new DoubleAnimation(AttractModeOverlay.Opacity, 0, TimeSpan.FromMilliseconds(320)) { EasingFunction = ease };
+            fadeOut.Completed += (_, _) =>
+            {
+                AttractModeOverlay.Visibility = Visibility.Collapsed;
+                AttractBgA.Source = null;
+                AttractBgB.Source = null;
+            };
+            AttractModeOverlay.BeginAnimation(UIElement.OpacityProperty, fadeOut);
+            AttractTitleBlock.BeginAnimation(UIElement.OpacityProperty, null);
+            AttractTitleBlock.Opacity = 0;
+            AttractWakeHint.BeginAnimation(UIElement.OpacityProperty, null);
+            AttractWakeHint.Opacity = 0;
+        }
+        catch (Exception ex)
+        {
+            _diagnostics.WriteException("attract-exit", ex);
+        }
     }
 
     /// <summary>
@@ -1942,13 +2268,32 @@ p {
         _heroAdvanceTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
         _heroAdvanceTimer.Tick += (_, _) =>
         {
-            if (ViewModel.SelectedPrimaryPage != 0 || ViewModel.Games.Count < 2)
-                return;
-            var games = ViewModel.Games;
-            var current = ViewModel.BigPictureHeroGame;
-            var idx = current != null ? games.IndexOf(current) : -1;
-            var next = games[(idx + 1) % games.Count];
-            ViewModel.SelectedGame = next;
+            // Fires unattended every 12s while idling on Cloudscape's Home tab - the only
+            // code running at that moment. Previously indexed straight into ViewModel.Games
+            // with no snapshot and no try/catch; any concurrent library mutation (a scan or
+            // import finishing, a game being removed) landing between the Count check and
+            // the index below had nowhere safe to land - App.OnDispatcherUnhandledException
+            // only whitelists two specific InvalidOperationException messages, so anything
+            // else here would take the whole app down with no user action to correlate it to.
+            try
+            {
+                if (ViewModel.SelectedCloudscapePage != 0)
+                    return;
+                var games = ViewModel.Games;
+                var count = games.Count;
+                if (count < 2)
+                    return;
+                var current = ViewModel.BigPictureHeroGame;
+                var idx = current != null ? games.IndexOf(current) : -1;
+                if (idx < -1 || idx >= count)
+                    idx = -1;
+                var next = games[(idx + 1) % count];
+                ViewModel.SelectedGame = next;
+            }
+            catch (Exception ex)
+            {
+                _diagnostics.WriteException("hero-advance-timer", ex);
+            }
         };
         _heroAdvanceTimer.Start();
     }
@@ -1957,6 +2302,7 @@ p {
     {
         _heroAdvanceTimer?.Stop();
         _heroAdvanceTimer?.Start();
+        ResetAttractIdleTimer();
     }
 
     private void StartLiveSessionTimer()
@@ -1967,8 +2313,17 @@ p {
             // Tick every 30s and refresh LiveSessionLabel on all running games.
             // This keeps the hero "Playing — X min" counter current without
             // requiring GameEntryViewModel to hold its own timer.
-            foreach (var game in ViewModel.Games.Where(g => g.IsRunning))
-                game.RefreshLiveSessionLabel();
+            // Also fires unattended while idling - guarded for the same reason as
+            // StartHeroAdvanceTimer above (see its comment).
+            try
+            {
+                foreach (var game in ViewModel.Games.Where(g => g.IsRunning).ToList())
+                    game.RefreshLiveSessionLabel();
+            }
+            catch (Exception ex)
+            {
+                _diagnostics.WriteException("live-session-timer", ex);
+            }
         };
         _liveSessionTimer.Start();
     }
@@ -2231,7 +2586,7 @@ p {
         CloseDetailOverlay();
         // Stay in Cloudscape — jump directly to the Achievements tab with this game selected.
         ViewModel.SelectedGame = game;
-        ViewModel.SelectedPrimaryPage = 2; // Achievements tab in Cloudscape nav
+        ViewModel.SelectedCloudscapePage = 2; // Achievements tab in Cloudscape nav
         _sound.PlayMenuOpen();
     }
 
@@ -2362,9 +2717,22 @@ p {
     private ushort _prevGamepadButtons = 0;
     private int    _gamepadStickCooldown = 0; // frames until next stick repeat fires
 
+    // Adaptive polling backoff: XInputGetState is a native interop call fired every tick.
+    // At a constant 60Hz for the entire Cloudscape session that's real, constant main-thread
+    // work competing with the VFX render budget (ThemeEffectLayer, shelf momentum, hero
+    // crossfades) whether or not anyone has a controller plugged in. Full 16ms/60Hz responsiveness
+    // only matters once a controller is actually connected; while none is found we back off to a
+    // much slower interval (controller *discovery* being 500ms-1s slower than instant is
+    // imperceptible - nobody is holding a stick waiting for the app to notice it doesn't exist yet).
+    private const int GamepadFastIntervalMs = 16;   // ~60Hz — used once a controller is present
+    private const int GamepadIdleIntervalMs = 500;  // ~2Hz — used while no controller is detected
+    private const int GamepadTicksBeforeBackoff = 60; // ~1s of misses at the fast rate before backing off
+    private int _gamepadMissStreak = 0;
+    private bool _gamepadTimerIsSlow = false;
+
     private void StartGamepadTimer()
     {
-        _gamepadTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _gamepadTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(GamepadFastIntervalMs) };
         _gamepadTimer.Tick += GamepadPollTick;
         _gamepadTimer.Start();
     }
@@ -2379,7 +2747,28 @@ p {
         try { result = XInputGetState(0, out state); }
         catch { return; } // xinput1_4.dll not found — silent no-op
 
-        if (result != 0) return; // no controller connected
+        if (result != 0)
+        {
+            // No controller connected on this tick. Back off to the slow poll rate once we've
+            // missed consistently for about a second, so an idle Cloudscape session with no
+            // gamepad isn't burning a native call every 16ms for its entire lifetime.
+            if (_gamepadMissStreak < int.MaxValue) _gamepadMissStreak++;
+            if (!_gamepadTimerIsSlow && _gamepadMissStreak >= GamepadTicksBeforeBackoff && _gamepadTimer != null)
+            {
+                _gamepadTimer.Interval = TimeSpan.FromMilliseconds(GamepadIdleIntervalMs);
+                _gamepadTimerIsSlow = true;
+            }
+            return;
+        }
+
+        // Controller found — snap straight back to full responsiveness. A person who just
+        // plugged one in should feel instant input, not wait out the idle poll interval.
+        _gamepadMissStreak = 0;
+        if (_gamepadTimerIsSlow && _gamepadTimer != null)
+        {
+            _gamepadTimer.Interval = TimeSpan.FromMilliseconds(GamepadFastIntervalMs);
+            _gamepadTimerIsSlow = false;
+        }
 
         ushort buttons  = state.wButtons;
         ushort newPress = (ushort)(buttons & ~_prevGamepadButtons); // rising edge only
@@ -2395,6 +2784,17 @@ p {
 
         bool fireStick = _gamepadStickCooldown == 0 && (stickLeft || stickRight);
         if (fireStick) _gamepadStickCooldown = 12; // ~200ms repeat at 60fps
+
+        // Any real input (not just a poll tick) wakes Attract Mode, same as mouse/keyboard.
+        if (newPress != 0 || fireStick)
+        {
+            if (ViewModel.IsAttractModeActive)
+            {
+                ExitAttractMode();
+                return;
+            }
+            ResetAttractIdleTimer();
+        }
 
         // ── Detail overlay: A = confirm/launch, B = back
         if (_isDetailOpen)
@@ -2434,26 +2834,27 @@ p {
         // ── Tab navigation via bumpers
         if ((newPress & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0)
         {
-            int prev = Math.Max(0, ViewModel.SelectedPrimaryPage - 1);
-            if (prev != ViewModel.SelectedPrimaryPage)
+            int prev = Math.Max(0, ViewModel.SelectedCloudscapePage - 1);
+            if (prev != ViewModel.SelectedCloudscapePage)
             {
-                ViewModel.SelectedPrimaryPage = prev;
+                ViewModel.SelectedCloudscapePage = prev;
                 _sound.PlayFocusMove();
             }
         }
         if ((newPress & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0)
         {
-            int maxTab = ViewModel.IsCloudTheatreUnlocked ? 4 : 3;
-            int next = Math.Min(maxTab, ViewModel.SelectedPrimaryPage + 1);
-            if (next != ViewModel.SelectedPrimaryPage)
+            // A5: Emulation Station is always in the cycle; Theatre only when unlocked.
+            int maxTab = ViewModel.IsCloudTheatreUnlocked ? 5 : 4;
+            int next = Math.Min(maxTab, ViewModel.SelectedCloudscapePage + 1);
+            if (next != ViewModel.SelectedCloudscapePage)
             {
-                ViewModel.SelectedPrimaryPage = next;
+                ViewModel.SelectedCloudscapePage = next;
                 _sound.PlayFocusMove();
             }
         }
 
         // ── Hero selection via d-pad or left stick (Home tab only)
-        if (ViewModel.SelectedPrimaryPage == 0)
+        if (ViewModel.SelectedCloudscapePage == 0)
         {
             bool moveLeft  = (newPress & XINPUT_GAMEPAD_DPAD_LEFT)  != 0 || (fireStick && stickLeft);
             bool moveRight = (newPress & XINPUT_GAMEPAD_DPAD_RIGHT) != 0 || (fireStick && stickRight);

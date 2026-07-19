@@ -17,7 +17,8 @@ public sealed class EmulatorPlatformCardViewModel : ViewModelBase
         string glyph,
         string path,
         string? detectedEmulatorName,
-        bool usesRetroArch)
+        bool usesRetroArch,
+        int gameCount = 0)
     {
         _owner = owner;
         Platform = platform;
@@ -25,11 +26,22 @@ public sealed class EmulatorPlatformCardViewModel : ViewModelBase
         _path = path ?? string.Empty;
         DetectedEmulatorName = detectedEmulatorName ?? string.Empty;
         UsesRetroArch = usesRetroArch;
+        GameCount = gameCount;
     }
 
     public string Platform { get; }
 
     public string Glyph { get; }
+
+    /// <summary>How many games in the library are tagged with this platform — shown on the Cloudscape Emulation Station tile.</summary>
+    public int GameCount { get; }
+
+    public string GameCountLabel => GameCount switch
+    {
+        0 => "No games yet",
+        1 => "1 game",
+        _ => $"{GameCount} games"
+    };
 
     public string DetectedEmulatorName { get; }
 

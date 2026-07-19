@@ -2746,15 +2746,20 @@
                                                             <TextBlock Style="{StaticResource FieldLabelStyle}" Text="YOUR RATING"/>
                                                             <WrapPanel Margin="0,6,0,4">
                                                                 <Button Style="{StaticResource GhostButtonStyle}" Margin="0,0,4,0" Padding="4,2" FontSize="18"
-                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar1Click" ToolTip="Rate 1 star" Content="★"/>
+                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar1Click" ToolTip="Rate 1 star"
+                                                                        Content="{Binding SelectedGame.UserRatingStars, Converter={StaticResource StarFillConverter}, ConverterParameter=1}"/>
                                                                 <Button Style="{StaticResource GhostButtonStyle}" Margin="0,0,4,0" Padding="4,2" FontSize="18"
-                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar2Click" ToolTip="Rate 2 stars" Content="★"/>
+                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar2Click" ToolTip="Rate 2 stars"
+                                                                        Content="{Binding SelectedGame.UserRatingStars, Converter={StaticResource StarFillConverter}, ConverterParameter=2}"/>
                                                                 <Button Style="{StaticResource GhostButtonStyle}" Margin="0,0,4,0" Padding="4,2" FontSize="18"
-                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar3Click" ToolTip="Rate 3 stars" Content="★"/>
+                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar3Click" ToolTip="Rate 3 stars"
+                                                                        Content="{Binding SelectedGame.UserRatingStars, Converter={StaticResource StarFillConverter}, ConverterParameter=3}"/>
                                                                 <Button Style="{StaticResource GhostButtonStyle}" Margin="0,0,4,0" Padding="4,2" FontSize="18"
-                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar4Click" ToolTip="Rate 4 stars" Content="★"/>
+                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar4Click" ToolTip="Rate 4 stars"
+                                                                        Content="{Binding SelectedGame.UserRatingStars, Converter={StaticResource StarFillConverter}, ConverterParameter=4}"/>
                                                                 <Button Style="{StaticResource GhostButtonStyle}" Margin="0,0,4,0" Padding="4,2" FontSize="18"
-                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar5Click" ToolTip="Rate 5 stars" Content="★"/>
+                                                                        Foreground="{DynamicResource GoldBrush}" Click="RateStar5Click" ToolTip="Rate 5 stars"
+                                                                        Content="{Binding SelectedGame.UserRatingStars, Converter={StaticResource StarFillConverter}, ConverterParameter=5}"/>
                                                                 <Button Style="{StaticResource GhostButtonStyle}" Margin="0" Padding="4,2" FontSize="11"
                                                                         Foreground="{DynamicResource TextMutedBrush}" Click="RateClearClick" ToolTip="Clear your rating" Content="Clear"/>
                                                             </WrapPanel>
@@ -4853,6 +4858,62 @@
                                 </Grid>
                             </Border>
 
+                            <!-- Settings category nav — replaces the old flat scroll with a modular, filtered view -->
+                            <Border Background="{DynamicResource ThemePanelFillBrush}"
+                                    BorderBrush="{DynamicResource GlassPanelBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
+                                    Padding="6"
+                                    Margin="0,0,0,20">
+                                <WrapPanel>
+                                    <Button Style="{StaticResource PillTabButtonStyle}"
+                                            Padding="14,8" Margin="0,0,4,0" FontSize="12"
+                                            Tag="{Binding IsSettingsProfileCategory}"
+                                            Click="SelectSettingsProfileClick">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons" FontSize="13" Text="&#xE77B;" VerticalAlignment="Center"/>
+                                            <TextBlock Margin="7,0,0,0" Text="Profile" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource PillTabButtonStyle}"
+                                            Padding="14,8" Margin="0,0,4,0" FontSize="12"
+                                            Tag="{Binding IsSettingsAppearanceCategory}"
+                                            Click="SelectSettingsAppearanceClick">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons" FontSize="13" Text="&#xE771;" VerticalAlignment="Center"/>
+                                            <TextBlock Margin="7,0,0,0" Text="Appearance" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource PillTabButtonStyle}"
+                                            Padding="14,8" Margin="0,0,4,0" FontSize="12"
+                                            Tag="{Binding IsSettingsLibraryCategory}"
+                                            Click="SelectSettingsLibraryClick">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons" FontSize="13" Text="&#xE8F1;" VerticalAlignment="Center"/>
+                                            <TextBlock Margin="7,0,0,0" Text="Library &amp; Data" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource PillTabButtonStyle}"
+                                            Padding="14,8" Margin="0,0,4,0" FontSize="12"
+                                            Tag="{Binding IsSettingsEmulatorsCategory}"
+                                            Click="SelectSettingsEmulatorsClick">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons" FontSize="13" Text="&#xE7FC;" VerticalAlignment="Center"/>
+                                            <TextBlock Margin="7,0,0,0" Text="Emulators" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource PillTabButtonStyle}"
+                                            Padding="14,8" Margin="0" FontSize="12"
+                                            Tag="{Binding IsSettingsUpdatesCategory}"
+                                            Click="SelectSettingsUpdatesClick">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons" FontSize="13" Text="&#xE895;" VerticalAlignment="Center"/>
+                                            <TextBlock Margin="7,0,0,0" Text="Updates" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </WrapPanel>
+                            </Border>
+
                             <Grid Margin="0,0,0,20">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -4861,7 +4922,8 @@
                                 </Grid.ColumnDefinitions>
 
                                 <!-- Metadata source info -->
-                                <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                                <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}"
+                                        Visibility="{Binding IsSettingsLibraryCategory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <StackPanel>
                                         <TextBlock Style="{StaticResource SectionHeadingStyle}"
                                                    Text="Metadata"/>
@@ -4883,7 +4945,8 @@
                                 </Border>
 
                                 <!-- Achievement settings -->
-                                <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                                <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}"
+                                        Visibility="{Binding IsSettingsLibraryCategory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <StackPanel>
                                         <TextBlock Style="{StaticResource SectionHeadingStyle}"
                                                    Text="Achievements"/>
@@ -4909,7 +4972,8 @@
                             </Grid>
 
                             <Border Style="{StaticResource PanelBorderStyle}"
-                                    Margin="0,0,0,20">
+                                    Margin="0,0,0,20"
+                                    Visibility="{Binding IsSettingsProfileCategory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <StackPanel>
                                     <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Profiles"/>
                                     <TextBlock Margin="0,0,0,16"
@@ -5171,7 +5235,8 @@
                             </Border>
 
                             <Border Style="{StaticResource PanelBorderStyle}"
-                                    Margin="0,0,0,20">
+                                    Margin="0,0,0,20"
+                                    Visibility="{Binding IsSettingsProfileCategory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -5195,7 +5260,8 @@
                                 </Grid>
                             </Border>
 
-                            <Border Style="{StaticResource PanelBorderStyle}" Margin="0,0,0,20">
+                            <Border Style="{StaticResource PanelBorderStyle}" Margin="0,0,0,20"
+                                    Visibility="{Binding IsSettingsAppearanceCategory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <StackPanel>
                                     <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Theme Studio"/>
                                     <TextBlock Margin="0,0,0,14"
@@ -5341,7 +5407,8 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                                <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}"
+                                        Visibility="{Binding IsSettingsUpdatesCategory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <StackPanel>
                                         <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Installation &amp; Updates"/>
                                         <TextBlock Margin="0,0,0,16"
@@ -5350,23 +5417,12 @@
                                                    TextWrapping="Wrap"
                                                    Text="CloudBerry can download updates on launch and install them during a clean restart."/>
                                         <Grid Margin="0,0,0,14">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Margin="0,0,10,0">
-                                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="CURRENT VERSION"/>
-                                                <TextBlock FontFamily="{DynamicResource ThemeDisplayFontFamily}"
-                                                           FontSize="22"
-                                                           Foreground="{DynamicResource MintBrush}"
-                                                           Text="{Binding AppVersion}"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1">
+                                            <StackPanel>
                                                 <TextBlock Style="{StaticResource FieldLabelStyle}" Text="AVAILABLE VERSION"/>
                                                 <TextBlock FontFamily="{DynamicResource ThemeDisplayFontFamily}"
                                                            FontSize="22"
                                                            Foreground="{DynamicResource CloudBrush}"
-                                                           Text="{Binding AvailableUpdateVersion, TargetNullValue='-'}"/>
+                                                           Text="{Binding AvailableUpdateVersion, TargetNullValue='Up to date'}"/>
                                             </StackPanel>
                                         </Grid>
                                         <CheckBox IsChecked="{Binding AutoCheckForUpdates}" Content="Check for updates automatically"/>
@@ -5410,7 +5466,8 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                                <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}"
+                                        Visibility="{Binding IsSettingsAppearanceCategory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <StackPanel>
                                         <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Audio &amp; Presence"/>
                                         <TextBlock Margin="0,0,0,16"
@@ -5445,7 +5502,8 @@
                                 </Border>
                             </Grid>
 
-                            <Border Style="{StaticResource AccentPanelStyle}">
+                            <Border Style="{StaticResource AccentPanelStyle}"
+                                    Visibility="{Binding IsSettingsLibraryCategory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <StackPanel>
                                     <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Library Storage"/>
                                     <TextBlock FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
@@ -5464,7 +5522,8 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Style="{StaticResource PanelBorderStyle}" Margin="0,20,0,0">
+                            <Border Style="{StaticResource PanelBorderStyle}" Margin="0,20,0,0"
+                                    Visibility="{Binding IsSettingsEmulatorsCategory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,18">
                                         <Grid.ColumnDefinitions>

@@ -13,6 +13,7 @@
             <converters:StringToImageSourceConverter x:Key="StringToImageSourceConverter" />
             <converters:BooleanToStringConverter x:Key="BooleanToStringConverter" />
             <converters:BooleanToGridLengthConverter x:Key="BooleanToGridLengthConverter" />
+            <converters:StarFillConverter x:Key="StarFillConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

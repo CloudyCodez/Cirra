@@ -802,7 +802,9 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Grid>
+                    <Grid TextElement.Foreground="{DynamicResource ThemePillLabelBrush}"
+                          TextElement.FontFamily="{DynamicResource ThemeBodyFontFamily}"
+                          TextElement.FontSize="{TemplateBinding FontSize}">
                         <Border x:Name="PillBg"
                                 CornerRadius="0"
                                 BorderThickness="{TemplateBinding BorderThickness}"
@@ -812,14 +814,9 @@
                                 Height="2" VerticalAlignment="Bottom"
                                 Margin="6,0,6,0" Opacity="0"
                                 Background="{DynamicResource BerryBrush}"/>
-                        <TextBlock x:Name="PillLabel"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Margin="{TemplateBinding Padding}"
-                                   FontSize="{TemplateBinding FontSize}"
-                                   FontFamily="{DynamicResource ThemeBodyFontFamily}"
-                                   Text="{TemplateBinding Content}"
-                                   Foreground="{DynamicResource ThemePillLabelBrush}"/>
-                        <ContentPresenter Visibility="Hidden" Margin="{TemplateBinding Padding}"/>
+                        <ContentPresenter x:Name="PillContent"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -830,7 +827,7 @@
                         </Trigger>
                         <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
                             <Setter TargetName="ActiveBar" Property="Opacity" Value="1"/>
-                            <Setter TargetName="PillLabel" Property="Foreground" Value="{DynamicResource ThemePillLabelActiveBrush}"/>
+                            <Setter TargetName="PillContent" Property="TextElement.Foreground" Value="{DynamicResource ThemePillLabelActiveBrush}"/>
                             <Setter TargetName="PillBg" Property="Background" Value="{DynamicResource ThemePillSelectedFillBrush}"/>
                             <Setter TargetName="PillBg" Property="BorderBrush" Value="{DynamicResource ThemePillBorderBrush}"/>
                         </DataTrigger>

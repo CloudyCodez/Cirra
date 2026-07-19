@@ -740,3 +740,86 @@ Also traced (and ruled out as the cause, but worth recording): `IsKnownEmbeddabl
 
 
 
+---
+
+## Cloudscape Emulation Station tab — DONE
+
+*Picked up from an in-progress "A5" thread whose data layer was already substantially built (platform tiles, three shelves, ROM/needs-a-core counts, all wired into the master Cloudscape refresh pipeline) but whose actual page body in `BigPictureWindow.xaml` had never been written — confirmed via direct grep that only 5 `TabItem` blocks existed (Home/Library/Achievements/Settings/Theatre) even though the nav list already had 6 entries and the D5/gamepad-bumper keybindings already targeted `SelectedCloudscapePage = 4`.*
+
+**Collision caught and reverted before landing:** started this pass by building a parallel, simpler Emulation data model (`EmulationRomGames`, a duplicate `BigPictureEmulationShelves` declaration, a single "ROM Library" shelf) before discovering A5's much richer existing layer (`BigPictureEmulationPlatforms` — per-platform `CollectionOption` tiles plus an "All ROMs" tile; `SelectedBigPictureEmulationPlatform`; `BigPictureEmulationShelves` — three shelves: selected platform, "needs a core", recently added; `BigPictureEmulationSummary`; `EmulationRomCount`/`EmulationNeedsCoreCount`; `NeedsEmulatorCore()`; all already correctly raised in the shared Cloudscape refresh sweep). Fully backed out every duplicate/redundant addition (verified via grep — zero remaining references) before writing any XAML, to avoid the exact class of duplicate-declaration build error the `_libraryViewMode`/`IsLibraryGridView` collision caused earlier this session.
+
+**`MainViewModel.cs`** — two small, genuinely additive pieces on top of A5's existing layer:
+- `HasEmulationGamesNeedingCore` (bool, `EmulationNeedsCoreCount > 0`) so the XAML can conditionally show the "needs a core" callout only when it's non-empty, instead of always rendering "0 need a core configured." Raised alongside the existing `EmulationRomCount`/`EmulationNeedsCoreCount` notifications in the same refresh method.
+- `GameCount`/`GameCountLabel` added to `EmulatorPlatformCardViewModel` (the Settings-page emulator-path card, a distinct class from A5's Cloudscape-tab `CollectionOption` tiles — not a collision) so each Settings platform row now shows how many library games use that platform, computed in `RefreshEmulatorPlatformCards()` via a straight `Games.Count(...)` per catalog entry.
+
+**`BigPictureWindow.xaml`** — the actual missing page body, inserted as a 6th `TabItem` between Settings and Theatre (matching the nav list's Home/Library/Achievements/Settings/Emulation/Theatre order):
+- Header: "Emulation Station" title + `BigPictureEmulationSummary` subtitle, and a "Configure Emulators" button.
+- Platform-tile row: `ListBox` bound to `BigPictureEmulationPlatforms`/`SelectedBigPictureEmulationPlatform`, copied verbatim (same `BigPictureNavListStyle`/`BigPictureCategoryItemStyle`/`DataTemplate`) from the existing Library tab's category-tile `ListBox`, since both bind the same `CollectionOption` shape — zero new template risk.
+- Quick-stat row: total ROM count, plus a gold "N need a core configured" callout gated on the new `HasEmulationGamesNeedingCore`.
+- Shelf area: `ItemsControl` bound to `BigPictureEmulationShelves` using the existing shared `BigPictureShelfTemplate` resource — same reuse pattern as the Library and Home tabs, so the three A5 shelves (selected platform / needs a core / recently added) render with zero new card markup.
+
+**`BigPictureWindow.xaml.cs`** — `OpenEmulatorSettingsClick` sets `ViewModel.SelectedCloudscapePage = 3` (jumps to the Settings tab within Cloudscape) instead of closing the window, mirroring the existing `DetailAchievementsClick` in-Cloudscape tab-jump convention rather than inventing a new navigation pattern.
+
+**Verification:** re-fetched every touched file after all edits. `BigPictureWindow.xaml` confirmed well-formed via `xml.etree.ElementTree`. Brace-balance walk on `MainViewModel.cs`, `EmulatorPlatformCardViewModel.cs`, and `BigPictureWindow.xaml.cs` — all balanced, end at 0, never negative. Confirmed zero leftover references to the reverted parallel data model. Cross-checked every `DynamicResource`/`StaticResource` key used in the new tab against `CloudBerryTheme.xaml`/`App.xaml`/`BigPictureWindow.xaml`'s own local resources — all exist (`ThemePanelFillSoftBrush`, `BorderSubtleBrush`, `ThemeCornerRadiusPanel`, `ThemeDisplayFontFamily`, `TextPrimaryBrush`, `TextSecondaryBrush`, `SecondaryButtonStyle`, `ThemeSweepBrush`, `TextMutedBrush`, `GoldBrush`, `BooleanToVisibilityConverter`, and the two Big-Picture-local styles `BigPictureNavListStyle`/`BigPictureCategoryItemStyle`, confirmed defined within `BigPictureWindow.xaml` itself rather than the shared theme). Confirmed exactly one definition and one call site for the new `OpenEmulatorSettingsClick` handler. Not build-tested in Visual Studio — recommend a rebuild + Cloudscape smoke test: open the Emulation tab (D5 or gamepad LB/RB cycling), click through platform tiles to confirm the three shelves update, confirm the ROM-count/needs-a-core line reads correctly, and confirm "Configure Emulators" lands on the Settings tab.
+
+**Feature now fully complete end-to-end:**
+- ✅ Data layer (A5's platform tiles, 3 shelves, summary/count stats)
+- ✅ Navigation (index scheme, nav item, keybindings, controller bumper cycling — from the earlier `SelectedCloudscapePage`/`SelectedPrimaryPage` collision fix)
+- ✅ Page body (this session)
+- ✅ Controller D-pad/stick navigation was already general-purpose (hero shelf, tab bumpers) and needed no Emulation-specific changes since the tab reuses the same `ListBox`/shelf patterns already covered by existing gamepad handling.
+
+---
+
+## Idle-crash fix + Cloudscape gamepad-poll performance — DONE
+
+*User report: a crash when idling the app, plus a request to keep VFX smooth under load. Root-caused rather than guessed at — traced every `DispatcherTimer` in the app (`MainWindow`, `BigPictureWindow`, `MainViewModel`) to find which ones fire completely unattended, since "idle" by definition means no user action to correlate a crash to — only a background timer tick could be responsible.*
+
+**Root cause: `App.xaml.cs`'s `OnDispatcherUnhandledException` only whitelists two specific `InvalidOperationException` messages.** Every other exception type gets logged, then falls through and terminates the whole process — including exceptions thrown from timers that only run while the user isn't touching anything: the Home page's suggestion-rotation timer (`MainWindow.xaml.cs`), the 70s social-presence heartbeat, and in Cloudscape, a 12s hero-advance rotation and a 30s live-session label refresh. None of the risky ones had their own try/catch, unlike the rest of the codebase's established defensive convention (`ThemeEffectLayer.OnRender` explicitly wraps its per-frame work for exactly this reason — see its own comment, "Never let a render exception crash the app"). Idle time is exactly when these ticks are the *only* code running, so any transient hiccup had zero safety net.
+
+**`App.xaml.cs`**
+- `OnDispatcherUnhandledException` now also marks `HttpRequestException`, `SocketException`, `TaskCanceledException`, `OperationCanceledException`, and `WebException` as handled — a defensive floor for the specific class of failure unattended background work throws (Wi-Fi dropping, DNS hiccups, Windows changing network state during a long idle stretch), never something a user action caused and never something that leaves app state corrupted. Genuine state-corruption bugs still fall through and crash, same as before — this isn't a blanket catch-all, just widening the net for exception types that are inherently recoverable-by-nature. Added `using System.Net.Http;` / `using System.Net.Sockets;` for the new type checks.
+
+**`MainWindow.xaml.cs`**
+- Added a local `AppDiagnostics _diagnostics` field (`using CloudBerry.Core.Services;`), matching the same instantiation pattern `App.xaml.cs` already uses.
+- `OnHomeSuggestionTimerTick` (fires on the Home page's rotation interval, unattended) wrapped in try/catch + `_diagnostics.WriteException`.
+- The social heartbeat timer's `async void` tick lambda now has its own try/catch too — belt-and-suspenders, since `PublishActiveProfilePresenceAsync()` already catches its own network/service exceptions internally, but the outer lambda is still an unguarded `async void` boundary firing every 70s regardless of idle state.
+
+**`BigPictureWindow.xaml.cs`**
+- Same `AppDiagnostics` field + using added.
+- `StartHeroAdvanceTimer`'s tick (12s hero rotation while idling on Cloudscape's Home tab) was the strongest concrete crash candidate found: it indexed straight into `ViewModel.Games` with no snapshot and no try/catch — `games.Count` was read once for the guard clause and again implicitly via `% games.Count` several lines later, with a live `ObservableCollection` in between. Fixed to snapshot `count` once, clamp `idx` defensively, and wrapped the whole tick in try/catch.
+- `StartLiveSessionTimer`'s tick (30s running-game label refresh) given the same try/catch treatment, plus `.ToList()` on the `Where(IsRunning)` enumeration so a concurrent mutation during the foreach can't throw a collection-modified exception mid-iteration.
+
+**Cloudscape gamepad-poll performance (the "stay smooth under heavy VFX" half of the ask)**
+- Found `GamepadPollTick` calling the native `XInputGetState` interop function every 16ms (60Hz) for the *entire* lifetime of any Cloudscape session, unconditionally — whether or not a controller is even connected. That's constant main-thread work competing every single frame with the VFX render budget (`ThemeEffectLayer`'s 30fps ambient render, shelf momentum scroll, hero crossfades, WebView2 trailer previews) for anyone browsing with just a mouse/keyboard, which is most users most of the time.
+- Added adaptive backoff: after ~1 second of consecutive "no controller" results, the timer's own `Interval` slows from 16ms to 500ms (2Hz) — controller *discovery* being half a second slower than instant is imperceptible, since nobody is holding a stick waiting for the app to notice it doesn't exist yet. The instant a controller IS detected, the interval snaps straight back to 16ms so actual input never feels the backoff.
+- Zero behavior change for anyone actually using a controller — the backoff only ever engages during the no-controller path, and resets on the very next successful read.
+
+**Verification:** re-fetched all three live files after every edit. Brace-balance walk on `App.xaml.cs`, `MainWindow.xaml.cs`, and `BigPictureWindow.xaml.cs` — all balanced, end at depth 0, never negative (full depth-walk, not just open/close counts). Confirmed `AppDiagnostics`/`HttpRequestException`/`SocketException` usings resolve and no pre-existing `_diagnostics` field collided in either window. Not build-tested in Visual Studio — recommend a rebuild, then two specific tests: (1) leave the app idle on Home for several minutes and confirm no crash (this was previously very hard to repro on demand since it depended on a background tick hitting a transient failure at the right moment — the fix is defensive-by-construction rather than a reproduction-confirmed root cause, so flagging that honestly), and (2) open Cloudscape with no controller plugged in, wait a few seconds, then plug one in mid-session and confirm input still feels instant despite the backoff.
+
+**Not yet done (good next performance targets):**
+- The `_verticalMomentumTimer`/`_shelfMomentumTimer`/`_homeScrollTimer` (all 16ms/60Hz) are transient — only running during an active scroll gesture — so they weren't touched here, but worth confirming they're actually `Stop()`'d the instant momentum settles rather than continuing to tick at zero velocity.
+- `_trailerPreviewTimer` at a flat 1000ms wasn't investigated this pass — worth checking whether it's gated to only run while a trailer preview is actually visible/hovered, or ticks continuously whenever Cloudscape is open.
+- No stack trace or repro steps were available for the reported crash, so this fix targets the most plausible root cause class (unguarded unattended-timer exceptions) rather than a single confirmed line. If the crash recurs after this fix, the next diagnostic step is checking `%LocalAppData%\CloudBerry\logs\cloudberry.log` for a `[dispatcher]` entry logged right before the crash — that will show exactly which exception type/message got past the widened whitelist and pin down the real remaining cause precisely.
+
+---
+
+## Attract Mode (Cloudscape screensaver) — DONE (verified, previously unlogged)
+
+*Picked up from a session that ended right after the last code edit, before any verification or rundown entry. Nothing new was written this pass — this is a from-scratch verification that the prior work is actually complete and correct.*
+
+**What it is:** after `AttractModeIdleSeconds` of no input on Cloudscape's Home tab (default clamped 20–600s), the shell fades in a full-screen showcase — curated game rotation, Ken-Burns-zoomed cover/background art crossfading every ~9s, title/subtitle text, a "press any key or move to browse" hint — and backs out the instant real input arrives (mouse move, key press, or gamepad button/stick).
+
+**Verified this pass, end to end:**
+- `EnterAttractMode` / `ExitAttractMode` / `AdvanceAttractMode` / `CrossfadeAttractImage` / `StartKenBurns` / `LoadAttractImageAsync` / `StartAttractIdlePollTimer` / `ResetAttractIdleTimer` are all fully implemented in `BigPictureWindow.xaml.cs` — confirmed by reading every body, not just grepping signatures.
+- Every field they touch (`_attractIdlePollTimer`, `_attractIdleElapsedSeconds`, `_attractRotation`, `_attractRotationIndex`, `_attractImages`, `_attractImageIndex`, `_attractUsingLayerA`, `_attractCycleTimer`) is declared.
+- Every named XAML element they touch (`AttractModeOverlay`, `AttractBgA`/`AttractBgB`, `AttractBgAScale`/`AttractBgBScale`, `AttractTitleBlock`, `AttractTitleLift`, `AttractTitleText`, `AttractSubtitleText`, `AttractWakeHint`) exists in `BigPictureWindow.xaml` with matching `x:Name`s and types.
+- Every `MainViewModel` member called (`BuildAttractModeRotation()`, `BuildAttractShowcaseImages()`, `AttractModeGame`, `IsAttractModeActive`, `AttractModeContextLabel`, `AttractModeEnabled`, `AttractModeIdleSeconds`, `SelectedCloudscapePage`) exists with the expected signature.
+- `ResetAttractIdleTimer()`/`ExitAttractMode()` are wired at every real-input entry point: mouse move, key down, and the gamepad poll loop, plus `Deactivated` (window loses focus) and the page-change guard inside the idle poll tick itself (won't engage off the Home tab, mid-game, or with the detail overlay open).
+- Re-fetched the live file from disk and ran a full brace **and** paren depth walk over the whole file: both end at 0, never went negative.
+
+**Not build-tested in Visual Studio** — recommend a rebuild, then a real-device pass: sit idle on Cloudscape's Home tab past the configured idle threshold and confirm the fade-in, image rotation/Ken-Burns, and title crossfade all look right, then confirm a mouse nudge / key press / gamepad press each independently dismiss it instantly.
+
+
+
+
+
