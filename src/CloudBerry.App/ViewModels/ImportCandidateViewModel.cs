@@ -1,5 +1,6 @@
 using CloudBerry.Core.Models;
 using CloudBerry.Core.Services;
+using System.IO;
 
 namespace CloudBerry.App.ViewModels;
 
@@ -27,6 +28,7 @@ public sealed class ImportCandidateViewModel : ViewModelBase
         _installPath = model.InstallPath;
         _confidence = model.Confidence;
         _signalsText = string.Join(" | ", model.Signals);
+        RefreshFileSize();
     }
 
     public string Title
@@ -63,7 +65,64 @@ public sealed class ImportCandidateViewModel : ViewModelBase
                 OnPropertyChanged(nameof(IsRom));
                 OnPropertyChanged(nameof(SourceLabel));
                 OnPropertyChanged(nameof(ReviewAccentLabel));
+                OnPropertyChanged(nameof(LocationBreadcrumb));
+                OnPropertyChanged(nameof(FileSizeLabel));
+                RefreshFileSize();
             }
+        }
+    }
+
+    private long _fileSizeBytes = -1;
+
+    private void RefreshFileSize()
+    {
+        try
+        {
+            _fileSizeBytes = File.Exists(_installPath) ? new FileInfo(_installPath).Length : -1;
+        }
+        catch
+        {
+            // Locked file, permissions issue, or a launch template rather than a literal path —
+            // just show no size rather than fail the whole candidate row.
+            _fileSizeBytes = -1;
+        }
+        OnPropertyChanged(nameof(FileSizeLabel));
+        OnPropertyChanged(nameof(FileSizeSuffixLabel));
+    }
+
+    /// <summary>Human-readable size of the located exe/ROM, e.g. "142 MB". Empty when unavailable (locked file, launch template, deleted since scan).</summary>
+    public string FileSizeLabel
+    {
+        get
+        {
+            if (_fileSizeBytes < 0) return string.Empty;
+            if (_fileSizeBytes >= 1024 * 1024 * 1024) return $"{_fileSizeBytes / (1024.0 * 1024 * 1024):0.#} GB";
+            if (_fileSizeBytes >= 1024 * 1024) return $"{_fileSizeBytes / (1024.0 * 1024):0} MB";
+            if (_fileSizeBytes >= 1024) return $"{_fileSizeBytes / 1024.0:0} KB";
+            return _fileSizeBytes <= 0 ? string.Empty : $"{_fileSizeBytes} B";
+        }
+    }
+
+    /// <summary>Bullet-prefixed size suffix for inline display next to the location breadcrumb; empty (not just a dangling bullet) when the size is unknown.</summary>
+    public string FileSizeSuffixLabel => string.IsNullOrEmpty(FileSizeLabel) ? string.Empty : $"  \u2022  {FileSizeLabel}";
+
+    /// <summary>
+    /// Folder-tree style breadcrumb showing exactly where this candidate was found, e.g.
+    /// "Games › SomeGame › Binaries › Win64 › Game.exe". Keeps the last 4 path segments so deep
+    /// install trees (common with Steam/UE builds) still read clearly without an unbounded string.
+    /// Addresses the "show more detail on where the exe was actually found" request — the plain
+    /// list previously showed only the bare filename via SourceLabel/SignalsText.
+    /// </summary>
+    public string LocationBreadcrumb
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_installPath)) return string.Empty;
+            var parts = _installPath.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return _installPath;
+            var take = parts.Length > 4 ? parts[^4..] : parts;
+            var breadcrumb = string.Join("  \u203a  ", take);
+            return parts.Length > 4 ? "\u2026  \u203a  " + breadcrumb : breadcrumb;
         }
     }
 
@@ -323,7 +382,8 @@ public sealed class ImportCandidateViewModel : ViewModelBase
             Publishers = new List<string>(metadata.Publishers ?? []),
             Tags = new List<string>(metadata.Tags ?? []),
             Screenshots = new List<string>(metadata.Screenshots ?? []),
-            TrailerUrl = metadata.TrailerUrl
+            TrailerUrl = metadata.TrailerUrl,
+            Guidebooks = (metadata.Guidebooks ?? []).Select(guidebook => guidebook.Clone()).ToList()
         };
     }
 }

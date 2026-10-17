@@ -5,13 +5,12 @@ using System.Windows.Media.Animation;
 namespace CloudBerry.App.Motion;
 
 /// <summary>
-/// Central motion token library — Black Flash "Impact" edition.
-/// All durations and easing functions tuned for Yuji Itadori's kinetic energy:
-/// snappy impacts, electric bursts, and professional 60fps performance.
+/// Shared Cirra motion foundation. Themes can layer a distinct cadence on top, but
+/// navigation remains fast, predictable, and respectful of reduced-motion settings.
 /// </summary>
 internal static class MotionTokens
 {
-    // ── Standard Durations (optimized for dark theme readability) ────────────
+    // Standard interaction durations.
     public static readonly Duration Micro        = TimeSpan.FromMilliseconds(35);
     public static readonly Duration Tap          = TimeSpan.FromMilliseconds(55);
     public static readonly Duration Hover        = TimeSpan.FromMilliseconds(95);
@@ -21,7 +20,7 @@ internal static class MotionTokens
     public static readonly Duration TapReturn    = TimeSpan.FromMilliseconds(75);
     public static readonly Duration HoverReturn  = TimeSpan.FromMilliseconds(130);
 
-    // ── Black Flash Impact Durations ─────────────────────────────────────────
+    // ── Impact Noir Impact Durations ─────────────────────────────────────────
     /// <summary>Impact flash: instantaneous energy burst on interaction.</summary>
     public static readonly Duration FlashMicro   = TimeSpan.FromMilliseconds(35);
     
@@ -34,7 +33,7 @@ internal static class MotionTokens
     /// <summary>Return/decay after impact — natural cursed energy dissipation.</summary>
     public static readonly Duration FlashSettle  = TimeSpan.FromMilliseconds(140);
 
-    // ── Easing functions — Black Flash kinetic language ──────────────────────
+    // ── Easing functions — Impact Noir kinetic language ──────────────────────
     /// <summary>Impact snap: aggressive deceleration for punchy feedback.</summary>
     public static IEasingFunction FlashSnap    { get; } = new QuarticEase { EasingMode = EasingMode.EaseOut };
     
@@ -42,7 +41,7 @@ internal static class MotionTokens
     public static IEasingFunction FlashBloom   { get; } = new SineEase    { EasingMode = EasingMode.EaseInOut };
     
     /// <summary>Recoil bounce: slight overshoot for tactile impact feel.</summary>
-    public static IEasingFunction FlashRecoil  { get; } = new BackEase    { Amplitude = 0.25, EasingMode = EasingMode.EaseOut };
+    public static IEasingFunction FlashRecoil  { get; } = new CubicEase   { EasingMode = EasingMode.EaseOut };
     
     /// <summary>Standard premium deceleration for UI elements.</summary>
     public static IEasingFunction PremiumOut   { get; } = new QuarticEase { EasingMode = EasingMode.EaseOut };
@@ -56,7 +55,7 @@ internal static class MotionTokens
     /// <summary>Quick micro-feedback for instant responsiveness.</summary>
     public static IEasingFunction QuickIn      { get; } = new QuadraticEase { EasingMode = EasingMode.EaseIn };
 
-    // ── Scale tokens — Black Flash impact dynamics ───────────────────────────
+    // ── Scale tokens — Impact Noir impact dynamics ───────────────────────────
     /// <summary>Hover lift scale — subtle depth without distraction.</summary>
     public const double HoverScale    = 1.012;
     
@@ -79,7 +78,7 @@ internal static class MotionTokens
     /// <summary>Impact nudge — slight punch-forward on high-energy actions.</summary>
     public const double FlashNudgeX   = 4.0;
 
-    // ── Opacity tokens — Black Flash visual hierarchy ────────────────────────
+    // ── Opacity tokens — Impact Noir visual hierarchy ────────────────────────
     public const double TraceHoverOpacity   = 0.72;
     public const double NavIconResting      = 0.52;
     public const double NavIconHover        = 0.88;
@@ -88,7 +87,7 @@ internal static class MotionTokens
     public const double NavLabelHover       = 0.96;
     public const double NavLabelSelected    = 1.00;
     
-    // ── Black Flash effect opacities ─────────────────────────────────────────
+    // ── Impact Noir effect opacities ─────────────────────────────────────────
     public const double FlashParticleOpacity = 0.85;
     public const double FlashArcOpacity      = 0.72;
     public const double FlashGlowOpacity     = 0.38;

@@ -4,7 +4,7 @@ namespace CloudBerry.App.ViewModels;
 /// One platform tile on the Emulation Station page. Wraps a single emulator path from
 /// MainViewModel's per-platform settings, plus whatever the last scan detected for that
 /// platform (a standalone emulator or a RetroArch core), so the card can show both
-/// "what's configured" and "what CloudBerry found" side by side.
+/// "what's configured" and "what Cirra found" side by side.
 /// </summary>
 public sealed class EmulatorPlatformCardViewModel : ViewModelBase
 {

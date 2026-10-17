@@ -8,7 +8,7 @@ public sealed class ShellNavigationService
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            throw new InvalidOperationException("CloudBerry couldn't find a launch target to open.");
+            throw new InvalidOperationException("Cirra couldn't find a launch target to open.");
         }
 
         var fullPath = GameLauncher.TryResolveLaunchTarget(path, out var resolvedTarget, out var workingDirectory)
@@ -17,7 +17,7 @@ public sealed class ShellNavigationService
 
         if (Uri.TryCreate(fullPath, UriKind.Absolute, out var uri) && !uri.IsFile)
         {
-            throw new InvalidOperationException("CloudBerry cannot open a local folder for storefront launch links.");
+            throw new InvalidOperationException("Cirra cannot open a local folder for storefront launch links.");
         }
 
         if (Uri.TryCreate(fullPath, UriKind.Absolute, out uri) && uri.IsFile)
@@ -62,7 +62,7 @@ public sealed class ShellNavigationService
     {
         if (string.IsNullOrWhiteSpace(folderPath))
         {
-            throw new InvalidOperationException("CloudBerry needs a folder path to open.");
+            throw new InvalidOperationException("Cirra needs a folder path to open.");
         }
 
         var fullPath = Path.GetFullPath(folderPath);
@@ -83,7 +83,7 @@ public sealed class ShellNavigationService
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
-            throw new InvalidOperationException("CloudBerry needs a valid web link before it can open that page.");
+            throw new InvalidOperationException("Cirra needs a valid web link before it can open that page.");
         }
 
         Process.Start(new ProcessStartInfo

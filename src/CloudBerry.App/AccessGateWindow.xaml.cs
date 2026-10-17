@@ -7,9 +7,8 @@ namespace CloudBerry.App;
 
 /// <summary>
 /// Borderless modal shown before the splash/main window during the private testing phase.
-/// Blocks startup until a valid, not-yet-used-on-this-machine access key is entered, or the
-/// user chooses to exit instead. See <see cref="AccessGateService"/> for the redemption and
-/// one-time-per-machine/account enforcement logic.
+/// Blocks startup until a valid invitation key is entered or the user chooses to exit.
+/// The local grant is remembered; keys do not have globally enforced activation limits.
 /// </summary>
 public partial class AccessGateWindow : Window
 {
@@ -41,6 +40,7 @@ public partial class AccessGateWindow : Window
     {
         if (e.Key == Key.Enter)
         {
+            e.Handled = true;
             AttemptRedeem();
         }
     }

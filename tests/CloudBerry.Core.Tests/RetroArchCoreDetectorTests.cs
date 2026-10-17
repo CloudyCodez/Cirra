@@ -29,6 +29,42 @@ public sealed class RetroArchCoreDetectorTests : IDisposable
         Assert.Contains(result.Suggestions, suggestion => suggestion.Platform == "Nintendo 64");
     }
 
+    [Fact]
+    public void Detect_PrefersExactModernCitraCoreOverLegacyPartialMatch()
+    {
+        var retroArchPath = Path.Combine(_rootPath, "retroarch.exe");
+        var coresPath = Path.Combine(_rootPath, "cores");
+        Directory.CreateDirectory(coresPath);
+        File.WriteAllText(retroArchPath, "test");
+        File.WriteAllText(Path.Combine(coresPath, "citra2018_libretro.dll"), "test");
+        File.WriteAllText(Path.Combine(coresPath, "citra_libretro.dll"), "test");
+
+        var result = new RetroArchCoreDetector().Detect(retroArchPath);
+
+        var suggestion = Assert.Single(result.Suggestions, item => item.Platform == "Nintendo 3DS");
+        Assert.Equal("citra_libretro.dll", suggestion.CoreName);
+    }
+
+    [Fact]
+    public void ReadSupportedExtensions_ParsesRetroArchCoreInfo()
+    {
+        var coresPath = Path.Combine(_rootPath, "cores");
+        var infoPath = Path.Combine(_rootPath, "info");
+        Directory.CreateDirectory(coresPath);
+        Directory.CreateDirectory(infoPath);
+        var corePath = Path.Combine(coresPath, "citra2018_libretro.dll");
+        File.WriteAllText(corePath, "test");
+        File.WriteAllText(
+            Path.Combine(infoPath, "citra2018_libretro.info"),
+            "display_name = \"Citra 2018\"\nsupported_extensions = \"3ds|3dsx|cci|cxi|axf\"\n");
+
+        var extensions = RetroArchCoreDetector.ReadSupportedExtensions(corePath);
+
+        Assert.Contains(".cxi", extensions);
+        Assert.Contains(".3ds", extensions);
+        Assert.DoesNotContain(".cia", extensions);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))

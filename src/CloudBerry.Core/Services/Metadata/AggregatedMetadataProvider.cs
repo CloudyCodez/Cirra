@@ -32,7 +32,7 @@ public sealed class AggregatedMetadataProvider : IGameMetadataProvider
     {
         Id = "aggregated",
         DisplayName = "IGDB",
-        Description = "Searches IGDB first, then quietly enriches missing fields from CloudBerry fallback sources.",
+        Description = "Searches IGDB first, then quietly enriches missing fields from Cirra fallback sources.",
         RequiresApiKey = false,
         ApiKeyLabel = string.Empty,
         ApiKeyHelpText = string.Empty
@@ -55,12 +55,13 @@ public sealed class AggregatedMetadataProvider : IGameMetadataProvider
             MaxResults = request.MaxResults
         };
 
-        var steamTask = SafeSearch(_steam, normalizedRequest, settings, cancellationToken);
-        var pcgwTask = SafeSearch(_pcgamingWiki, normalizedRequest, settings, cancellationToken);
-        var wikiTask = SafeSearch(_wikipedia, normalizedRequest, settings, cancellationToken);
-        var ocTask = SafeSearch(_openCritic, normalizedRequest, settings, cancellationToken);
-        var igdbProxyTask = SafeSearch(_igdbProxy, normalizedRequest, settings, cancellationToken);
-        var igdbDirectTask = SafeSearch(_igdbDirect, normalizedRequest, settings, cancellationToken);
+        var disabled = settings.DisabledMetadataProviderIds ?? [];
+        var steamTask = disabled.Contains(_steam.Descriptor.Id, StringComparer.OrdinalIgnoreCase) ? Task.FromResult<IReadOnlyList<GameMetadataRecord>>([]) : SafeSearch(_steam, normalizedRequest, settings, cancellationToken);
+        var pcgwTask = disabled.Contains(_pcgamingWiki.Descriptor.Id, StringComparer.OrdinalIgnoreCase) ? Task.FromResult<IReadOnlyList<GameMetadataRecord>>([]) : SafeSearch(_pcgamingWiki, normalizedRequest, settings, cancellationToken);
+        var wikiTask = disabled.Contains(_wikipedia.Descriptor.Id, StringComparer.OrdinalIgnoreCase) ? Task.FromResult<IReadOnlyList<GameMetadataRecord>>([]) : SafeSearch(_wikipedia, normalizedRequest, settings, cancellationToken);
+        var ocTask = disabled.Contains(_openCritic.Descriptor.Id, StringComparer.OrdinalIgnoreCase) ? Task.FromResult<IReadOnlyList<GameMetadataRecord>>([]) : SafeSearch(_openCritic, normalizedRequest, settings, cancellationToken);
+        var igdbProxyTask = disabled.Contains(_igdbProxy.Descriptor.Id, StringComparer.OrdinalIgnoreCase) ? Task.FromResult<IReadOnlyList<GameMetadataRecord>>([]) : SafeSearch(_igdbProxy, normalizedRequest, settings, cancellationToken);
+        var igdbDirectTask = disabled.Contains(_igdbDirect.Descriptor.Id, StringComparer.OrdinalIgnoreCase) ? Task.FromResult<IReadOnlyList<GameMetadataRecord>>([]) : SafeSearch(_igdbDirect, normalizedRequest, settings, cancellationToken);
 
         await Task.WhenAll(steamTask, pcgwTask, wikiTask, ocTask, igdbProxyTask, igdbDirectTask);
 
@@ -132,6 +133,7 @@ public sealed class AggregatedMetadataProvider : IGameMetadataProvider
         CloudBerrySettings settings,
         CancellationToken cancellationToken = default)
     {
+        var disabledProviders = settings.DisabledMetadataProviderIds ?? [];
         var details = searchResult.ProviderId switch
         {
             "steam-store" => await SafeDetails(_steam, searchResult, settings, cancellationToken),
@@ -145,14 +147,16 @@ public sealed class AggregatedMetadataProvider : IGameMetadataProvider
 
         if (details.ProviderId == "steam-store")
         {
-            var openCritic = await TryGetOpenCriticDetailsAsync(details.Title, settings, cancellationToken);
+            var openCritic = disabledProviders.Contains(_openCritic.Descriptor.Id, StringComparer.OrdinalIgnoreCase)
+                ? null
+                : await TryGetOpenCriticDetailsAsync(details.Title, settings, cancellationToken);
             if (openCritic is not null)
             {
                 MergeMissingFields(details, openCritic);
             }
         }
 
-        if (details.ProviderId != "pcgamingwiki")
+        if (details.ProviderId != "pcgamingwiki" && !disabledProviders.Contains(_pcgamingWiki.Descriptor.Id, StringComparer.OrdinalIgnoreCase))
         {
             var pcgw = await TryGetDetailsByTitleAsync(_pcgamingWiki, details.Title, settings, cancellationToken);
             if (pcgw is not null && TitlesMatch(pcgw.Title, details.Title))
@@ -161,7 +165,7 @@ public sealed class AggregatedMetadataProvider : IGameMetadataProvider
             }
         }
 
-        if (details.ProviderId != "wikipedia")
+        if (details.ProviderId != "wikipedia" && !disabledProviders.Contains(_wikipedia.Descriptor.Id, StringComparer.OrdinalIgnoreCase))
         {
             var wiki = await TryGetDetailsByTitleAsync(_wikipedia, details.Title, settings, cancellationToken);
             if (wiki is not null)
@@ -249,6 +253,14 @@ public sealed class AggregatedMetadataProvider : IGameMetadataProvider
             target.Screenshots = source.Screenshots;
         if (string.IsNullOrWhiteSpace(target.TrailerUrl))
             target.TrailerUrl = source.TrailerUrl;
+        foreach (var guidebook in source.Guidebooks ?? [])
+        {
+            if (!(target.Guidebooks ??= []).Any(existing =>
+                    existing.PdfLocation.Equals(guidebook.PdfLocation, StringComparison.OrdinalIgnoreCase)))
+            {
+                target.Guidebooks.Add(guidebook.Clone());
+            }
+        }
     }
 
     private static async Task<IReadOnlyList<GameMetadataRecord>> SafeSearch(

@@ -7,7 +7,7 @@ public sealed class SplashViewModel : ViewModelBase
     private readonly string _quoteBadgeText;
     private readonly string _quoteDayLabel;
     private string _quoteText;
-    private string _statusText = "Warming up CloudBerry";
+    private string _statusText = "Warming up Cirra";
     private string _detailText = "Preparing your shelves, artwork, and launch tools.";
     private double _progressValue = 8;
 
@@ -42,7 +42,7 @@ public sealed class SplashViewModel : ViewModelBase
         get => _progressValue;
         set
         {
-            if (SetProperty(ref _progressValue, Math.Clamp(value, 0, 100)))
+            if (double.IsFinite(value) && SetProperty(ref _progressValue, Math.Max(_progressValue, Math.Clamp(value, 0, 100))))
             {
                 OnPropertyChanged(nameof(ProgressLabel));
             }
@@ -55,7 +55,7 @@ public sealed class SplashViewModel : ViewModelBase
 
     public string QuoteDayLabel => _quoteDayLabel;
 
-    public string ThemeKey { get; } = "CloudBerry Dark";
+    public string ThemeKey { get; init; } = "Cirra Core";
 
     public void Apply(StartupProgressUpdate update)
     {

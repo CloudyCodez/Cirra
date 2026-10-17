@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using CloudBerry.Core.Models;
 using CloudBerry.Core.Services;
 
@@ -16,6 +16,7 @@ public sealed class GameEntryViewModel : ViewModelBase
     private string _title = string.Empty;
     private string _platform = "Unknown";
     private string _sourceKind = "Manual";
+    private List<string> _linkedGameIds = [];
     private string _installPath = string.Empty;
     private bool _isInstalled = true;
     private bool _isFavorite;
@@ -24,6 +25,8 @@ public sealed class GameEntryViewModel : ViewModelBase
     private DateTime? _lastPlayedOn;
     private int _playtimeMinutes;
     private string _notes = string.Empty;
+    private string _nextTimeNote = string.Empty;
+    private DateTime? _nextTimeUpdatedOn;
     private string _tagsText = string.Empty;
     private string _summary = string.Empty;
     private DateTime? _releaseDate;
@@ -51,6 +54,8 @@ public sealed class GameEntryViewModel : ViewModelBase
     private string _achievementProviderId = string.Empty;
     private string _achievementProviderName = string.Empty;
     private DateTime? _achievementsLastSyncedUtc;
+    private string _achievementHealthState = "unknown";
+    private string _achievementHealthReason = string.Empty;
     private bool _isRunning;
     private DateTime? _activeSessionStartedAt;
     private List<string> _screenshotUrls = [];
@@ -60,6 +65,7 @@ public sealed class GameEntryViewModel : ViewModelBase
     private double? _criticRating;
     private double? _purchasePriceUsd;
     private string _emulatorPath = string.Empty;
+    private string _saveLocationsText = string.Empty;
     private GameRecord.PlaySession? _currentSession;
 
     // ── Computed-value cache ─────────────────────────────────────────────────
@@ -105,6 +111,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         _title = model.Title;
         _platform = model.Platform;
         _sourceKind = model.SourceKind;
+        _linkedGameIds = new List<string>(model.LinkedGameIds);
         _installPath = model.InstallPath;
         _isInstalled = model.IsInstalled;
         _isFavorite = model.IsFavorite;
@@ -113,6 +120,8 @@ public sealed class GameEntryViewModel : ViewModelBase
         _lastPlayedOn = model.LastPlayedOn;
         _playtimeMinutes = model.PlaytimeMinutes;
         _notes = model.Notes;
+        _nextTimeNote = model.NextTimeNote ?? string.Empty;
+        _nextTimeUpdatedOn = model.NextTimeUpdatedOn;
         _tagsText = string.Join(", ", model.Tags);
         _summary = model.Summary;
         _releaseDate = model.ReleaseDate;
@@ -146,9 +155,15 @@ public sealed class GameEntryViewModel : ViewModelBase
         _criticRating = model.CriticRating ?? model.CommunityRating;
         _purchasePriceUsd = model.PurchasePriceUsd;
         _emulatorPath = model.EmulatorPath;
+        _saveLocationsText = string.Join(Environment.NewLine, model.SaveLocations ?? []);
 
         // Initialize sessions
         Sessions = new ObservableCollection<GameRecord.PlaySession>(model.Sessions);
+
+        foreach (var guidebook in model.Guidebooks ?? [])
+        {
+            Guidebooks.Add(guidebook.Clone());
+        }
 
         foreach (var achievement in model.Achievements.OrderBy(achievement => achievement.DisplayOrder).ThenBy(achievement => achievement.Title))
         {
@@ -157,6 +172,40 @@ public sealed class GameEntryViewModel : ViewModelBase
     }
 
     public ObservableCollection<AchievementEntryViewModel> Achievements { get; } = [];
+
+    public ObservableCollection<GameGuidebook> Guidebooks { get; } = [];
+
+    public bool HasGuidebooks => Guidebooks.Count > 0;
+
+    public string GuidebookCountLabel => Guidebooks.Count == 1 ? "1 guide" : $"{Guidebooks.Count} guides";
+
+    public bool AddGuidebook(GameGuidebook guidebook)
+    {
+        if (string.IsNullOrWhiteSpace(guidebook.PdfLocation) || Guidebooks.Any(existing =>
+                existing.PdfLocation.Equals(guidebook.PdfLocation, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        Guidebooks.Add(guidebook.Clone());
+        OnPropertyChanged(nameof(HasGuidebooks));
+        OnPropertyChanged(nameof(GuidebookCountLabel));
+        return true;
+    }
+
+    public bool RemoveGuidebook(GameGuidebook guidebook)
+    {
+        var existing = Guidebooks.FirstOrDefault(candidate => candidate.Id == guidebook.Id) ??
+                       Guidebooks.FirstOrDefault(candidate => candidate.PdfLocation.Equals(guidebook.PdfLocation, StringComparison.OrdinalIgnoreCase));
+        if (existing is null || !Guidebooks.Remove(existing))
+        {
+            return false;
+        }
+
+        OnPropertyChanged(nameof(HasGuidebooks));
+        OnPropertyChanged(nameof(GuidebookCountLabel));
+        return true;
+    }
 
     // New property for sessions
     public ObservableCollection<GameRecord.PlaySession> Sessions { get; private set; } = [];
@@ -198,7 +247,7 @@ public sealed class GameEntryViewModel : ViewModelBase
 
     // â”€â”€ Star Ratings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    /// <summary>0â€“5 star rating set by this user. Null = not rated yet.</summary>
+    /// <summary>0-5 star rating set by this user. Null = not rated yet.</summary>
     public double? UserRating
     {
         get => _userRating;
@@ -213,7 +262,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         }
     }
 
-    /// <summary>0â€“5 critic/aggregated rating pulled from external metadata. Null = unavailable.</summary>
+    /// <summary>0-5 critic/aggregated rating pulled from external metadata. Null = unavailable.</summary>
     public double? CriticRating
     {
         get => _criticRating;
@@ -299,10 +348,10 @@ public sealed class GameEntryViewModel : ViewModelBase
     public bool IsBacklogDebtEligible => HasPurchasePrice && PlaytimeMinutes <= 0 &&
         (Status.Equals("Unplayed", StringComparison.OrdinalIgnoreCase) || Status.Equals("Backlog", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>User rating clamped to 0â€“5, or 0 when null.</summary>
+    /// <summary>User rating clamped to 0-5, or 0 when null.</summary>
     public double UserRatingStars   => Math.Clamp(_userRating   ?? 0, 0, 5);
 
-    /// <summary>Critic rating clamped to 0â€“5, or 0 when null.</summary>
+    /// <summary>Critic rating clamped to 0-5, or 0 when null.</summary>
     public double CriticRatingStars => Math.Clamp(_criticRating ?? 0, 0, 5);
 
     // â”€â”€ Gamer Score â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -337,7 +386,7 @@ public sealed class GameEntryViewModel : ViewModelBase
             : "No achievements synced";
     }
 
-    /// <summary>0â€“100 completion ratio used for progress display.</summary>
+    /// <summary>0-100 completion ratio used for progress display.</summary>
     public double GamerScorePercent => TotalGamerScore == 0 ? 0 : Math.Round(EarnedGamerScore / (double)TotalGamerScore * 100, 1);
 
     // â”€â”€ Emulation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -355,6 +404,7 @@ public sealed class GameEntryViewModel : ViewModelBase
             {
                 OnPropertyChanged(nameof(HasEmulatorOverride));
                 OnPropertyChanged(nameof(IsRom));
+                OnPropertyChanged(nameof(IsEmulated));
             }
         }
     }
@@ -364,6 +414,9 @@ public sealed class GameEntryViewModel : ViewModelBase
 
     /// <summary>True when the install path looks like a ROM that needs an emulator.</summary>
     public bool IsRom => CloudBerry.Core.Services.GameLauncher.IsRomFile(InstallPath);
+
+    /// <summary>True when this game launches through an emulator, whether via a ROM path or an explicit per-game emulator override.</summary>
+    public bool IsEmulated => IsRom || HasEmulatorOverride;
 
     public bool HasScreenshots => _screenshotUrls.Count > 0;
 
@@ -395,9 +448,12 @@ public sealed class GameEntryViewModel : ViewModelBase
             if (SetProperty(ref _platform, value))
             {
                 OnPropertyChanged(nameof(Subtitle));
+                OnPropertyChanged(nameof(CaseProfile));
             }
         }
     }
+
+    public GameCaseProfile CaseProfile => GameCaseProfile.Resolve(Platform);
 
     public string SourceKind
     {
@@ -407,20 +463,91 @@ public sealed class GameEntryViewModel : ViewModelBase
             if (SetProperty(ref _sourceKind, value))
             {
                 OnPropertyChanged(nameof(Subtitle));
+                OnPropertyChanged(nameof(SourceBadgeLabel));
             }
         }
     }
 
+    /// <summary>Short label for the Library source badge — collapses the raw SourceKind values into a compact, consistent set.</summary>
+    public string SourceBadgeLabel => SourceKind switch
+    {
+        "Manual Add" => "Manual",
+        "Folder Scan" => IsRom ? "ROM" : "Folder",
+        _ => SourceKind
+    };
+
+    /// <summary>
+    /// Ids (as strings) of other games the user has confirmed are the same title owned through a
+    /// different source. Populated symmetrically by MainViewModel.LinkGamesAsSameOwnership — every
+    /// linked game lists every other member of its group. Powers the Duplicate Ownership Detector.
+    /// </summary>
+    public List<string> LinkedGameIds
+    {
+        get => _linkedGameIds;
+        set
+        {
+            if (SetProperty(ref _linkedGameIds, value))
+            {
+                OnPropertyChanged(nameof(IsLinkedDuplicate));
+                OnPropertyChanged(nameof(LinkedGameCount));
+                OnPropertyChanged(nameof(LinkedOwnershipSummary));
+            }
+        }
+    }
+
+    /// <summary>True when this game has been confirmed as the same title as at least one other library entry.</summary>
+    public bool IsLinkedDuplicate => LinkedGameIds.Count > 0;
+
+    /// <summary>How many other library entries this game is confirmed to share ownership with.</summary>
+    public int LinkedGameCount => LinkedGameIds.Count;
+
+    /// <summary>Ready-to-bind sentence for the detail panel's Linked Ownership card — kept in C# rather than XAML so singular/plural wording never needs an extra converter.</summary>
+    public string LinkedOwnershipSummary => LinkedGameCount == 1
+        ? "Confirmed as the same game as 1 other library entry."
+        : $"Confirmed as the same game as {LinkedGameCount} other library entries.";
+
     public string InstallPath
     {
         get => _installPath;
-        set => SetProperty(ref _installPath, value);
+        set
+        {
+            if (SetProperty(ref _installPath, value))
+            {
+                OnPropertyChanged(nameof(IsRom));
+                OnPropertyChanged(nameof(IsEmulated));
+                OnPropertyChanged(nameof(SourceBadgeLabel));
+                OnPropertyChanged(nameof(IsLaunchTargetMissing));
+                OnPropertyChanged(nameof(NeedsLaunchAttention));
+                OnPropertyChanged(nameof(LaunchReadinessLabel));
+            }
+        }
     }
+
+    /// <summary>
+    /// True when this game's install path can't currently be resolved to a launchable file or
+    /// folder on disk. Delegates to the same check <see cref="MainViewModel"/> uses for Clean
+    /// Missing Games / Repair Library, so "missing" means exactly the same thing everywhere in
+    /// the app — no separate, possibly-drifting definition here.
+    /// </summary>
+    public bool IsLaunchTargetMissing => MainViewModel.HasMissingLaunchTarget(this);
+
+    /// <summary>True when this game needs the player's attention before it can be launched — either its file is missing, or it's marked Not Installed.</summary>
+    public bool NeedsLaunchAttention => IsLaunchTargetMissing || !IsInstalled;
+
+    /// <summary>Short label for a launch-readiness badge.</summary>
+    public string LaunchReadinessLabel => IsLaunchTargetMissing ? "File missing" : (!IsInstalled ? "Not installed" : "Ready");
 
     public bool IsInstalled
     {
         get => _isInstalled;
-        set => SetProperty(ref _isInstalled, value);
+        set
+        {
+            if (SetProperty(ref _isInstalled, value))
+            {
+                OnPropertyChanged(nameof(NeedsLaunchAttention));
+                OnPropertyChanged(nameof(LaunchReadinessLabel));
+            }
+        }
     }
 
     public bool IsFavorite
@@ -495,6 +622,36 @@ public sealed class GameEntryViewModel : ViewModelBase
         get => _notes;
         set => SetProperty(ref _notes, value);
     }
+
+    public string NextTimeNote
+    {
+        get => _nextTimeNote;
+        set
+        {
+            if (SetProperty(ref _nextTimeNote, value ?? string.Empty))
+            {
+                OnPropertyChanged(nameof(HasNextTimeNote));
+            }
+        }
+    }
+
+    public DateTime? NextTimeUpdatedOn
+    {
+        get => _nextTimeUpdatedOn;
+        set
+        {
+            if (SetProperty(ref _nextTimeUpdatedOn, value))
+            {
+                OnPropertyChanged(nameof(NextTimeUpdatedLabel));
+            }
+        }
+    }
+
+    public bool HasNextTimeNote => !string.IsNullOrWhiteSpace(NextTimeNote);
+
+    public string NextTimeUpdatedLabel => NextTimeUpdatedOn is null
+        ? "No marker saved"
+        : $"Updated {NextTimeUpdatedOn:MMM d, h:mm tt}";
 
     public string TagsText
     {
@@ -850,9 +1007,16 @@ public sealed class GameEntryViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Compact info line shown on every card and in the detail panel, e.g. "Windows PC | Playing".
+    /// Deliberately just platform + status — SourceKind (Folder Scan, Manual Add, Quick Add, etc.)
+    /// is import-plumbing detail nobody needs while just browsing or glancing at a game; it's still
+    /// available via <see cref="SourceKind"/> directly for anywhere that genuinely needs it (e.g. the
+    /// Import review screen).
+    /// </summary>
     public string Subtitle
     {
-        get => _cachedSubtitle ??= $"{Platform} | {Status} | {SourceKind}";
+        get => _cachedSubtitle ??= $"{Platform} | {Status}";
     }
 
     public string AddedLabel => $"Added {AddedOn:MMM d, yyyy}";
@@ -878,7 +1042,7 @@ public sealed class GameEntryViewModel : ViewModelBase
 
     public string PlaytimeLabel => PlaytimeMinutes <= 0 ? "No tracked playtime" : $"{Math.Round(PlaytimeMinutes / 60d, 1):0.#} hours tracked";
 
-    public string PlaytimeLabelShort => PlaytimeMinutes <= 0 ? "â€”" :
+    public string PlaytimeLabelShort => PlaytimeMinutes <= 0 ? "-" :
         PlaytimeMinutes < 60 ? $"{PlaytimeMinutes}m" :
         $"{Math.Round(PlaytimeMinutes / 60d, 1):0.#}h";
 
@@ -899,7 +1063,7 @@ public sealed class GameEntryViewModel : ViewModelBase
 
     public string RatingLabel => CommunityRating is null ? "No community rating" : $"Community rating {CommunityRating:0.0}/5";
 
-    public string FavoriteGlyph => IsFavorite ? "â˜…" : "â˜†";
+    public string FavoriteGlyph => IsFavorite ? "\u2605" : "\u2606";
 
     public bool HasGenres => !string.IsNullOrWhiteSpace(GenresText);
 
@@ -993,11 +1157,53 @@ public sealed class GameEntryViewModel : ViewModelBase
 
     public string AchievementSourceLabel => string.IsNullOrWhiteSpace(AchievementProviderName)
         ? string.IsNullOrWhiteSpace(SteamAppId)
-            ? "CloudBerry will try local achievement files first"
+            ? "Cirra will try local achievement files first"
             : $"Steam App ID {SteamAppId} is available for fallback metadata"
         : $"Achievement data from {AchievementProviderName}";
 
     public bool CanSyncAchievements => !string.IsNullOrWhiteSpace(InstallPath) || !string.IsNullOrWhiteSpace(SteamAppId);
+
+    /// <summary>
+    /// Machine-readable achievement provider health: "ready", "needs-setup", "offline",
+    /// "no-achievements", "provider-error", or "unknown" (never synced this session).
+    /// Runtime-only — recomputed on every sync attempt, not persisted to disk.
+    /// </summary>
+    public string AchievementHealthState
+    {
+        get => _achievementHealthState;
+        set
+        {
+            if (SetProperty(ref _achievementHealthState, value))
+            {
+                OnPropertyChanged(nameof(AchievementHealthLabel));
+            }
+        }
+    }
+
+    /// <summary>Optional human-readable detail for the current health state (e.g. the exception message for provider-error).</summary>
+    public string AchievementHealthReason
+    {
+        get => _achievementHealthReason;
+        set
+        {
+            if (SetProperty(ref _achievementHealthReason, value))
+            {
+                OnPropertyChanged(nameof(AchievementHealthLabel));
+            }
+        }
+    }
+
+    public string AchievementHealthLabel => AchievementHealthState switch
+    {
+        "ready" => "Ready",
+        "needs-setup" => "Needs setup",
+        "offline" => "Offline",
+        "no-achievements" => "No achievements found",
+        "provider-error" => string.IsNullOrWhiteSpace(AchievementHealthReason)
+            ? "Provider error"
+            : $"Provider error: {AchievementHealthReason}",
+        _ => "Not checked yet"
+    };
 
     public string SessionStatusLabel => IsRunning
         ? $"Running since {ActiveSessionStartedAt:MMM d, h:mm tt}"
@@ -1048,6 +1254,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         var publishers = metadata.Publishers ?? [];
         var tags = metadata.Tags ?? [];
         var screenshots = metadata.Screenshots ?? [];
+        var guidebooks = metadata.Guidebooks ?? [];
 
         if (!string.IsNullOrWhiteSpace(metadata.Title))
         {
@@ -1107,6 +1314,11 @@ public sealed class GameEntryViewModel : ViewModelBase
         }
 
         TrailerUrl = MergeUrl(TrailerUrl, metadata.TrailerUrl, mergeMode);
+
+        foreach (var guidebook in guidebooks)
+        {
+            AddGuidebook(guidebook);
+        }
 
         var mergedTags = BuildMergedValues(TagsText, tags.Concat(genres), mergeMode);
 
@@ -1186,9 +1398,16 @@ public sealed class GameEntryViewModel : ViewModelBase
             CachedIconImagePath = iconPath;
     }
 
-    public void MarkSessionStarted()
+    /// <summary>
+    /// Begins tracking a play session. <paramref name="startedAtOverride"/> lets external-detection
+    /// callers (see ExternalGameProcessMonitor) back-date the session to the process's actual start
+    /// time rather than the moment CloudBerry happened to notice it running — without it, a game
+    /// caught mid-session on a background poll would silently lose however many minutes it had
+    /// already been running before detection.
+    /// </summary>
+    public void MarkSessionStarted(DateTime? startedAtOverride = null)
     {
-        var now = DateTime.Now;
+        var now = startedAtOverride ?? DateTime.Now;
         _currentSession = new GameRecord.PlaySession { StartedAtLocal = now };
         ActiveSessionStartedAt = now;
         IsRunning = true;
@@ -1285,6 +1504,15 @@ public sealed class GameEntryViewModel : ViewModelBase
     public IReadOnlyList<AchievementEntryViewModel> ApplyAchievementSnapshot(GameAchievementSnapshot snapshot)
     {
         if (snapshot == null) return [];
+
+        // A game's very first successful sync is a "catch-up" sync: the provider may
+        // report dozens of achievements the user actually earned long before CloudBerry
+        // ever tracked this game. Those must be recorded as unlocked, but must NOT be
+        // reported as "new unlocks" (no toast pop, no unlock-feed entry) or the user gets
+        // flooded with pops for things they did months/years ago. Only sync #2 onward can
+        // produce genuine live unlocks.
+        var isFirstSyncEver = !AchievementsLastSyncedUtc.HasValue;
+
         AchievementProviderId   = snapshot.ProviderId;
         AchievementProviderName = snapshot.ProviderName;
         AchievementsLastSyncedUtc = snapshot.SyncedAtUtc;
@@ -1298,14 +1526,14 @@ public sealed class GameEntryViewModel : ViewModelBase
             {
                 var wasUnlocked = existing.IsUnlocked;
                 existing.Apply(record);
-                if (!wasUnlocked && existing.IsUnlocked)
+                if (!wasUnlocked && existing.IsUnlocked && !isFirstSyncEver)
                     newUnlocks.Add(existing);
             }
             else
             {
                 var vm = new AchievementEntryViewModel(record);
                 Achievements.Add(vm);
-                if (vm.IsUnlocked)
+                if (vm.IsUnlocked && !isFirstSyncEver)
                     newUnlocks.Add(vm);
             }
         }
@@ -1332,6 +1560,7 @@ public sealed class GameEntryViewModel : ViewModelBase
             Title                    = Title,
             Platform                 = Platform,
             SourceKind               = SourceKind,
+            LinkedGameIds            = LinkedGameIds.ToList(),
             InstallPath              = InstallPath,
             IsInstalled              = IsInstalled,
             IsFavorite               = IsFavorite,
@@ -1340,6 +1569,8 @@ public sealed class GameEntryViewModel : ViewModelBase
             LastPlayedOn             = LastPlayedOn,
             PlaytimeMinutes          = PlaytimeMinutes,
             Notes                    = Notes,
+            NextTimeNote             = NextTimeNote,
+            NextTimeUpdatedOn        = NextTimeUpdatedOn,
             Tags                     = Split(TagsText),
             Summary                  = Summary,
             ReleaseDate              = ReleaseDate,
@@ -1369,11 +1600,33 @@ public sealed class GameEntryViewModel : ViewModelBase
             Achievements             = Achievements.Select(a => a.ToModel()).ToList(),
             ScreenshotUrls           = ScreenshotUrls.ToList(),
             TrailerUrl               = TrailerUrl,
+            Guidebooks               = Guidebooks.Select(guidebook => guidebook.Clone()).ToList(),
             UserRating               = UserRating,
             CriticRating             = CriticRating,
             PurchasePriceUsd         = PurchasePriceUsd,
             EmulatorPath             = EmulatorPath,
+            SaveLocations            = SaveLocations,
             Sessions                 = Sessions.ToList(),
         };
     }
+
+    public string SaveLocationsText
+    {
+        get => _saveLocationsText;
+        set
+        {
+            if (SetProperty(ref _saveLocationsText, value ?? string.Empty))
+            {
+                OnPropertyChanged(nameof(SaveLocations));
+                OnPropertyChanged(nameof(HasSaveLocations));
+            }
+        }
+    }
+
+    public List<string> SaveLocations => SaveLocationsText
+        .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    public bool HasSaveLocations => SaveLocations.Count > 0;
 }

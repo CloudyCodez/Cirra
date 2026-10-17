@@ -45,4 +45,7 @@ public sealed class GameMetadataRecord
 
     /// <summary>Direct MP4 URL for the primary trailer, if available.</summary>
     public string TrailerUrl { get; set; } = string.Empty;
+
+    /// <summary>Provider-discovered manuals and guides that can be attached without reformatting.</summary>
+    public List<GameGuidebook> Guidebooks { get; set; } = [];
 }

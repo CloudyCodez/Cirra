@@ -6,6 +6,13 @@ namespace CloudBerry.Core.Services.Metadata;
 public sealed class GameMetadataMatchSelector
 {
     private const double MinimumAutoMatchScore = 42;
+
+    /// <summary>
+    /// Strong-match floor for UI confidence labels. Reachable only via the exact-title-match
+    /// bonus (120) or a very high token-overlap + platform + rating combination — comfortably
+    /// above anything a fuzzy/partial title match could produce on its own.
+    /// </summary>
+    private const double StrongMatchScore = 100;
     private static readonly HashSet<string> EditionPenaltyTerms = new(StringComparer.Ordinal)
     {
         "demo",
@@ -55,6 +62,37 @@ public sealed class GameMetadataMatchSelector
             .Select(entry => entry.Candidate)
             .FirstOrDefault();
     }
+
+    /// <summary>
+    /// Scores every candidate (including ones below the auto-match floor) and returns them
+    /// best-first, so callers that show a picker to the user — rather than silently auto-
+    /// applying one result — can both order the list by actual match quality and label each
+    /// result's confidence via <see cref="GetConfidenceLabel"/>. Unlike <see cref="SelectBestMatch"/>,
+    /// nothing here is filtered out: a weak or blocked match still needs to be visible to the
+    /// user as an option, just clearly labeled "Manual review needed."
+    /// </summary>
+    public IReadOnlyList<(GameMetadataRecord Record, double Score)> ScoreCandidates(
+        string title,
+        string platform,
+        IEnumerable<GameMetadataRecord> candidates)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+
+        return candidates
+            .Select(candidate => (Record: candidate, Score: ScoreCandidate(title, platform, candidate)))
+            .OrderByDescending(entry => entry.Score)
+            .ThenByDescending(entry => entry.Record.CommunityRating ?? 0)
+            .ThenBy(entry => Math.Abs(entry.Record.Title.Length - title.Length))
+            .ToList();
+    }
+
+    /// <summary>Maps a raw match score to the three-tier confidence label shown in metadata search results.</summary>
+    public static string GetConfidenceLabel(double score) => score switch
+    {
+        >= StrongMatchScore => "Strong match",
+        >= MinimumAutoMatchScore => "Possible match",
+        _ => "Manual review needed"
+    };
 
     private static double ScoreCandidate(string title, string platform, GameMetadataRecord candidate)
     {

@@ -55,14 +55,14 @@ $manifest = [ordered]@{
     version = $version
     installerUrl = ""
     chunkUrls = $chunkUrls
-    notes = "CloudBerry $version is ready."
+    notes = "Cirra $version is ready."
     publishedAtUtc = [DateTime]::UtcNow.ToString("o")
 }
 
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $feedRoot "latest.json") -Encoding UTF8
 
 Write-Host ""
-Write-Host "Publishing CloudBerry update feed" -ForegroundColor Cyan
+Write-Host "Publishing Cirra update feed" -ForegroundColor Cyan
 Write-Host "Version: $version"
 Write-Host "Package: $installerPath"
 Write-Host ""

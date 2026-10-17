@@ -2,20 +2,24 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using System;
 using System.ComponentModel;
+using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using CloudBerry.App.Controls;
 using CloudBerry.App.Services;
 using CloudBerry.App.ViewModels;
 using CloudBerry.Core.Services;
+using CloudBerry.Core.Models;
 
 namespace CloudBerry.App;
 
@@ -25,6 +29,8 @@ public partial class BigPictureWindow : Window
     private readonly SoundDesignService _sound;
     private readonly AppDiagnostics _diagnostics = new();
     private readonly DispatcherTimer _trailerPreviewTimer;
+    private DispatcherTimer? _trailerBlankTimer;
+    private bool _windowClosed;
     private Point? _shelfDragStartPoint;
     private double _shelfDragStartOffset;
     private ScrollViewer? _activeShelfScrollViewer;
@@ -44,12 +50,25 @@ public partial class BigPictureWindow : Window
     private double _shelfVelocityX;
     private Point? _shelfPrevDragPoint;
     private DispatcherTimer? _shelfMomentumTimer;
-    // Vertical scroll momentum fields
+    // One notch travels about 100 px after decay. Fast spins can build momentum,
+    // but the cap keeps them from skipping entire shelves.
+    private const double VerticalWheelImpulsePerNotch = 26.0;
+    private const double VerticalWheelImmediateStepPerNotch = 12.0;
+    private const double VerticalWheelMaximumVelocity = 72.0;
+    private const double VerticalWheelDecay = 0.86;
+    private const double VerticalDragThreshold = 7.0;
     private double _verticalScrollVelocity;
     private DispatcherTimer? _verticalMomentumTimer;
     private ScrollViewer? _lastVerticalScrollViewer;
+    private ScrollViewer? _activeVerticalDragViewer;
+    private Point? _verticalDragStartPoint;
+    private Point? _verticalPreviousDragPoint;
+    private double _verticalDragStartOffset;
+    private bool _verticalDragMoved;
     // Hero auto-advance
     private DispatcherTimer? _heroAdvanceTimer;
+    private readonly HeroRotationPolicy _heroRotation = new();
+    private DispatcherTimer? _heroLayoutTimer;
     // Attract Mode: ambient full-screen showcase after extended idle on Home. Uses a simple
     // polling timer (fixed 5s tick, elapsed-seconds counter) rather than recreating a DispatcherTimer
     // whenever the user changes the idle-seconds setting.
@@ -74,17 +93,25 @@ public partial class BigPictureWindow : Window
     private const double AttractMouseJitterThreshold = 6.0; // px
     // Gamepad navigation
     private DispatcherTimer? _gamepadTimer;
-    private DispatcherTimer? _homeScrollTimer;
-    private double _homeScrollTarget;
+    private bool _isGamepadConnected;
+    private int _activeControllerSlot = -1;
+    private bool _isLaunchHandoffActive;
     // Tab transition direction tracking (-1 = backward, +1 = forward)
     private int _lastCloudscapeTabIndex = 0;
     // Detail overlay animation state
     private bool _isDetailOpen = false;
 
+    // Embedded Play — RetroArch's window reparented to live inside Cloudscape (see EmbeddedPlayOverlay in XAML)
+    private EmbeddedProcessWindowHost? _embeddedHost;
+    private GameLaunchSession? _embeddedSession;
+    private string? _embeddedTempConfigPath;
+
     public BigPictureWindow(MainViewModel viewModel)
     {
         InitializeComponent();
         ViewModel = viewModel;
+        viewModel.ResetBigPictureSpotlight();
+        _heroRotation.Interact(Environment.TickCount64);
         DataContext = ViewModel;
         SourceInitialized += (_, _) => ApplyWorkAreaBounds();
         StateChanged += (_, _) => ApplyWorkAreaBounds();
@@ -139,6 +166,7 @@ public partial class BigPictureWindow : Window
         {
             // Find a free port.
             var listener = new HttpListener();
+            _trailerServer = listener;
             // Try a stable port first; fall back to the OS picking one.
             int port = FindFreePort(19854);
             _trailerServerPort = port;
@@ -149,7 +177,7 @@ public partial class BigPictureWindow : Window
             // Handle requests on a background thread — never blocks the UI.
             Thread serverThread = new Thread(() =>
             {
-                while (listener.IsListening)
+                while (true)
                 {
                     try
                     {
@@ -157,6 +185,7 @@ public partial class BigPictureWindow : Window
                         ThreadPool.QueueUserWorkItem(_ => HandleTrailerRequest(ctx));
                     }
                     catch (HttpListenerException) { break; } // listener stopped
+                    catch (ObjectDisposedException) { break; }
                     catch { /* swallow */ }
                 }
             })
@@ -168,6 +197,8 @@ public partial class BigPictureWindow : Window
         }
         catch
         {
+            _trailerServer?.Close();
+            _trailerServer = null;
             // If the server fails to start, ShowCardTrailerPreview will fall through to fallback.
         }
     }
@@ -176,7 +207,7 @@ public partial class BigPictureWindow : Window
     {
         try
         {
-            var test = new HttpListener();
+            using var test = new HttpListener();
             test.Prefixes.Add($"http://localhost:{preferred}/");
             test.Start();
             test.Stop();
@@ -309,6 +340,7 @@ public partial class BigPictureWindow : Window
 
     private async Task InitializeTheatreBrowserAsync()
     {
+        if (_windowClosed) return;
         try
         {
             if (CloudTheatreBrowser != null && CloudTheatreBrowser.CoreWebView2 == null)
@@ -322,6 +354,7 @@ public partial class BigPictureWindow : Window
         }
 
         // Pre-warm the card trailer preview browser so it is ready before first hover.
+        if (_windowClosed) return;
         try
         {
             if (CardTrailerPreviewBrowser != null && CardTrailerPreviewBrowser.CoreWebView2 == null)
@@ -335,7 +368,9 @@ public partial class BigPictureWindow : Window
                 var options = new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required");
                 _trailerBrowserEnvironmentTask = CoreWebView2Environment.CreateAsync(null, null, options);
                 var env = await _trailerBrowserEnvironmentTask;
+                if (_windowClosed) return;
                 await CardTrailerPreviewBrowser.EnsureCoreWebView2Async(env);
+                if (_windowClosed) return;
                 CardTrailerPreviewBrowser.CoreWebView2!.Settings.AreDevToolsEnabled = false;
                 CardTrailerPreviewBrowser.CoreWebView2!.Settings.IsStatusBarEnabled = false;
                 RegisterTrailerFrameHook();
@@ -370,6 +405,8 @@ public partial class BigPictureWindow : Window
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(MainViewModel.SelectedGame) or nameof(MainViewModel.HorizonSpotlightPaused))
+            ResetHeroAdvanceTimer();
         if (e.PropertyName == nameof(MainViewModel.BigPictureHeroGame))
             CrossfadeHeroBg();
 
@@ -383,7 +420,17 @@ public partial class BigPictureWindow : Window
             NavigateCloudTheatreBrowser();
 
         if (e.PropertyName is nameof(MainViewModel.SelectedCloudscapePage))
+        {
+            ViewModel.ResetBigPictureSpotlight();
+            ResetHeroAdvanceTimer();
             OnPageChanged();
+        }
+
+        if (ViewModel.IsBigPictureLibraryGrid &&
+            e.PropertyName is nameof(MainViewModel.SelectedBigPictureLibraryCategory) or nameof(MainViewModel.BigPictureLibrarySortKey))
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(FocusLibraryGridSelection));
+        }
 
         // Now Playing bar — show/hide when a session starts or ends.
         if (e.PropertyName is nameof(MainViewModel.IsRunning) or nameof(MainViewModel.RunningGameTitle))
@@ -400,9 +447,15 @@ public partial class BigPictureWindow : Window
         // prevents trailers bleeding across tabs.
         StopTrailerPreview();
 
-        // Track direction for tab slide transition (used by UI if wired).
+        // Track direction for tab slide transition.
         int newTab = ViewModel.SelectedCloudscapePage;
+        // A5: finishes what this scaffolding was already set up for but never wired — slide in
+        // from the right when moving to a higher-index tab, from the left when moving to a lower one.
+        bool movingForward = newTab >= _lastCloudscapeTabIndex;
         _lastCloudscapeTabIndex = newTab;
+        AnimateCloudscapePageTransition(movingForward);
+        UpdateControllerActionLegend();
+        AnimateHeroCompact(_isNetflixMode || (newTab == 1 && ViewModel.IsBigPictureLibraryGrid));
 
         var onTheatre = ViewModel.SelectedCloudscapePage == 5 && ViewModel.IsCloudTheatreUnlocked;
         // Hero panel: hidden on Theatre tab, visible everywhere else
@@ -423,6 +476,95 @@ public partial class BigPictureWindow : Window
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(AnimateShelvesFadeIn));
             ResetHeroAdvanceTimer();
         }
+        else if (ViewModel.SelectedCloudscapePage == 1 && ViewModel.IsBigPictureLibraryGrid)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(FocusLibraryGridSelection));
+        }
+    }
+
+    private void UpdateControllerActionLegend()
+    {
+        if (ControllerActionLegend is null)
+        {
+            return;
+        }
+
+        int page = ViewModel.SelectedCloudscapePage;
+        ControllerActionLegend.Visibility = _isGamepadConnected ? Visibility.Visible : Visibility.Collapsed;
+        ControllerDeviceText.Text = _activeControllerSlot >= 0 ? $"P{_activeControllerSlot + 1}" : string.Empty;
+        ControllerActionAText.Text = page is 0 or 1 ? " Details" : " Select";
+        ControllerActionXGroup.Visibility = page == 1 ? Visibility.Visible : Visibility.Collapsed;
+        ControllerActionXText.Text = ViewModel.IsBigPictureLibraryGrid ? " Shelves" : " Grid";
+        ControllerActionYGroup.Visibility = page == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// A5: fade + directional slide for the Cloudscape page shell on every tab change, matching
+    /// MainWindow's own OnTabControlSelectionChanged fade+slide treatment. Slides in from the right
+    /// when moving to a higher-index tab (matching the visual order of the nav list), from the left
+    /// when moving backward.
+    /// </summary>
+    private void AnimateCloudscapePageTransition(bool movingForward)
+    {
+        var presenter = FindVisualChild<ContentPresenter>(CloudscapePageShell);
+        if (presenter is null) return;
+
+        if (!ViewModel.VisualEffectsEnabled ||
+            string.Equals(ViewModel.EffectsQuality, "Off", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ViewModel.AppearanceThemeKey, "High Contrast", StringComparison.Ordinal))
+        {
+            presenter.BeginAnimation(UIElement.OpacityProperty, null);
+            presenter.Opacity = 1;
+            if (presenter.RenderTransform is TranslateTransform existing)
+            {
+                existing.BeginAnimation(TranslateTransform.XProperty, null);
+                existing.X = 0;
+            }
+            return;
+        }
+
+        var animOpacity = new DoubleAnimation
+        {
+            From = 0.0,
+            To = 1.0,
+            Duration = TimeSpan.FromMilliseconds(220),
+            EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+        };
+
+        if (presenter.RenderTransform is not TranslateTransform translate || translate.IsFrozen)
+        {
+            translate = new TranslateTransform();
+            presenter.RenderTransform = translate;
+        }
+
+        var animSlide = new DoubleAnimation
+        {
+            From = movingForward ? 14 : -14,
+            To = 0.0,
+            Duration = TimeSpan.FromMilliseconds(280),
+            EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+        };
+
+        presenter.BeginAnimation(UIElement.OpacityProperty, animOpacity);
+        translate.BeginAnimation(TranslateTransform.XProperty, animSlide);
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T typedChild)
+            {
+                return typedChild;
+            }
+            var childOfChild = FindVisualChild<T>(child);
+            if (childOfChild != null)
+            {
+                return childOfChild;
+            }
+        }
+        return null;
     }
 
     private void NavigateCloudTheatreBrowser()
@@ -457,7 +599,7 @@ public partial class BigPictureWindow : Window
 
     private void CloudTheatreBrowser_InitCompleted(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2InitializationCompletedEventArgs e)
     {
-        if (e.IsSuccess)
+        if (!_windowClosed && e.IsSuccess)
         {
             NavigateCloudTheatreBrowser();
             CloudTheatreBrowser.CoreWebView2!.ContainsFullScreenElementChanged += CloudTheatreFullScreenChanged;
@@ -471,7 +613,7 @@ public partial class BigPictureWindow : Window
         // unless we keep WindowState = Maximized. Re-assert it here to prevent jank.
         Dispatcher.Invoke(() =>
         {
-            if (!CloudTheatreBrowser.CoreWebView2!.ContainsFullScreenElement)
+            if (!_windowClosed && CloudTheatreBrowser.CoreWebView2 is { ContainsFullScreenElement: false })
             {
                 // Site exited fullscreen — keep our window fully maximized
                 WindowState = WindowState.Maximized;
@@ -581,11 +723,7 @@ p {
     // ─────────────────────────────────────────────────────────────────────
     private async void LaunchHeroGameClick(object sender, RoutedEventArgs e)
     {
-        await PlayLaunchHandoffAnimationAsync();
-        await RunUiTaskAsync(
-            () => ViewModel.LaunchGameAsync(ViewModel.BigPictureHeroGame),
-            "CloudBerry couldn't launch that game from Big Picture.");
-        _sound.PlayLaunchHandoff();
+        await LaunchGameWithHandoffAsync(ViewModel.BigPictureHeroGame, "Cirra couldn't launch that game from Horizon.");
     }
 
     private void BrowseHeroGameClick(object sender, RoutedEventArgs e)
@@ -623,7 +761,7 @@ p {
 
         await RunUiTaskAsync(
             () => ViewModel.ScanFolderAsync(dialog.FolderName),
-            "CloudBerry couldn't complete the folder scan.");
+            "Cirra couldn't complete the folder scan.");
         ViewModel.SelectedCloudscapePage = 1;
     }
 
@@ -631,14 +769,14 @@ p {
     {
         await RunUiTaskAsync(
             () => ViewModel.DownloadMissingMetadataAsync(),
-            "CloudBerry couldn't fill missing metadata.");
+            "Cirra couldn't fill missing metadata.");
     }
 
     private async void BigPictureSyncAchievementsClick(object sender, RoutedEventArgs e)
     {
         await RunUiTaskAsync(
             () => ViewModel.SyncGamesMissingAchievementsAsync(),
-            "CloudBerry couldn't sync missing achievements.");
+            "Cirra couldn't sync missing achievements.");
     }
 
     // ── Emulation Station: jump to the Settings tab within Cloudscape (index 3) instead of
@@ -665,16 +803,19 @@ p {
     {
         _isNetflixMode = !_isNetflixMode;
         ViewModel.IsCloudscapeCompact = _isNetflixMode;
+        AnimateHeroCompact(_isNetflixMode ||
+            (ViewModel.SelectedCloudscapePage == 1 && ViewModel.IsBigPictureLibraryGrid));
 
-        // ── Opacity ──────────────────────────────────────────────────────────
-        // When collapsing: fade the hero OUT immediately so it vanishes cleanly
-        // as the row shrinks. Don't touch Visibility — it's data-bound.
-        // When expanding: start at opacity 0 (already 0 from the collapse), let
-        // the row open first, then fade in once the space exists.
+        LibraryFilterPanel.Visibility = _isNetflixMode ? Visibility.Collapsed : Visibility.Visible;
+        NetflixToggleIcon.Text  = _isNetflixMode ? "\uE8AA" : "\uE8A9";
+        NetflixToggleLabel.Text = _isNetflixMode ? "Expand"  : "Compact";
+    }
+
+    private void AnimateHeroCompact(bool compact)
+    {
         var easeOut = new PowerEase { EasingMode = EasingMode.EaseOut, Power = 5 };
-        if (_isNetflixMode)
+        if (compact)
         {
-            // Collapsing — fade out quickly, then let the row shrink.
             CloudscapeHeroShell.BeginAnimation(UIElement.OpacityProperty,
                 new DoubleAnimation(CloudscapeHeroShell.Opacity, 0,
                     new Duration(TimeSpan.FromMilliseconds(120)))
@@ -682,9 +823,6 @@ p {
         }
         else
         {
-            // Expanding — hold at 0 for the first half of the row animation,
-            // then fade in over the second half so content appears into space
-            // that already exists rather than fighting a shrinking clip.
             CloudscapeHeroShell.BeginAnimation(UIElement.OpacityProperty, null);
             CloudscapeHeroShell.Opacity = 0;
             CloudscapeHeroShell.BeginAnimation(UIElement.OpacityProperty,
@@ -696,15 +834,19 @@ p {
                 });
         }
 
-        // ── Row height ───────────────────────────────────────────────────────
-        // Animate the grid row height with a DispatcherTimer (WPF has no
-        // built-in GridLengthAnimation).  Quintic ease-out is used throughout.
-        double fromHeight = _isNetflixMode ? 240 : 0;
-        double toHeight   = _isNetflixMode ? 0   : 240;
+        _heroLayoutTimer?.Stop();
+        double fromHeight = HeroRow.Height.IsAbsolute ? HeroRow.Height.Value : HeroRow.ActualHeight;
+        double toHeight = compact ? 0 : 240;
+        if (Math.Abs(fromHeight - toHeight) < 0.5)
+        {
+            HeroRow.Height = new GridLength(toHeight);
+            return;
+        }
+
         double elapsed    = 0;
         const double durationMs = 280;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(8) };
-        timer.Tick += (s, _) =>
+        _heroLayoutTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(8) };
+        _heroLayoutTimer.Tick += (s, _) =>
         {
             elapsed += 8;
             double t    = Math.Min(elapsed / durationMs, 1.0);
@@ -716,11 +858,7 @@ p {
                 ((DispatcherTimer)s!).Stop();
             }
         };
-        timer.Start();
-
-        LibraryFilterPanel.Visibility = _isNetflixMode ? Visibility.Collapsed : Visibility.Visible;
-        NetflixToggleIcon.Text  = _isNetflixMode ? "\uE8AA" : "\uE8A9";
-        NetflixToggleLabel.Text = _isNetflixMode ? "Expand"  : "Compact";
+        _heroLayoutTimer.Start();
     }
 
     private void CloseBigPictureClick(object sender, RoutedEventArgs e)
@@ -842,9 +980,11 @@ p {
         ".ytp-cued-thumbnail-overlay,.ytp-ce-element,.ytp-endscreen-content," +
         ".ytp-gradient-top,.ytp-gradient-bottom,.ytp-contextmenu," +
         ".ytp-content-rating,.ytp-feature-list-container," +
-        ".ytp-cards-teaser,.ytp-iv-video-content" +
+        ".ytp-cards-teaser,.ytp-iv-video-content," +
+        ".ytp-large-play-button,.ytp-play-button,.ytp-button," +
+        ".ytp-youtube-button,.ytp-title-channel-logo,.ytp-spinner" +
         "{display:none!important;opacity:0!important;visibility:hidden!important}" +
-        "#movie_player,.html5-video-player,.ytp-large-play-button" +
+        "#movie_player,.html5-video-player" +
         "{pointer-events:none!important}";
 
     /// <summary>
@@ -861,7 +1001,7 @@ p {
         if (CardTrailerPreviewBrowser?.CoreWebView2 == null) return;
         CardTrailerPreviewBrowser.CoreWebView2.NavigationCompleted += async (_, args) =>
         {
-            if (!args.IsSuccess || CardTrailerPreviewBrowser.CoreWebView2 == null) return;
+            if (_windowClosed || !args.IsSuccess || CardTrailerPreviewBrowser.CoreWebView2 == null) return;
             try
             {
                 await CardTrailerPreviewBrowser.CoreWebView2.ExecuteScriptAsync(
@@ -899,14 +1039,7 @@ p {
                 await frame.ExecuteScriptAsync(
                     "(function(){" +
                     "var s=document.createElement('style');" +
-                    "s.textContent=" +
-                    "'.ytp-chrome-top,.ytp-chrome-bottom,.ytp-title,.ytp-title-text,.ytp-title-expanded," +
-                    ".ytp-watermark,.ytp-pause-overlay,.ytp-bezel,.ytp-bezel-text," +
-                    ".ytp-cued-thumbnail-overlay,.ytp-ce-element,.ytp-endscreen-content," +
-                    ".ytp-gradient-top,.ytp-gradient-bottom,.ytp-contextmenu," +
-                    ".ytp-content-rating,.ytp-feature-list-container," +
-                    ".ytp-cards-teaser,.ytp-iv-video-content" +
-                    "{display:none!important;opacity:0!important;visibility:hidden!important}';" +
+                    "s.textContent='" + BuildTrailerShieldCss() + "';" +
                     "(document.head||document.documentElement).appendChild(s)" +
                     "})()");
             }
@@ -917,9 +1050,11 @@ p {
     private void StopTrailerPreview()
     {
         _trailerPreviewTimer.Stop();
+        _trailerBlankTimer?.Stop();
         _pendingTrailerPreviewGame = null;
         _pendingTrailerPreviewElement = null;
         _activeTrailerPreviewGame = null;
+        if (_windowClosed) return;
 
         // Fade overlay out smoothly instead of snapping to hidden.
         CardTrailerPreviewHost.BeginAnimation(UIElement.OpacityProperty,
@@ -929,6 +1064,7 @@ p {
             });
         Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
         {
+            if (_windowClosed || _activeTrailerPreviewGame != null) return;
             CardTrailerPreviewHost.Visibility = Visibility.Collapsed;
             CardTrailerPreviewFallback.Visibility = Visibility.Collapsed;
         }));
@@ -949,13 +1085,13 @@ p {
                     "  }" +
                     "})()");
                 // Navigate to blank after the fade (220ms)
-                var nav = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(220) };
+                var nav = _trailerBlankTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(220) };
                 nav.Tick += (s, _) =>
                 {
                     ((DispatcherTimer)s!).Stop();
                     try
                     {
-                        if (CardTrailerPreviewBrowser.CoreWebView2 != null)
+                        if (!_windowClosed && _activeTrailerPreviewGame == null && CardTrailerPreviewBrowser.CoreWebView2 != null)
                             CardTrailerPreviewBrowser.NavigateToString(
                                 "<!doctype html><html><head><meta charset='utf-8'></head>" +
                                 "<body style='margin:0;background:#050b12;overflow:hidden'></body></html>");
@@ -973,8 +1109,9 @@ p {
 
     private async void ShowCardTrailerPreview(GameEntryViewModel game)
     {
-        if (_pendingTrailerPreviewElement is null || !game.HasEmbeddableTrailer)
+        if (_windowClosed || _pendingTrailerPreviewElement is null || !game.HasEmbeddableTrailer)
             return;
+        _trailerBlankTimer?.Stop();
 
         // Position the overlay over the card.
         var origin = _pendingTrailerPreviewElement.TranslatePoint(new Point(0, 0), CloudscapeRoot);
@@ -1002,7 +1139,7 @@ p {
                 var env = await _trailerBrowserEnvironmentTask;
 
                 // Guard: user may have moused off while we awaited the environment.
-                if (!ReferenceEquals(game, _pendingTrailerPreviewGame))
+                if (_windowClosed || !ReferenceEquals(game, _pendingTrailerPreviewGame))
                     return;
 
                 if (CardTrailerPreviewBrowser.CoreWebView2 == null)
@@ -1011,7 +1148,7 @@ p {
                 }
 
                 // Guard again after the second await.
-                if (!ReferenceEquals(game, _pendingTrailerPreviewGame))
+                if (_windowClosed || !ReferenceEquals(game, _pendingTrailerPreviewGame))
                     return;
 
                 CardTrailerPreviewBrowser.CoreWebView2!.Settings.AreDevToolsEnabled  = false;
@@ -1047,18 +1184,25 @@ p {
                 EventHandler<CoreWebView2NavigationCompletedEventArgs>? navHandler = null;
                 navHandler = async (s, ev) =>
                 {
-                    CardTrailerPreviewBrowser.CoreWebView2!.NavigationCompleted -= navHandler;
-                    if (!ev.IsSuccess) return;
-                    await Task.Delay(500);
-                    if (CardTrailerPreviewBrowser.CoreWebView2 == null) return;
-                    await CardTrailerPreviewBrowser.CoreWebView2.ExecuteScriptAsync(
-                        "if(window._unmute)window._unmute();");
+                    try
+                    {
+                        if (_windowClosed || CardTrailerPreviewBrowser.CoreWebView2 == null) return;
+                        CardTrailerPreviewBrowser.CoreWebView2.NavigationCompleted -= navHandler;
+                        if (!ev.IsSuccess) return;
+                        await Task.Delay(500);
+                        if (_windowClosed || !ReferenceEquals(game, _activeTrailerPreviewGame) ||
+                            CardTrailerPreviewBrowser.CoreWebView2 == null) return;
+                        await CardTrailerPreviewBrowser.CoreWebView2.ExecuteScriptAsync(
+                            "if(window._unmute)window._unmute();");
+                    }
+                    catch { /* Navigation can finish while the browser is being disposed. */ }
                 };
                 CardTrailerPreviewBrowser.CoreWebView2!.NavigationCompleted += navHandler;
             }
         }
         catch
         {
+            if (_windowClosed) return;
             CardTrailerPreviewHost.Visibility = Visibility.Visible;
             CardTrailerPreviewHost.Opacity = 1;
             CardTrailerPreviewFallback.Visibility = Visibility.Visible;
@@ -1124,6 +1268,99 @@ p {
         }
     }
 
+    private void LibraryViewToggleClick(object sender, RoutedEventArgs e)
+    {
+        SetLibraryGridMode(!ViewModel.IsBigPictureLibraryGrid);
+    }
+
+    private void SetLibraryGridMode(bool enabled)
+    {
+        ViewModel.IsBigPictureLibraryGrid = enabled;
+        LibraryViewToggleIcon.Text = enabled ? "\uE8A9" : "\uE80A";
+        LibraryViewToggleButton.ToolTip = enabled ? "Switch to shelves" : "Switch to cover grid";
+        LibraryViewToggleButton.BorderBrush = enabled
+            ? FindResource("CloudBrush") as Brush
+            : FindResource("GlassPanelBorderBrush") as Brush;
+        AnimateHeroCompact(_isNetflixMode ||
+            (ViewModel.SelectedCloudscapePage == 1 && enabled));
+
+        if (enabled)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(FocusLibraryGridSelection));
+        }
+
+        _sound.PlaySoftClick();
+    }
+
+    private void LibraryGridSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ListBox listBox || listBox.SelectedItem is not GameEntryViewModel game)
+        {
+            return;
+        }
+
+        ViewModel.SelectedGame = game;
+        listBox.ScrollIntoView(game);
+        PulseShelfSelection(listBox, game);
+        PulseHeroShell();
+        _sound.PlayFocusMove();
+        ResetHeroAdvanceTimer();
+    }
+
+    private void FocusLibraryGridSelection()
+    {
+        if (!ViewModel.IsBigPictureLibraryGrid || ViewModel.BigPictureLibraryGridGames.Count == 0)
+        {
+            return;
+        }
+
+        var game = ViewModel.SelectedGame;
+        if (game is null || !ViewModel.BigPictureLibraryGridGames.Contains(game))
+        {
+            game = ViewModel.BigPictureLibraryGridGames[0];
+            ViewModel.SelectedGame = game;
+        }
+
+        LibraryGridList.SelectedItem = game;
+        LibraryGridList.ScrollIntoView(game);
+        LibraryGridList.Focus();
+    }
+
+    private void MoveLibrarySelection(int horizontal, int vertical)
+    {
+        var games = ViewModel.BigPictureLibraryGridGames;
+        if (games.Count == 0)
+        {
+            return;
+        }
+
+        var currentIndex = ViewModel.SelectedGame is null ? -1 : games.IndexOf(ViewModel.SelectedGame);
+        if (currentIndex < 0)
+        {
+            currentIndex = 0;
+        }
+
+        var columns = ViewModel.IsBigPictureLibraryGrid
+            ? Math.Max(1, (int)Math.Floor(Math.Max(222, LibraryGridList.ActualWidth) / 222))
+            : 1;
+        var delta = horizontal + (vertical * columns);
+        var nextIndex = Math.Clamp(currentIndex + delta, 0, games.Count - 1);
+        var next = games[nextIndex];
+        ViewModel.SelectedGame = next;
+
+        if (ViewModel.IsBigPictureLibraryGrid)
+        {
+            LibraryGridList.SelectedItem = next;
+            LibraryGridList.ScrollIntoView(next);
+        }
+
+        if (!ViewModel.IsBigPictureLibraryGrid)
+        {
+            _sound.PlayFocusMove();
+        }
+        ResetHeroAdvanceTimer();
+    }
+
     // ── BigPicture search ───────────────────────────────────────────────────
     private void BigPictureSearchBoxKeyDown(object sender, KeyEventArgs e)
     {
@@ -1166,8 +1403,7 @@ p {
     {
         var game = GameFromContextSender(sender);
         if (game == null) return;
-        await RunUiTaskAsync(() => ViewModel.LaunchGameAsync(game), "CloudBerry couldn't launch that game.");
-        _sound.PlayLaunchHandoff();
+        await LaunchGameWithHandoffAsync(game, "Cirra couldn't launch that game.");
     }
 
     private async void CardContextFavoriteClick(object sender, RoutedEventArgs e)
@@ -1176,7 +1412,7 @@ p {
         if (game == null) return;
         await RunUiTaskAsync(
             () => ViewModel.SetFavoriteForGamesAsync(new[] { game }, !game.IsFavorite),
-            "CloudBerry couldn't update favorite status.");
+            "Cirra couldn't update favorite status.");
         _sound.PlaySoftClick();
     }
 
@@ -1185,7 +1421,7 @@ p {
         var game = GameFromContextSender(sender);
         if (game == null) return;
         game.Status = "Playing";
-        await RunUiTaskAsync(() => ViewModel.SaveSelectedGameAsync(), "CloudBerry couldn't save game status.");
+        await RunUiTaskAsync(() => ViewModel.SaveSelectedGameAsync(), "Cirra couldn't save game status.");
         _sound.PlaySoftClick();
     }
 
@@ -1194,7 +1430,7 @@ p {
         var game = GameFromContextSender(sender);
         if (game == null) return;
         game.Status = "Completed";
-        await RunUiTaskAsync(() => ViewModel.SaveSelectedGameAsync(), "CloudBerry couldn't save game status.");
+        await RunUiTaskAsync(() => ViewModel.SaveSelectedGameAsync(), "Cirra couldn't save game status.");
         _sound.PlaySoftClick();
     }
 
@@ -1221,11 +1457,11 @@ p {
         if (game == null) return;
         var result = MessageBox.Show(this,
             $"Remove \u201c{game.Title}\u201d from your library? This will not delete any files.",
-            "CloudBerry", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            "Cirra", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (result != MessageBoxResult.Yes) return;
         await RunUiTaskAsync(
             () => ViewModel.RemoveGamesAsync(new[] { game }),
-            "CloudBerry couldn't remove that game.");
+            "Cirra couldn't remove that game.");
         _sound.PlaySoftClick();
     }
 
@@ -1246,10 +1482,7 @@ p {
         if (game == null) return;
 
         e.Handled = true; // prevent the click from also selecting/deselecting the card
-        await RunUiTaskAsync(
-            () => ViewModel.LaunchGameAsync(game),
-            "CloudBerry couldn't launch that game.");
-        _sound.PlayLaunchHandoff();
+        await LaunchGameWithHandoffAsync(game, "Cirra couldn't launch that game.");
     }
 
     private async void ShelfPointerDragStart(object sender, MouseButtonEventArgs e)
@@ -1281,10 +1514,7 @@ p {
         {
             _shelfWasDoubleClick = true;
             listBox.SelectedItem = _pendingShelfClickGame;
-            await RunUiTaskAsync(
-                () => ViewModel.LaunchGameAsync(_pendingShelfClickGame),
-                "CloudBerry couldn't launch the selected game.");
-            _sound.PlayLaunchHandoff();
+            await LaunchGameWithHandoffAsync(_pendingShelfClickGame, "Cirra couldn't launch the selected game.");
             ReleaseShelfDrag(listBox);
         }
     }
@@ -1387,45 +1617,6 @@ p {
         }
     }
 
-    private void ShelfPreviewMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        // The ListBox's internal ScrollViewer swallows wheel events when the cursor
-        // is over a card. We intercept here and apply the same momentum impulse that
-        // OnPreviewMouseWheel uses, bypassing the routed event system entirely so
-        // the momentum state is updated correctly.
-        if (sender is not DependencyObject source) return;
-
-        // Always kill any active trailer preview — the card is scrolling away.
-        StopTrailerPreview();
-
-        // Walk up past the ListBox to find the outer vertically-scrollable ScrollViewer.
-        var element = VisualTreeHelper.GetParent(source);
-        while (element is not null)
-        {
-            if (element is ScrollViewer sv && sv.ScrollableHeight > 0)
-            {
-                // Mirror OnPreviewMouseWheel's impulse logic exactly.
-                double impulse = -e.Delta / 3.0;
-
-                if (Math.Sign(impulse) == Math.Sign(_verticalScrollVelocity))
-                    _verticalScrollVelocity += impulse * 0.40;
-                else
-                    _verticalScrollVelocity = impulse;
-
-                _verticalScrollVelocity = Math.Clamp(_verticalScrollVelocity, -1400, 1400);
-                sv.ScrollToVerticalOffset(sv.VerticalOffset + impulse);
-                _lastVerticalScrollViewer = sv;
-
-                if (!_verticalMomentumTimer!.IsEnabled)
-                    _verticalMomentumTimer.Start();
-
-                e.Handled = true;
-                return;
-            }
-            element = VisualTreeHelper.GetParent(element);
-        }
-    }
-
     private void ReleaseShelfDrag(ListBox listBox)
     {
         if (listBox.IsMouseCaptured)
@@ -1476,6 +1667,17 @@ p {
                     return;
                 }
             }
+        }
+        if (ViewModel.SelectedCloudscapePage == 1 &&
+            e.OriginalSource is not TextBox &&
+            (e.Key is Key.Left or Key.Right ||
+             (ViewModel.IsBigPictureLibraryGrid && e.Key is Key.Up or Key.Down)))
+        {
+            var horizontal = e.Key == Key.Left ? -1 : e.Key == Key.Right ? 1 : 0;
+            var vertical = e.Key == Key.Up ? -1 : e.Key == Key.Down ? 1 : 0;
+            MoveLibrarySelection(horizontal, vertical);
+            e.Handled = true;
+            return;
         }
         if (e.Key == Key.K && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && ViewModel.SelectedCloudscapePage == 3)
         {
@@ -1554,12 +1756,11 @@ p {
                 break;
         }
 
-        if (e.Key == Key.Enter && e.OriginalSource is not TextBox)
+        if (e.Key == Key.Enter && e.OriginalSource is not TextBox &&
+            FindAncestor<ButtonBase>(e.OriginalSource as DependencyObject) == null)
         {
-            await RunUiTaskAsync(
-                () => ViewModel.LaunchGameAsync(ViewModel.SelectedGame ?? ViewModel.BigPictureHeroGame),
-                "CloudBerry couldn't launch the selected game.");
-            _sound.PlayLaunchHandoff();
+            await LaunchGameWithHandoffAsync(ViewModel.SelectedGame ?? ViewModel.BigPictureHeroGame,
+                "Cirra couldn't launch the selected game.");
             e.Handled = true;
         }
     }
@@ -1730,7 +1931,7 @@ p {
                 // Never engage while effects are disabled, already active, off the Home tab,
                 // a game is running, or the detail overlay is open — attract mode should only
                 // ever take over an idle, empty-handed Home screen.
-                if (!ViewModel.AttractModeEnabled || ViewModel.IsAttractModeActive ||
+                if (_windowClosed || !IsVisible || !IsActive || !ViewModel.AttractModeEnabled || ViewModel.IsAttractModeActive ||
                     ViewModel.SelectedCloudscapePage != 0 || ViewModel.IsRunning || _isDetailOpen)
                 {
                     return;
@@ -1752,6 +1953,7 @@ p {
     /// <summary>Called from every real-input entry point (mouse move, key down, gamepad press) to keep the idle clock from tripping while the user is active.</summary>
     private void ResetAttractIdleTimer()
     {
+        _heroRotation.Interact(Environment.TickCount64);
         _attractIdleElapsedSeconds = 0;
     }
 
@@ -1830,7 +2032,7 @@ p {
                 _attractImages = MainViewModel.BuildAttractShowcaseImages(game);
                 _attractImageIndex = 0;
 
-                AttractTitleText.Text = game?.Title ?? "CloudBerry";
+                AttractTitleText.Text = game?.Title ?? "Cirra";
                 AttractSubtitleText.Text = ViewModel.AttractModeContextLabel;
             }
 
@@ -1906,12 +2108,13 @@ p {
         catch { /* bad path, unsupported format, or network error — leave source null */ }
 
         // Attract mode may have been exited mid-load; only apply if still active.
-        if (ViewModel.IsAttractModeActive)
+        if (!_windowClosed && ViewModel.IsAttractModeActive)
             target.Source = bmp;
     }
 
     private void ExitAttractMode()
     {
+        if (_windowClosed) return;
         ResetAttractIdleTimer();
         if (!ViewModel.IsAttractModeActive) return;
         try
@@ -1940,23 +2143,78 @@ p {
     }
 
     /// <summary>
-    /// Fades the full-screen black overlay in (0→1 over 380ms), plays the launch sound,
-    /// then fades back out (1→0 over 280ms) so the window is clean if the game exits quickly.
+    /// Runs Horizon's shared launch confirmation, keeping every Play route visually consistent.
     /// </summary>
-    private async Task PlayLaunchHandoffAnimationAsync()
+    private async Task LaunchGameWithHandoffAsync(GameEntryViewModel? game, string failureMessage)
     {
-        var fadeIn = new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(380)))
+        if (game is null || _isLaunchHandoffActive)
         {
-            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
-        };
-        LaunchHandoffOverlay.BeginAnimation(OpacityProperty, fadeIn);
-        await Task.Delay(380);
-        // Fade back out after a beat so if game closes quickly the overlay is gone
-        var fadeOut = new DoubleAnimation(1, 0, new Duration(TimeSpan.FromMilliseconds(280)))
+            if (game is null)
+            {
+                await RunUiTaskAsync(() => ViewModel.LaunchGameAsync(null), failureMessage);
+            }
+            return;
+        }
+
+        _isLaunchHandoffActive = true;
+        bool animate = ViewModel.VisualEffectsEnabled &&
+                       !string.Equals(ViewModel.EffectsQuality, "Off", StringComparison.OrdinalIgnoreCase) &&
+                       !string.Equals(ViewModel.AppearanceThemeKey, "High Contrast", StringComparison.Ordinal);
+        try
         {
-            BeginTime = TimeSpan.FromMilliseconds(600)
-        };
-        LaunchHandoffOverlay.BeginAnimation(OpacityProperty, fadeOut);
+            LaunchHandoffContent.DataContext = game;
+            LaunchHandoffOverlay.BeginAnimation(OpacityProperty, null);
+            LaunchHandoffOverlay.Opacity = animate ? 0 : 1;
+            LaunchHandoffOverlay.Visibility = Visibility.Visible;
+            LaunchHandoffOverlay.IsHitTestVisible = true;
+
+            if (animate)
+            {
+                var revealed = new TaskCompletionSource<object?>();
+                var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(260))
+                {
+                    EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+                };
+                fadeIn.Completed += (_, _) => revealed.TrySetResult(null);
+                LaunchHandoffOverlay.BeginAnimation(OpacityProperty, fadeIn, HandoffBehavior.SnapshotAndReplace);
+                await revealed.Task;
+            }
+            else
+            {
+                await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+            }
+
+            await RunUiTaskAsync(() => ViewModel.LaunchGameAsync(game), failureMessage);
+            if (ViewModel.StatusMessage.StartsWith("Launched ", StringComparison.OrdinalIgnoreCase))
+            {
+                _sound.PlayLaunchHandoff();
+            }
+            else if (ViewModel.StatusMessage.Contains("not ready", StringComparison.OrdinalIgnoreCase))
+            {
+                _sound.PlayWarning();
+            }
+        }
+        finally
+        {
+            if (animate && LaunchHandoffOverlay.Visibility == Visibility.Visible)
+            {
+                await Task.Delay(100);
+                var hidden = new TaskCompletionSource<object?>();
+                var fadeOut = new DoubleAnimation(LaunchHandoffOverlay.Opacity, 0, TimeSpan.FromMilliseconds(260))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+                };
+                fadeOut.Completed += (_, _) => hidden.TrySetResult(null);
+                LaunchHandoffOverlay.BeginAnimation(OpacityProperty, fadeOut, HandoffBehavior.SnapshotAndReplace);
+                await hidden.Task;
+            }
+            LaunchHandoffOverlay.BeginAnimation(OpacityProperty, null);
+            LaunchHandoffOverlay.Opacity = 0;
+            LaunchHandoffOverlay.Visibility = Visibility.Collapsed;
+            LaunchHandoffOverlay.IsHitTestVisible = false;
+            LaunchHandoffContent.DataContext = null;
+            _isLaunchHandoffActive = false;
+        }
     }
 
     private void HeroParallaxMouseMove(object sender, MouseEventArgs e)
@@ -2070,12 +2328,162 @@ p {
         CloudscapeClickPulseScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.7, 2.65, TimeSpan.FromMilliseconds(280)) { EasingFunction = ease });
     }
 
+    private void PulseHorizonScroll(double impulse)
+    {
+        if (!ViewModel.VisualEffectsEnabled || Math.Abs(impulse) < 0.01)
+        {
+            return;
+        }
+
+        var direction = Math.Sign(impulse);
+        var intensity = Math.Clamp(ViewModel.EffectiveVisualEffectIntensity, 0.25, 1.0);
+        var ease = new QuarticEase { EasingMode = EasingMode.EaseOut };
+
+        HorizonScrollPulse.BeginAnimation(
+            UIElement.OpacityProperty,
+            new DoubleAnimation(0.24 + (intensity * 0.28), 0, TimeSpan.FromMilliseconds(380))
+            {
+                EasingFunction = ease
+            });
+        HorizonScrollPulseTransform.BeginAnimation(
+            TranslateTransform.YProperty,
+            new DoubleAnimation(-18 * direction, 22 * direction, TimeSpan.FromMilliseconds(380))
+            {
+                EasingFunction = ease
+            });
+    }
+
     private void SetDragCueVisible(bool visible)
     {
         CloudscapeDragCue.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(visible ? 0.94 : 0, TimeSpan.FromMilliseconds(visible ? 100 : 180))
         {
             EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
         });
+    }
+
+    private void VerticalPointerDragStart(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ScrollViewer scrollViewer ||
+            scrollViewer.ScrollableHeight <= 0 ||
+            e.ClickCount > 1 ||
+            IsInteractiveVerticalDragSource(e.OriginalSource as DependencyObject, scrollViewer))
+        {
+            return;
+        }
+
+        _verticalMomentumTimer?.Stop();
+        _verticalScrollVelocity = 0;
+        _lastVerticalScrollViewer = null;
+        _activeVerticalDragViewer = scrollViewer;
+        _verticalDragStartPoint = e.GetPosition(this);
+        _verticalPreviousDragPoint = _verticalDragStartPoint;
+        _verticalDragStartOffset = scrollViewer.VerticalOffset;
+        _verticalDragMoved = false;
+        scrollViewer.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void VerticalPointerDragMove(object sender, MouseEventArgs e)
+    {
+        if (sender is not ScrollViewer scrollViewer ||
+            !ReferenceEquals(scrollViewer, _activeVerticalDragViewer) ||
+            _verticalDragStartPoint is null ||
+            e.LeftButton != MouseButtonState.Pressed)
+        {
+            return;
+        }
+
+        var current = e.GetPosition(this);
+        var deltaY = current.Y - _verticalDragStartPoint.Value.Y;
+        if (!_verticalDragMoved && Math.Abs(deltaY) < VerticalDragThreshold)
+        {
+            return;
+        }
+
+        if (!_verticalDragMoved)
+        {
+            _verticalDragMoved = true;
+            _verticalPreviousDragPoint = current;
+            scrollViewer.Cursor = Cursors.SizeNS;
+            SetDragCueVisible(true);
+            StopTrailerPreview();
+        }
+
+        if (_verticalPreviousDragPoint.HasValue)
+        {
+            var instantaneousVelocity = (_verticalPreviousDragPoint.Value.Y - current.Y) * 0.9;
+            _verticalScrollVelocity = (instantaneousVelocity * 0.72) + (_verticalScrollVelocity * 0.28);
+        }
+
+        _verticalPreviousDragPoint = current;
+        scrollViewer.ScrollToVerticalOffset(_verticalDragStartOffset - deltaY);
+        e.Handled = true;
+    }
+
+    private void VerticalPointerDragEnd(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ScrollViewer scrollViewer && ReferenceEquals(scrollViewer, _activeVerticalDragViewer))
+        {
+            FinishVerticalPointerDrag(scrollViewer, allowMomentum: true);
+            e.Handled = _verticalDragMoved;
+        }
+    }
+
+    private void VerticalPointerDragLost(object sender, MouseEventArgs e)
+    {
+        if (sender is ScrollViewer scrollViewer && ReferenceEquals(scrollViewer, _activeVerticalDragViewer))
+        {
+            FinishVerticalPointerDrag(scrollViewer, allowMomentum: true);
+        }
+    }
+
+    private void FinishVerticalPointerDrag(ScrollViewer scrollViewer, bool allowMomentum)
+    {
+        var moved = _verticalDragMoved;
+        var releaseVelocity = _verticalScrollVelocity;
+        var hadCapture = scrollViewer.IsMouseCaptured;
+
+        _activeVerticalDragViewer = null;
+        _verticalDragStartPoint = null;
+        _verticalPreviousDragPoint = null;
+        _verticalDragMoved = false;
+        if (hadCapture)
+        {
+            scrollViewer.ReleaseMouseCapture();
+        }
+        scrollViewer.ClearValue(CursorProperty);
+        SetDragCueVisible(false);
+
+        if (!allowMomentum || !moved || Math.Abs(releaseVelocity) < 1.1)
+        {
+            _verticalScrollVelocity = 0;
+            return;
+        }
+
+        _lastVerticalScrollViewer = scrollViewer;
+        _verticalScrollVelocity = Math.Clamp(
+            releaseVelocity,
+            -VerticalWheelMaximumVelocity,
+            VerticalWheelMaximumVelocity);
+        if (!_verticalMomentumTimer!.IsEnabled)
+        {
+            _verticalMomentumTimer.Start();
+        }
+    }
+
+    private static bool IsInteractiveVerticalDragSource(DependencyObject? source, ScrollViewer owner)
+    {
+        while (source is not null && !ReferenceEquals(source, owner))
+        {
+            if (source is ButtonBase or TextBoxBase or Selector or ScrollBar or Slider or ListBoxItem or GridSplitter)
+            {
+                return true;
+            }
+
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return false;
     }
 
     protected override void OnPreviewMouseWheel(MouseWheelEventArgs e)
@@ -2085,29 +2493,15 @@ p {
 
         var element = e.OriginalSource as System.Windows.DependencyObject;
         ScrollViewer? outerSv = null;
-        bool insideListBox = false;
 
-        // Walk up the visual tree to find the outer page ScrollViewer.
-        // The ListBox has its own internal ScrollViewer (horizontal shelf scroller) —
-        // we need to skip that one and find the next vertically scrollable one above it.
-        bool skippedListBoxScroller = false;
+        // Horizontal shelf viewers have no vertical extent, so selecting the first
+        // vertically scrollable ancestor consistently finds the page viewer.
         while (element is not null)
         {
-            if (element is ListBox)
-                insideListBox = true;
-
-            if (element is ScrollViewer sv)
+            if (element is ScrollViewer sv && sv.ScrollableHeight > 0)
             {
-                if (insideListBox && !skippedListBoxScroller)
-                {
-                    // This is the ListBox's own horizontal scroller — skip it.
-                    skippedListBoxScroller = true;
-                }
-                else if (sv.ScrollableHeight > 0)
-                {
-                    outerSv = sv;
-                    break;
-                }
+                outerSv = sv;
+                break;
             }
 
             element = System.Windows.Media.VisualTreeHelper.GetParent(element);
@@ -2115,31 +2509,43 @@ p {
 
         if (outerSv is null) return;
 
-        // Each wheel notch is 120 delta units. Convert to pixels with a comfortable multiplier.
-        double impulse = -e.Delta / 3.6;
-
-        // Accumulate: new impulses in the same direction stack up (flick acceleration),
-        // direction reversals cut velocity immediately.
-        if (Math.Sign(impulse) == Math.Sign(_verticalScrollVelocity))
-            _verticalScrollVelocity += impulse * 0.32;  // same direction — build momentum
-        else
-            _verticalScrollVelocity = impulse;           // direction change — snap to new direction
-
-        // Clamp so a hard spin can't send the page flying off screen.
-        _verticalScrollVelocity = Math.Clamp(_verticalScrollVelocity, -1200, 1200);
-
-        // Apply the immediate impulse so the first tick feels instant.
-        outerSv.ScrollToVerticalOffset(outerSv.VerticalOffset + impulse);
-        _lastVerticalScrollViewer = outerSv;
-
-        // Stop any active trailer — the card is scrolling away.
-        StopTrailerPreview();
-
-        // Start the momentum timer if not already running.
-        if (!_verticalMomentumTimer!.IsEnabled)
-            _verticalMomentumTimer.Start();
+        QueueVerticalMomentum(outerSv, e.Delta);
 
         e.Handled = true;
+    }
+
+    private void QueueVerticalMomentum(ScrollViewer scrollViewer, int wheelDelta)
+    {
+        var wheelNotches = -wheelDelta / 120.0;
+        if (Math.Abs(wheelNotches) < 0.01)
+        {
+            return;
+        }
+
+        var impulse = wheelNotches * VerticalWheelImpulsePerNotch;
+        if (!ReferenceEquals(_lastVerticalScrollViewer, scrollViewer) ||
+            Math.Sign(impulse) != Math.Sign(_verticalScrollVelocity))
+        {
+            _verticalScrollVelocity = 0;
+        }
+
+        _verticalScrollVelocity = Math.Clamp(
+            _verticalScrollVelocity + impulse,
+            -VerticalWheelMaximumVelocity,
+            VerticalWheelMaximumVelocity);
+        _lastVerticalScrollViewer = scrollViewer;
+
+        // A tiny direct step removes perceived input lag; the timer supplies the coast.
+        scrollViewer.ScrollToVerticalOffset(
+            scrollViewer.VerticalOffset + (wheelNotches * VerticalWheelImmediateStepPerNotch));
+
+        StopTrailerPreview();
+        PulseHorizonScroll(wheelNotches);
+
+        if (!_verticalMomentumTimer!.IsEnabled)
+        {
+            _verticalMomentumTimer.Start();
+        }
     }
 
     private void VerticalMomentumTick(object? sender, EventArgs e)
@@ -2150,14 +2556,13 @@ p {
             return;
         }
 
-        // Exponential decay — 0.93 per frame at 60fps gives ~2.5 seconds of natural coast.
-        // Feels like a phone scroll: snappy start, graceful stop.
-        _verticalScrollVelocity *= 0.93;
+        _verticalScrollVelocity *= VerticalWheelDecay;
 
-        _lastVerticalScrollViewer.ScrollToVerticalOffset(
-            _lastVerticalScrollViewer.VerticalOffset + _verticalScrollVelocity);
+        var previousOffset = _lastVerticalScrollViewer.VerticalOffset;
+        _lastVerticalScrollViewer.ScrollToVerticalOffset(previousOffset + _verticalScrollVelocity);
+        var reachedBoundary = Math.Abs(_lastVerticalScrollViewer.VerticalOffset - previousOffset) < 0.01;
 
-        if (Math.Abs(_verticalScrollVelocity) < 0.5)
+        if (Math.Abs(_verticalScrollVelocity) < 0.35 || reachedBoundary)
         {
             _verticalScrollVelocity = 0;
             _lastVerticalScrollViewer = null;
@@ -2277,18 +2682,14 @@ p {
             // else here would take the whole app down with no user action to correlate it to.
             try
             {
-                if (ViewModel.SelectedCloudscapePage != 0)
+                if (!_heroRotation.CanAdvance(Environment.TickCount64,
+                    IsActive && IsVisible && ViewModel.SelectedCloudscapePage == 0,
+                    _isDetailOpen || _isLaunchHandoffActive || ViewModel.IsRunning || ViewModel.IsAttractModeActive ||
+                    Keyboard.FocusedElement is TextBox || IsMouseOverGameCard() ||
+                    CloudscapeHeroShell.IsMouseOver || CloudscapeHeroShell.IsKeyboardFocusWithin,
+                    ViewModel.HorizonSpotlightPaused))
                     return;
-                var games = ViewModel.Games;
-                var count = games.Count;
-                if (count < 2)
-                    return;
-                var current = ViewModel.BigPictureHeroGame;
-                var idx = current != null ? games.IndexOf(current) : -1;
-                if (idx < -1 || idx >= count)
-                    idx = -1;
-                var next = games[(idx + 1) % count];
-                ViewModel.SelectedGame = next;
+                ViewModel.AdvanceBigPictureSpotlight();
             }
             catch (Exception ex)
             {
@@ -2304,6 +2705,10 @@ p {
         _heroAdvanceTimer?.Start();
         ResetAttractIdleTimer();
     }
+
+    private static bool IsMouseOverGameCard() =>
+        Mouse.DirectlyOver is DependencyObject element &&
+        FindAncestor<ListBoxItem>(element)?.DataContext is GameEntryViewModel;
 
     private void StartLiveSessionTimer()
     {
@@ -2380,22 +2785,44 @@ p {
 
     protected override void OnClosed(EventArgs e)
     {
+        _windowClosed = true;
         // Detach shared view-model subscriptions when Big Picture closes.
         // Stop the hide timer FIRST so its tick can't race and re-hide after we restore.
         _cursorHideTimer?.Stop();
         _cursorHidden = false;
         Mouse.OverrideCursor = null;
         _heroAdvanceTimer?.Stop();
+        _heroLayoutTimer?.Stop();
         _liveSessionTimer?.Stop();
         _shelfMomentumTimer?.Stop();
         _gamepadTimer?.Stop();
-        _trailerServer?.Stop();
+        _verticalMomentumTimer?.Stop();
+        _attractIdlePollTimer?.Stop();
+        _attractCycleTimer?.Stop();
+        StopTrailerPreview();
+        if (Mouse.Captured is DependencyObject captured && Window.GetWindow(captured) == this)
+            Mouse.Capture(null);
+        ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        ViewModel.IsAttractModeActive = false;
+        AttractBgA.Source = null;
+        AttractBgB.Source = null;
+        CleanupHorizonResource("trailer-listener", () => _trailerServer?.Close());
+        _trailerServer = null;
+        CleanupHorizonResource("theatre-browser", () => CloudTheatreBrowser.Dispose());
+        CleanupHorizonResource("trailer-browser", () => CardTrailerPreviewBrowser.Dispose());
+        if (_embeddedSession != null) _embeddedSession.Ended -= OnEmbeddedSessionEnded;
+        EmbeddedPlayHostContainer.SizeChanged -= OnEmbeddedPlayHostContainerSizeChanged;
         // Close any open detail overlay without animation (window is going away).
         ViewModel.CloseCloudscapeDetail();
         // Restore achievement pop service to the main window.
         ViewModel.ReinitAchievementPopToMainWindow();
-        ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         base.OnClosed(e);
+    }
+
+    private void CleanupHorizonResource(string name, Action cleanup)
+    {
+        try { cleanup(); }
+        catch (Exception ex) { _diagnostics.WriteException($"horizon-close-{name}", ex); }
     }
 
     private async Task RunUiTaskAsync(Func<Task> action, string errorMessage)
@@ -2408,7 +2835,7 @@ p {
         catch (Exception exception)
         {
             MessageBox.Show(this, $"{errorMessage}\n\n{exception.Message}",
-                "CloudBerry", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "Cirra", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -2472,12 +2899,16 @@ p {
     {
         return ViewModel.AppearanceThemeKey switch
         {
-            "NieR Automata" => (0.19, 300, 6, 3),
-            "Wuthering Waves" => (0.27, 520, 14, 8),
-            "Neon Matrix" => (0.22, 360, 9, 5),
-            "Retro Glitch" => (0.2, 340, 8, 4),
-            "Blueberry Midnight" => (0.24, 420, 10, 6),
-            _ => (0.22, 420, 8, 5)
+            "Cirra Core" => (0.23, 390, 10, 5),
+            "Archive Ivory" => (0.19, 300, 6, 3),
+            "Tidal Glass" => (0.27, 520, 14, 8),
+            "Signal Rain" => (0.22, 360, 9, 5),
+            "Arcade Static" => (0.2, 340, 8, 4),
+            "Midnight Observatory" => (0.24, 420, 10, 6),
+            "Verdant Glass" => (0.25, 460, 7, 7),
+            "Impact Noir" => (0.18, 230, 4, 2),
+            "High Contrast" => (0.12, 0, 0, 0),
+            _ => (0.23, 390, 10, 5)
         };
     }
 
@@ -2557,15 +2988,127 @@ p {
 
     private void DetailBackClick(object sender, RoutedEventArgs e) => CloseDetailOverlay();
 
+    // ── Embedded Play ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Shows a RetroArch-launched game's own window inside Cloudscape instead of it popping out as
+    /// a separate CloudBerry window — called from MainWindow.xaml.cs once a real target window
+    /// handle has actually been found. Construction alone never guarantees a visible game: if the
+    /// native reparent can't attach (target closed too soon, a Win32 call failed), this quietly
+    /// hides the overlay again and reports back via StatusMessage, since the game itself was already
+    /// launched normally before this method was ever called — a failed embed is never a failed launch.
+    /// </summary>
+    public void ShowEmbeddedPlay(string gameTitle, IntPtr childWindowHandle, GameLaunchSession session, string? tempConfigPath)
+    {
+        // Only one embedded session at a time — if one's already showing, the newly-launched game
+        // just keeps running in its own separate window rather than Cloudscape trying to juggle two.
+        if (_embeddedSession is not null)
+        {
+            return;
+        }
+
+        _embeddedSession = session;
+        _embeddedTempConfigPath = tempConfigPath;
+        EmbeddedPlayTitleText.Text = gameTitle;
+
+        var host = new EmbeddedProcessWindowHost(childWindowHandle);
+        _embeddedHost = host;
+        EmbeddedPlayHostContainer.Child = host;
+        EmbeddedPlayOverlay.Visibility = Visibility.Visible;
+        EmbeddedPlayHostContainer.SizeChanged += OnEmbeddedPlayHostContainerSizeChanged;
+
+        session.Ended += OnEmbeddedSessionEnded;
+
+        // BuildWindowCore runs as part of this control's own layout pass once it has a real HWND
+        // to attach to — checking on the next Dispatcher pass (rather than synchronously here) gives
+        // it that chance before deciding embedding didn't take. Also performs the first real resize
+        // explicitly here rather than waiting for a SizeChanged event to fire — the container's size
+        // is already known and correct by this point, and doing it immediately avoids a first-frame
+        // flash at whatever size the RetroArch window happened to be before attaching.
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            if (!host.IsAttached)
+            {
+                var failedTitle = gameTitle;
+                HideEmbeddedPlay();
+                ViewModel.StatusMessage = $"Playing {failedTitle} — couldn't embed the RetroArch window, so it's running in its own window instead.";
+                return;
+            }
+
+            host.ResizeToFit(EmbeddedPlayHostContainer.ActualWidth, EmbeddedPlayHostContainer.ActualHeight);
+        });
+    }
+
+    /// <summary>
+    /// The reliable resize path: SizeChanged on a plain WPF FrameworkElement always fires, unlike
+    /// HwndHost's own OnWindowPositionChanged override, which in testing only actually applied a new
+    /// size after a window minimize/restore cycle forced a full re-layout — everyday resizing left
+    /// the embedded window stuck at a stale size until that happened. Driving the resize off this
+    /// event instead removes that dependency entirely.
+    /// </summary>
+    private void OnEmbeddedPlayHostContainerSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        _embeddedHost?.ResizeToFit(e.NewSize.Width, e.NewSize.Height);
+    }
+
+    private void OnEmbeddedSessionEnded(object? sender, GameLaunchEndedEventArgs e)
+    {
+        // The game exited on its own (quit from inside RetroArch, crashed, etc.) — follow it closed
+        // rather than leaving an empty black panel over Cloudscape.
+        Dispatcher.BeginInvoke(HideEmbeddedPlay);
+    }
+
+    private void ExitEmbeddedPlayClick(object sender, RoutedEventArgs e)
+    {
+        var session = _embeddedSession;
+        HideEmbeddedPlay();
+        if (session is not null)
+        {
+            // Fire-and-forget: RequestExitAsync is fully self-contained (never throws, never touches
+            // UI) and closing this overlay shouldn't block on the emulator's own shutdown sequence.
+            _ = session.RequestExitAsync(TimeSpan.FromSeconds(3));
+        }
+        _sound.PlaySoftClick();
+    }
+
+    private void HideEmbeddedPlay()
+    {
+        if (_embeddedSession is not null)
+        {
+            _embeddedSession.Ended -= OnEmbeddedSessionEnded;
+        }
+
+        EmbeddedPlayHostContainer.SizeChanged -= OnEmbeddedPlayHostContainerSizeChanged;
+        EmbeddedPlayOverlay.Visibility = Visibility.Collapsed;
+        EmbeddedPlayHostContainer.Child = null;
+        _embeddedHost = null;
+        _embeddedSession = null;
+
+        if (!string.IsNullOrWhiteSpace(_embeddedTempConfigPath))
+        {
+            try
+            {
+                if (File.Exists(_embeddedTempConfigPath))
+                {
+                    File.Delete(_embeddedTempConfigPath);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+        _embeddedTempConfigPath = null;
+    }
+
     private async void DetailLaunchClick(object sender, RoutedEventArgs e)
     {
         var game = ViewModel.CloudscapeDetailGame;
         if (game == null) return;
         CloseDetailOverlay();
-        await RunUiTaskAsync(
-            () => ViewModel.LaunchGameAsync(game),
-            "CloudBerry couldn't launch the selected game.");
-        _sound.PlayLaunchHandoff();
+        await LaunchGameWithHandoffAsync(game, "Cirra couldn't launch the selected game.");
     }
 
     private async void DetailMetadataClick(object sender, RoutedEventArgs e)
@@ -2590,47 +3133,32 @@ p {
         _sound.PlayMenuOpen();
     }
 
+    private void DetailGuidebookClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is GameGuidebook guidebook && ViewModel.CloudscapeDetailGame is { } game)
+        {
+            new GuideReaderWindow(game, guidebook, immersive: true) { Owner = this }.Show();
+            _sound.PlayMenuOpen();
+        }
+    }
+
+    private void DetailFirstGuidebookClick(object sender, RoutedEventArgs e)
+    {
+        var game = ViewModel.CloudscapeDetailGame;
+        var guidebook = game?.Guidebooks.FirstOrDefault();
+        if (game is not null && guidebook is not null)
+        {
+            new GuideReaderWindow(game, guidebook, immersive: true) { Owner = this }.Show();
+            _sound.PlayMenuOpen();
+        }
+    }
+
     private async void DetailFavoriteClick(object sender, RoutedEventArgs e)
     {
         var game = ViewModel.CloudscapeDetailGame;
         if (game == null) return;
         await ViewModel.ToggleFavoriteAsync(game);
         _sound.PlayConfirm();
-    }
-
-    // ── Home shelf smooth scroll ─────────────────────────────────────────
-
-    private void CloudscapeHomeScrollWheel(object sender, MouseWheelEventArgs e)
-    {
-        e.Handled = true;
-        // Kill trailer preview when the user scrolls the page — cards are moving away.
-        StopTrailerPreview();
-        if (_homeScrollTimer is null)
-        {
-            _homeScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
-            _homeScrollTimer.Tick += HomeScrollTick;
-        }
-        if (!_homeScrollTimer.IsEnabled)
-            _homeScrollTarget = CloudscapeHomeScroll.VerticalOffset;
-        // Stronger multiplier (1.2) and additive accumulation for wheel spins feel natural.
-        _homeScrollTarget = Math.Clamp(
-            _homeScrollTarget - e.Delta * 1.1,
-            0, CloudscapeHomeScroll.ScrollableHeight);
-        _homeScrollTimer.Start();
-    }
-
-    private void HomeScrollTick(object? sender, EventArgs e)
-    {
-        var diff = _homeScrollTarget - CloudscapeHomeScroll.VerticalOffset;
-        if (Math.Abs(diff) < 0.5)
-        {
-            CloudscapeHomeScroll.ScrollToVerticalOffset(_homeScrollTarget);
-            _homeScrollTimer?.Stop();
-            return;
-        }
-        // Ease-out: move 18% of remaining distance each frame — snappier initial response
-        CloudscapeHomeScroll.ScrollToVerticalOffset(
-            CloudscapeHomeScroll.VerticalOffset + diff * 0.18);
     }
 
     // ── Now Playing Bar ─────────────────────────────────────────────────────
@@ -2677,27 +3205,8 @@ p {
     }
 
     // ── Gamepad Navigation ───────────────────────────────────────────────
-    // Polls XInput via Win32 P/Invoke at ~60fps. No NuGet dependency required.
+    // Samples all four XInput slots and establishes a stable active owner for couch sessions.
     // Only active while Cloudscape is open and focused.
-
-    [System.Runtime.InteropServices.StructLayout(
-        System.Runtime.InteropServices.LayoutKind.Explicit)]
-    private struct XInputState
-    {
-        [System.Runtime.InteropServices.FieldOffset(0)]  public uint dwPacketNumber;
-        [System.Runtime.InteropServices.FieldOffset(4)]  public ushort wButtons;
-        [System.Runtime.InteropServices.FieldOffset(6)]  public byte bLeftTrigger;
-        [System.Runtime.InteropServices.FieldOffset(7)]  public byte bRightTrigger;
-        [System.Runtime.InteropServices.FieldOffset(8)]  public short sThumbLX;
-        [System.Runtime.InteropServices.FieldOffset(10)] public short sThumbLY;
-        [System.Runtime.InteropServices.FieldOffset(12)] public short sThumbRX;
-        [System.Runtime.InteropServices.FieldOffset(14)] public short sThumbRY;
-    }
-
-    [System.Runtime.InteropServices.DllImport("xinput1_4.dll",
-        EntryPoint = "XInputGetState",
-        CallingConvention = System.Runtime.InteropServices.CallingConvention.Winapi)]
-    private static extern uint XInputGetState(uint dwUserIndex, out XInputState pState);
 
     // XInput button masks
     private const ushort XINPUT_GAMEPAD_DPAD_UP    = 0x0001;
@@ -2713,9 +3222,7 @@ p {
     private const ushort XINPUT_GAMEPAD_LEFT_SHOULDER  = 0x0100;
     private const ushort XINPUT_GAMEPAD_RIGHT_SHOULDER = 0x0200;
 
-    // Track previous button state so we only fire on rising edges (press, not hold).
-    private ushort _prevGamepadButtons = 0;
-    private int    _gamepadStickCooldown = 0; // frames until next stick repeat fires
+    private readonly HorizonControllerRouter _controllerRouter = new();
 
     // Adaptive polling backoff: XInputGetState is a native interop call fired every tick.
     // At a constant 60Hz for the entire Cloudscape session that's real, constant main-thread
@@ -2740,15 +3247,21 @@ p {
     private async void GamepadPollTick(object? sender, EventArgs e)
     {
         // Skip polling when the window is not the active foreground window.
-        if (!IsActive) return;
-
-        XInputState state;
-        uint result;
-        try { result = XInputGetState(0, out state); }
-        catch { return; } // xinput1_4.dll not found — silent no-op
-
-        if (result != 0)
+        if (!IsActive)
         {
+            _controllerRouter.Suspend();
+            return;
+        }
+
+        var input = _controllerRouter.Poll(Environment.TickCount64);
+        if (!input.IsAnyConnected)
+        {
+            if (_isGamepadConnected)
+            {
+                _isGamepadConnected = false;
+                _activeControllerSlot = -1;
+                UpdateControllerActionLegend();
+            }
             // No controller connected on this tick. Back off to the slow poll rate once we've
             // missed consistently for about a second, so an idle Cloudscape session with no
             // gamepad isn't burning a native call every 16ms for its entire lifetime.
@@ -2764,26 +3277,25 @@ p {
         // Controller found — snap straight back to full responsiveness. A person who just
         // plugged one in should feel instant input, not wait out the idle poll interval.
         _gamepadMissStreak = 0;
+        if (!_isGamepadConnected || input.ActiveSlotChanged || _activeControllerSlot != input.ActiveSlot)
+        {
+            _isGamepadConnected = true;
+            _activeControllerSlot = input.ActiveSlot;
+            UpdateControllerActionLegend();
+        }
         if (_gamepadTimerIsSlow && _gamepadTimer != null)
         {
             _gamepadTimer.Interval = TimeSpan.FromMilliseconds(GamepadFastIntervalMs);
             _gamepadTimerIsSlow = false;
         }
 
-        ushort buttons  = state.wButtons;
-        ushort newPress = (ushort)(buttons & ~_prevGamepadButtons); // rising edge only
-        _prevGamepadButtons = buttons;
-
-        // Stick threshold (32k range, use 50% deflection)
-        const short StickThreshold = 16000;
-        bool stickLeft  = state.sThumbLX < -StickThreshold;
-        bool stickRight = state.sThumbLX >  StickThreshold;
-
-        // Stick repeat cooldown
-        if (_gamepadStickCooldown > 0) { _gamepadStickCooldown--; }
-
-        bool fireStick = _gamepadStickCooldown == 0 && (stickLeft || stickRight);
-        if (fireStick) _gamepadStickCooldown = 12; // ~200ms repeat at 60fps
+        ushort newPress = (ushort)input.NewButtons;
+        var direction = input.Direction;
+        bool stickLeft = direction == FocusNavigationDirection.Left;
+        bool stickRight = direction == FocusNavigationDirection.Right;
+        bool stickUp = direction == FocusNavigationDirection.Up;
+        bool stickDown = direction == FocusNavigationDirection.Down;
+        bool fireStick = direction.HasValue;
 
         // Any real input (not just a poll tick) wakes Attract Mode, same as mouse/keyboard.
         if (newPress != 0 || fireStick)
@@ -2799,15 +3311,24 @@ p {
         // ── Detail overlay: A = confirm/launch, B = back
         if (_isDetailOpen)
         {
+            if (direction.HasValue)
+            {
+                if (Keyboard.FocusedElement is UIElement focused && CloudscapeDetailOverlay.IsAncestorOf(focused))
+                    focused.MoveFocus(new TraversalRequest(direction.Value));
+                else DetailLaunchButton.Focus();
+            }
             if ((newPress & XINPUT_GAMEPAD_A) != 0)
             {
+                if (Keyboard.FocusedElement is UIElement focused && CloudscapeDetailOverlay.IsAncestorOf(focused))
+                {
+                    ActivateFocusedControllerElement();
+                    return;
+                }
                 var game = ViewModel.CloudscapeDetailGame;
                 if (game != null)
                 {
                     CloseDetailOverlay();
-                    await RunUiTaskAsync(() => ViewModel.LaunchGameAsync(game),
-                        "CloudBerry couldn't launch the selected game.");
-                    _sound.PlayLaunchHandoff();
+                    await LaunchGameWithHandoffAsync(game, "Cirra couldn't launch the selected game.");
                 }
             }
             if ((newPress & XINPUT_GAMEPAD_B) != 0) CloseDetailOverlay();
@@ -2828,6 +3349,14 @@ p {
             // Start = return to desktop
             _sound.PlayMenuOpen();
             Close();
+            return;
+        }
+
+        if ((newPress & XINPUT_GAMEPAD_Y) != 0 && ViewModel.SelectedCloudscapePage == 0)
+        {
+            BigPictureSearchBox.Focus();
+            BigPictureSearchBox.SelectAll();
+            _sound.PlayFocusMove();
             return;
         }
 
@@ -2853,6 +3382,14 @@ p {
             }
         }
 
+        // Directional input must select visible shelf items, not only change the hero.
+        if (direction.HasValue && (ViewModel.SelectedCloudscapePage == 0 ||
+            (ViewModel.SelectedCloudscapePage == 1 && !ViewModel.IsBigPictureLibraryGrid) ||
+            ViewModel.SelectedCloudscapePage == 4))
+        {
+            MoveControllerShelfSelection(direction.Value);
+        }
+
         // ── Hero selection via d-pad or left stick (Home tab only)
         if (ViewModel.SelectedCloudscapePage == 0)
         {
@@ -2861,7 +3398,7 @@ p {
 
             var games = ViewModel.Games;
             var current = ViewModel.BigPictureHeroGame;
-            if (games.Count > 0 && current != null && (moveLeft || moveRight))
+            if (games.Count > 0 && current != null && (moveLeft || moveRight) && !VisibleControllerShelves(CloudscapeRoot).Any())
             {
                 int idx  = games.IndexOf(current);
                 int next = moveRight
@@ -2872,11 +3409,135 @@ p {
                 ResetHeroAdvanceTimer();
             }
 
-            // A = open detail for hero game
-            if ((newPress & XINPUT_GAMEPAD_A) != 0 && ViewModel.BigPictureHeroGame != null)
+            if ((newPress & XINPUT_GAMEPAD_A) != 0)
             {
-                OpenDetailOverlay(ViewModel.BigPictureHeroGame);
+                if (Keyboard.FocusedElement is ButtonBase)
+                {
+                    ActivateFocusedControllerElement();
+                    return;
+                }
+                var focusedGame = Keyboard.FocusedElement is DependencyObject focused
+                    ? FindAncestor<ListBoxItem>(focused)?.DataContext as GameEntryViewModel
+                    : null;
+                var game = focusedGame ?? ViewModel.BigPictureHeroGame;
+                if (game != null) OpenDetailOverlay(game);
             }
+        }
+        else if (ViewModel.SelectedCloudscapePage == 1)
+        {
+            if ((newPress & XINPUT_GAMEPAD_X) != 0)
+            {
+                SetLibraryGridMode(!ViewModel.IsBigPictureLibraryGrid);
+                UpdateControllerActionLegend();
+                return;
+            }
+
+            bool moveLeft = (newPress & XINPUT_GAMEPAD_DPAD_LEFT) != 0 || (fireStick && stickLeft);
+            bool moveRight = (newPress & XINPUT_GAMEPAD_DPAD_RIGHT) != 0 || (fireStick && stickRight);
+            bool moveUp = (newPress & XINPUT_GAMEPAD_DPAD_UP) != 0 || (fireStick && stickUp);
+            bool moveDown = (newPress & XINPUT_GAMEPAD_DPAD_DOWN) != 0 || (fireStick && stickDown);
+
+            if (ViewModel.IsBigPictureLibraryGrid && (moveLeft || moveRight || moveUp || moveDown))
+            {
+                MoveLibrarySelection(
+                    moveLeft ? -1 : moveRight ? 1 : 0,
+                    moveUp ? -1 : moveDown ? 1 : 0);
+            }
+
+            if ((newPress & XINPUT_GAMEPAD_A) != 0 && ViewModel.SelectedGame != null)
+            {
+                OpenDetailOverlay(ViewModel.SelectedGame);
+            }
+        }
+        else
+        {
+            bool moveLeft = (newPress & XINPUT_GAMEPAD_DPAD_LEFT) != 0 || (fireStick && stickLeft);
+            bool moveRight = (newPress & XINPUT_GAMEPAD_DPAD_RIGHT) != 0 || (fireStick && stickRight);
+            bool moveUp = (newPress & XINPUT_GAMEPAD_DPAD_UP) != 0 || (fireStick && stickUp);
+            bool moveDown = (newPress & XINPUT_GAMEPAD_DPAD_DOWN) != 0 || (fireStick && stickDown);
+
+            if (ViewModel.SelectedCloudscapePage != 4 && Keyboard.FocusedElement is UIElement focused)
+            {
+                if (moveLeft) focused.MoveFocus(new TraversalRequest(FocusNavigationDirection.Left));
+                else if (moveRight) focused.MoveFocus(new TraversalRequest(FocusNavigationDirection.Right));
+                else if (moveUp) focused.MoveFocus(new TraversalRequest(FocusNavigationDirection.Up));
+                else if (moveDown) focused.MoveFocus(new TraversalRequest(FocusNavigationDirection.Down));
+            }
+            else if (ViewModel.SelectedCloudscapePage != 4 && direction.HasValue)
+            {
+                CloudscapePageShell.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
+            }
+
+            if ((newPress & XINPUT_GAMEPAD_A) != 0)
+            {
+                ActivateFocusedControllerElement();
+            }
+        }
+    }
+
+    private static IEnumerable<ListBox> VisibleControllerShelves(DependencyObject root)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is UIElement element && !element.IsVisible) continue;
+            if (child is ListBox list && list.DataContext is BigPictureShelfViewModel && list.Items.Count > 0)
+                yield return list;
+            else foreach (var nested in VisibleControllerShelves(child)) yield return nested;
+        }
+    }
+
+    private void MoveControllerShelfSelection(FocusNavigationDirection direction)
+    {
+        var shelves = VisibleControllerShelves(CloudscapeRoot).ToList();
+        if (shelves.Count == 0) return;
+        var focused = FindAncestor<ListBox>(Keyboard.FocusedElement as DependencyObject);
+        int row = focused is null ? -1 : shelves.IndexOf(focused);
+        bool hasFocus = row >= 0;
+        if (hasFocus && row == 0 && direction == FocusNavigationDirection.Up &&
+            ViewModel.SelectedCloudscapePage == 0 && SpotlightPauseToggle.IsVisible)
+        {
+            SpotlightPauseToggle.Focus();
+            return;
+        }
+        if (!hasFocus) row = 0;
+        int column = Math.Max(0, shelves[row].SelectedIndex);
+        if (hasFocus)
+        {
+            if (direction == FocusNavigationDirection.Up) row = Math.Max(0, row - 1);
+            else if (direction == FocusNavigationDirection.Down) row = Math.Min(shelves.Count - 1, row + 1);
+            else column += direction == FocusNavigationDirection.Left ? -1 : 1;
+        }
+        var shelf = shelves[row];
+        shelf.SelectedIndex = Math.Clamp(column, 0, shelf.Items.Count - 1);
+        var game = shelf.SelectedItem;
+        shelf.ScrollIntoView(game);
+        shelf.UpdateLayout();
+        if (shelf.ItemContainerGenerator.ContainerFromItem(game) is ListBoxItem item)
+        {
+            item.Focus();
+            item.BringIntoView();
+        }
+        else shelf.Focus();
+    }
+
+    private static void ActivateFocusedControllerElement()
+    {
+        switch (Keyboard.FocusedElement)
+        {
+            case ToggleButton toggle when toggle.IsEnabled:
+                toggle.IsChecked = toggle.IsChecked != true;
+                toggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                break;
+            case ButtonBase button when button.IsEnabled:
+                button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                break;
+            case ComboBox comboBox when comboBox.IsEnabled:
+                comboBox.IsDropDownOpen = !comboBox.IsDropDownOpen;
+                break;
+            case ListBoxItem item when item.IsEnabled:
+                item.IsSelected = true;
+                break;
         }
     }
 }

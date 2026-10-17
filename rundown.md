@@ -685,6 +685,16 @@ Three pieces, all written to the repo root:
 
 ---
 
+## Word-noise cleanup (game info clutter) — DONE, plus a small mojibake sweep
+
+*Confirmed the `GameEntryViewModel.Subtitle` fix from the prior session actually landed and is balanced — it now reads `{Platform} | {Status}` instead of the old scan-source noise, which fixes the redundant "folder scanned / quick added" text everywhere a game's info line shows (detail panel + four card templates across Cloudscape, since they all read from this one property).*
+
+While re-reading the file, found 6 more instances of the same UTF-8-misdecoded-as-Windows-1252 mojibake pattern hit twice already this session (`WebImageSearchService.cs`, and indirectly the trailer investigation) — 5 in XML doc comments (`0â€“5` where an en dash should be, for star-rating and percentage ranges) and 1 in actual UI-facing code (`PlaytimeLabelShort`'s empty-state placeholder string was literally returning the 3 mojibake bytes instead of a dash character, which would have rendered as visible garbage text in the UI for any game with zero tracked playtime). Fixed all 6 with plain hyphens, consistent with the plain-punctuation convention from the rest of this cleanup pass. Left the file's legitimate non-ASCII characters (real em dashes, ellipses, curly quotes, the BOM) untouched — those aren't corruption, just characters, and weren't in scope.
+
+**Verification:** re-fetched the live file after the edit, brace-balance walk ends at 0 / never negative, zero remaining mojibake sequences.
+
+---
+
 ## Cloudscape trailer-on-hover fix — DONE
 
 *User reported: hovering a game card in Cloudscape grows the card (confirming the hover event itself was firing fine) but the trailer never played — and critically, no fallback "unavailable" message ever showed either, meaning whatever was going wrong was completely silent.*

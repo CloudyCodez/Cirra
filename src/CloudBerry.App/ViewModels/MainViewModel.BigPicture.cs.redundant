@@ -38,10 +38,10 @@ public sealed partial class MainViewModel
     public bool HasBigPictureHeroGame => BigPictureHeroGame is not null;
 
     public string BigPictureHeroSummary => BigPictureHeroGame?.SummaryOrPlaceholder
-        ?? "Scan a folder, import a game, and CloudBerry will turn your collection into a full-screen dashboard.";
+        ?? "Scan a folder, import a game, and Cirra will turn your collection into a full-screen dashboard.";
 
     public string BigPictureHeroContextLabel => BigPictureHeroGame is null
-        ? "CloudBerry Cloudscape"
+        ? "Cirra Horizon"
         : $"{BigPictureHeroGame.Platform}  •  {BigPictureHeroGame.Status}  •  {BigPictureHeroGame.SourceKind}";
 
     public string BigPictureSelectedCategorySummary => SelectedBigPictureLibraryCategory is null
@@ -87,7 +87,7 @@ public sealed partial class MainViewModel
         {
             Key = "all",
             Title = "All Games",
-            Subtitle = "Everything CloudBerry knows about",
+            Subtitle = "Everything Cirra knows about",
             Count = Games.Count
         };
 
@@ -157,7 +157,7 @@ public sealed partial class MainViewModel
                              .OrderByDescending(game => game.LastPlayedOn ?? DateTime.MinValue))),
                 CreateShelf(
                     "Tonight's picks",
-                    "CloudBerry's strongest launch suggestions right now",
+                    "Cirra's strongest launch suggestions right now",
                     DistinctGames(
                         RecommendedGame is null ? [] : [RecommendedGame],
                         RandomBacklogGame is null ? [] : [RandomBacklogGame],

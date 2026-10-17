@@ -3,69 +3,70 @@
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <!-- ════════════════════════════════════════════════════════════════════
-         COLOR PALETTE — Black Flash Theme  ·  Yuji Itadori Edition
-         Void black · Cursed crimson · Electric white · Violet undertones
-         High-contrast, high-energy, professional performance
+         CIRRA CORE
+         Obsidian depth · ice light · champagne precision
+         The runtime theme engine replaces these tokens for every other skin.
          ════════════════════════════════════════════════════════════════════ -->
 
-    <!-- Surfaces — void black spectrum (deep, matte, professional) -->
-    <SolidColorBrush x:Key="AppBackgroundBrush"        Color="#0A0A0F" />
-    <SolidColorBrush x:Key="SidebarBrush"              Color="#0F0F14" />
-    <SolidColorBrush x:Key="SurfaceBrush"              Color="#14141C" />
-    <SolidColorBrush x:Key="SurfaceElevatedBrush"      Color="#1A1A24" />
-    <SolidColorBrush x:Key="SurfaceHighBrush"          Color="#1E1E2A" />
-    <SolidColorBrush x:Key="CardBrush"                 Color="#22222E" />
-    <SolidColorBrush x:Key="CardHoverBrush"            Color="#2A2A38" />
-    <SolidColorBrush x:Key="CardSelectedBrush"         Color="#323242" />
+    <!-- Surfaces -->
+    <SolidColorBrush x:Key="AppBackgroundBrush"        Color="#070B10" />
+    <SolidColorBrush x:Key="SidebarBrush"              Color="#0A1017" />
+    <SolidColorBrush x:Key="SurfaceBrush"              Color="#0F1721" />
+    <SolidColorBrush x:Key="SurfaceElevatedBrush"      Color="#141F2B" />
+    <SolidColorBrush x:Key="SurfaceHighBrush"          Color="#192735" />
+    <SolidColorBrush x:Key="CardBrush"                 Color="#172431" />
+    <SolidColorBrush x:Key="CardHoverBrush"            Color="#203344" />
+    <SolidColorBrush x:Key="ArtworkHoverBrush"         Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="CardSelectedBrush"         Color="#274257" />
 
-    <!-- Borders — crisp definition with subtle crimson edge -->
-    <SolidColorBrush x:Key="BorderBrush"               Color="#2A2028" />
-    <SolidColorBrush x:Key="BorderSubtleBrush"         Color="#3A3040" />
+    <!-- Borders -->
+    <SolidColorBrush x:Key="BorderBrush"               Color="#273B4A" />
+    <SolidColorBrush x:Key="BorderSubtleBrush"         Color="#355265" />
 
-    <!-- Text — crisp hierarchy on dark backgrounds -->
-    <SolidColorBrush x:Key="TextPrimaryBrush"          Color="#F8F9FA" />
-    <SolidColorBrush x:Key="TextSecondaryBrush"        Color="#C5C6CC" />
-    <SolidColorBrush x:Key="TextMutedBrush"            Color="#8A8B96" />
+    <!-- Text -->
+    <SolidColorBrush x:Key="TextPrimaryBrush"          Color="#F3F9FC" />
+    <SolidColorBrush x:Key="TextSecondaryBrush"        Color="#B8C8D1" />
+    <SolidColorBrush x:Key="TextMutedBrush"            Color="#748A98" />
     <SolidColorBrush x:Key="TextOnDarkBrush"           Color="#FFFFFF" />
 
-    <!-- Black Flash Primary — cursed energy crimson spectrum -->
-    <SolidColorBrush x:Key="BerryBrush"                Color="#FF2E4D" />
-    <SolidColorBrush x:Key="BerryHoverBrush"           Color="#FF4766" />
-    <SolidColorBrush x:Key="BerryPressedBrush"         Color="#E61A3A" />
-    <SolidColorBrush x:Key="BerryDimBrush"             Color="#FF6B7A" />
-    <SolidColorBrush x:Key="BerryMutedBrush"           Color="#CC263D" />
+    <!-- Cirra ice accent -->
+    <SolidColorBrush x:Key="BerryBrush"                Color="#62D5F6" />
+    <SolidColorBrush x:Key="BerryHoverBrush"           Color="#9AEAFF" />
+    <SolidColorBrush x:Key="BerryPressedBrush"         Color="#35A8C9" />
+    <SolidColorBrush x:Key="BerryDimBrush"             Color="#A9EEFF" />
+    <SolidColorBrush x:Key="BerryMutedBrush"           Color="#2B809A" />
 
-    <!-- Secondary accents — cursed violet & electric bloom -->
-    <SolidColorBrush x:Key="CloudBrush"                Color="#4A154B" />
-    <SolidColorBrush x:Key="CloudDimBrush"             Color="#2A0020" />
-    <SolidColorBrush x:Key="MintBrush"                 Color="#6B2E7A" />
-    <SolidColorBrush x:Key="MintDimBrush"              Color="#3A0A30" />
-    <SolidColorBrush x:Key="GoldBrush"                 Color="#FF6B7A" />
-    <SolidColorBrush x:Key="GoldDimBrush"              Color="#CC5566" />
-    <SolidColorBrush x:Key="WarningBrush"              Color="#FF6B7A" />
-    <SolidColorBrush x:Key="NeoBerryBrush"             Color="#FF2E4D" />
-    <SolidColorBrush x:Key="NeoCyanBrush"              Color="#7A3E8C" />
-    <SolidColorBrush x:Key="NeoTwilightBrush"          Color="#1A0010" />
+    <!-- Secondary accents -->
+    <SolidColorBrush x:Key="CloudBrush"                Color="#9CB7C5" />
+    <SolidColorBrush x:Key="CloudDimBrush"             Color="#1A3442" />
+    <SolidColorBrush x:Key="MintBrush"                 Color="#58D6B2" />
+    <SolidColorBrush x:Key="MintDimBrush"              Color="#123E34" />
+    <SolidColorBrush x:Key="GoldBrush"                 Color="#E4C47D" />
+    <SolidColorBrush x:Key="GoldDimBrush"              Color="#594A26" />
+    <SolidColorBrush x:Key="WarningBrush"              Color="#F0B35A" />
+    <SolidColorBrush x:Key="NeoBerryBrush"             Color="#7DA8FF" />
+    <SolidColorBrush x:Key="NeoCyanBrush"              Color="#62D5F6" />
+    <SolidColorBrush x:Key="NeoTwilightBrush"          Color="#060B11" />
 
-    <!-- Error / Danger — intensified crimson for impact -->
-    <SolidColorBrush x:Key="ErrorBrush"                Color="#FF2E4D" />
-    <SolidColorBrush x:Key="ErrorHoverBrush"           Color="#FF4766" />
-    <SolidColorBrush x:Key="ErrorDimBrush"             Color="#CC263D" />
+    <!-- Error / Danger -->
+    <SolidColorBrush x:Key="ErrorBrush"                Color="#F36B74" />
+    <SolidColorBrush x:Key="ErrorHoverBrush"           Color="#FF8790" />
+    <SolidColorBrush x:Key="ErrorDimBrush"             Color="#703039" />
 
-    <!-- Backward-compat aliases — mapped to Black Flash equivalents -->
-    <SolidColorBrush x:Key="PanelBrush"                Color="#1A1A24" />
-    <SolidColorBrush x:Key="PanelAltBrush"             Color="#1E1E2A" />
-    <SolidColorBrush x:Key="DarkPanelBrush"            Color="#14141C" />
-    <SolidColorBrush x:Key="DarkPanelAltBrush"         Color="#1A1A24" />
+    <!-- Backward-compatible resource aliases -->
+    <SolidColorBrush x:Key="PanelBrush"                Color="#141F2B" />
+    <SolidColorBrush x:Key="PanelAltBrush"             Color="#192735" />
+    <SolidColorBrush x:Key="DarkPanelBrush"            Color="#0F1721" />
+    <SolidColorBrush x:Key="DarkPanelAltBrush"         Color="#141F2B" />
 
-    <!-- Gradients — Black Flash energy spectrum -->
+    <!-- Core gradients -->
     <LinearGradientBrush x:Key="BerryGradientBrush" StartPoint="0,0" EndPoint="1,0">
-        <GradientStop Offset="0" Color="#FF2E4D"/>
-        <GradientStop Offset="1" Color="#E61A3A"/>
+        <GradientStop Offset="0" Color="#62D5F6"/>
+        <GradientStop Offset="1" Color="#7DA8FF"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="GoldGradientBrush" StartPoint="0,0" EndPoint="1,0">
-        <GradientStop Offset="0" Color="#FF6B7A"/>
-        <GradientStop Offset="1" Color="#CC5566"/>
+        <GradientStop Offset="0" Color="#E4C47D"/>
+        <GradientStop Offset="1" Color="#B99751"/>
     </LinearGradientBrush>
     <!-- Flash Bloom: radial crimson energy burst -->
     <RadialGradientBrush x:Key="FlashBloomGradient" Center="0.5,0.5" GradientOrigin="0.5,0.5" RadiusX="0.7" RadiusY="0.7">
@@ -85,13 +86,13 @@
         <GradientStop Offset="0.8" Color="#401A0010"/>
         <GradientStop Offset="1" Color="#800A0A0F"/>
     </RadialGradientBrush>
-    <!-- ── Electric sheen: crisp white→crimson specular for premium feel ──────── -->
+    <!-- Restrained specular sheen -->
     <LinearGradientBrush x:Key="GlassSheenBrush" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Offset="0"    Color="#40FFFFFF"/>
-        <GradientStop Offset="0.25" Color="#20FF6B7A"/>
-        <GradientStop Offset="0.45" Color="#08FF2E4D"/>
+        <GradientStop Offset="0"    Color="#34FFFFFF"/>
+        <GradientStop Offset="0.25" Color="#1862D5F6"/>
+        <GradientStop Offset="0.45" Color="#087DA8FF"/>
         <GradientStop Offset="0.46" Color="#00FFFFFF"/>
-        <GradientStop Offset="0.82" Color="#06FF2E4D"/>
+        <GradientStop Offset="0.82" Color="#06E4C47D"/>
         <GradientStop Offset="1"    Color="#00000000"/>
     </LinearGradientBrush>
     <!-- Inner highlight stripe — sits 1 px inside border for depth illusion -->
@@ -100,54 +101,54 @@
         <GradientStop Offset="0.5" Color="#00FFFFFF"/>
     </LinearGradientBrush>
 
-    <!-- Pressed/darkening overlay with crimson tint -->
+    <!-- Pressed overlay -->
     <LinearGradientBrush x:Key="GlassPressedOverlayBrush" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Offset="0" Color="#30FF2E4D"/>
-        <GradientStop Offset="1" Color="#180A0A0F"/>
+        <GradientStop Offset="0" Color="#2862D5F6"/>
+        <GradientStop Offset="1" Color="#2403070A"/>
     </LinearGradientBrush>
     <CornerRadius x:Key="GlassButtonCornerRadius">8</CornerRadius>
     <CornerRadius x:Key="GlassChipCornerRadius">8</CornerRadius>
     <Thickness x:Key="GlassButtonBorderThickness">1</Thickness>
-    <!-- NieR parchment-tinted glass — refined for v2.0 elegance -->
+    <!-- Cirra optical-glass controls -->
     <LinearGradientBrush x:Key="GlassButtonFillBrush" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Offset="0"    Color="#48F0E8D0"/>
-        <GradientStop Offset="0.5"  Color="#1EC8B8A0"/>
-        <GradientStop Offset="1"    Color="#142A2010"/>
+        <GradientStop Offset="0"    Color="#5862D5F6"/>
+        <GradientStop Offset="0.5"  Color="#241B6078"/>
+        <GradientStop Offset="1"    Color="#16070B10"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="GlassButtonHoverFillBrush" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Offset="0"    Color="#68F8F0DC"/>
-        <GradientStop Offset="0.5"  Color="#2CD0C0A8"/>
-        <GradientStop Offset="1"    Color="#1A302818"/>
+        <GradientStop Offset="0"    Color="#82A8EDFF"/>
+        <GradientStop Offset="0.5"  Color="#3431A1C1"/>
+        <GradientStop Offset="1"    Color="#1E070B10"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="GlassButtonPressedFillBrush" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Offset="0"    Color="#38E4DCC4"/>
-        <GradientStop Offset="0.5"  Color="#16B8A890"/>
-        <GradientStop Offset="1"    Color="#22000000"/>
+        <GradientStop Offset="0"    Color="#365EC6E4"/>
+        <GradientStop Offset="0.5"  Color="#20227F99"/>
+        <GradientStop Offset="1"    Color="#2A05080C"/>
     </LinearGradientBrush>
     <!-- Border: bright top-left rim → warm gold mid → subtle bottom -->
     <LinearGradientBrush x:Key="GlassButtonBorderBrush" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Offset="0"    Color="#C8FFFFFF"/>
-        <GradientStop Offset="0.38" Color="#66C8A870"/>
-        <GradientStop Offset="0.70" Color="#28A88840"/>
-        <GradientStop Offset="1"    Color="#30FFFFFF"/>
+        <GradientStop Offset="0"    Color="#B8D8F7FF"/>
+        <GradientStop Offset="0.38" Color="#6862D5F6"/>
+        <GradientStop Offset="0.70" Color="#38E4C47D"/>
+        <GradientStop Offset="1"    Color="#24FFFFFF"/>
     </LinearGradientBrush>
     <!-- Ghost chip fills -->
     <LinearGradientBrush x:Key="GlassChipFillBrush" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Offset="0"   Color="#28EEE4CC"/>
-        <GradientStop Offset="0.5" Color="#10A89870"/>
-        <GradientStop Offset="1"   Color="#0E000000"/>
+        <GradientStop Offset="0"   Color="#2EFFFFFF"/>
+        <GradientStop Offset="0.5" Color="#161B6078"/>
+        <GradientStop Offset="1"   Color="#10070B10"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="GlassChipActiveFillBrush" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Offset="0"   Color="#48F0E6D0"/>
-        <GradientStop Offset="0.5" Color="#1AB8A884"/>
-        <GradientStop Offset="1"   Color="#16000000"/>
+        <GradientStop Offset="0"   Color="#48FFFFFF"/>
+        <GradientStop Offset="0.5" Color="#242B92AF"/>
+        <GradientStop Offset="1"   Color="#16070B10"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="GlassChipBorderBrush" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Offset="0"    Color="#90FFFFFF"/>
-        <GradientStop Offset="0.48" Color="#44C8A870"/>
-        <GradientStop Offset="1"    Color="#28FFFFFF"/>
+        <GradientStop Offset="0"    Color="#86FFFFFF"/>
+        <GradientStop Offset="0.48" Color="#5462D5F6"/>
+        <GradientStop Offset="1"    Color="#32E4C47D"/>
     </LinearGradientBrush>
-    <!-- Scanline brush — 1 px dark line every 4 px, NieR CRT feel -->
+    <!-- Fine cadence texture; individual themes may replace it. -->
     <DrawingBrush x:Key="NostalgiaScanlineBrush"
                   Viewport="0,0,1,4"
                   ViewportUnits="Absolute"
@@ -155,11 +156,11 @@
                   Stretch="Fill">
         <DrawingBrush.Drawing>
             <DrawingGroup>
-                <GeometryDrawing Brush="#0A3C3020" Geometry="M0,0 L1,0 1,1 0,1 Z"/>
+                <GeometryDrawing Brush="#1262D5F6" Geometry="M0,0 L1,0 1,1 0,1 Z"/>
             </DrawingGroup>
         </DrawingBrush.Drawing>
     </DrawingBrush>
-    <!-- NieR:Automata diagonal crosshatch — 45° X-grid lines every 20 px, NieR:A HUD aesthetic -->
+    <!-- Optional diagonal signal grid; theme intensity controls its visibility. -->
     <DrawingBrush x:Key="MatrixRainBrush"
                   Viewport="0,0,20,20"
                   ViewportUnits="Absolute"
@@ -170,7 +171,7 @@
                 <!-- Diagonal \ line (top-left → bottom-right) -->
                 <GeometryDrawing>
                     <GeometryDrawing.Pen>
-                        <Pen Brush="#3C3020" Thickness="0.55"/>
+                        <Pen Brush="#2862D5F6" Thickness="0.55"/>
                     </GeometryDrawing.Pen>
                     <GeometryDrawing.Geometry>
                         <LineGeometry StartPoint="0,0" EndPoint="20,20"/>
@@ -179,7 +180,7 @@
                 <!-- Diagonal / line (top-right → bottom-left) -->
                 <GeometryDrawing>
                     <GeometryDrawing.Pen>
-                        <Pen Brush="#3C3020" Thickness="0.55"/>
+                        <Pen Brush="#187DA8FF" Thickness="0.55"/>
                     </GeometryDrawing.Pen>
                     <GeometryDrawing.Geometry>
                         <LineGeometry StartPoint="20,0" EndPoint="0,20"/>
@@ -191,7 +192,7 @@
     <!-- Atmospheric & overlay brushes — refined for v1-19 -->
     <SolidColorBrush x:Key="AuroraVeilBrush"           Color="#28C2B48E"/>
     <SolidColorBrush x:Key="GlitchNeonBrush"           Color="#2A2010"/>
-    <!-- BladeGlass: translucent parchment layer over background –– more glass-like -->
+    <!-- Layered surface used by hero and navigation blades. -->
     <LinearGradientBrush x:Key="BladeGlassBrush" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Offset="0" Color="#F0E6DCC2"/>
         <GradientStop Offset="0.48" Color="#DCCEC29E"/>
@@ -200,7 +201,7 @@
     <SolidColorBrush x:Key="BladeActiveBrush"          Color="#2A2010"/>
     <SolidColorBrush x:Key="GlassPanelBorderBrush"     Color="#664A3E2A"/>
     <SolidColorBrush x:Key="GlassPanelHoverBorderBrush" Color="#14100A"/>
-    <!-- Shell atmosphere: richer dual-tone warm sand glow -->
+    <!-- Shell atmosphere -->
     <LinearGradientBrush x:Key="ThemeShellAtmosphereBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Offset="0"   Color="#22C8BA96"/>
         <GradientStop Offset="0.4" Color="#10BEB08A"/>
@@ -215,13 +216,32 @@
         <GradientStop Offset="1"   Color="#00000000"/>
     </LinearGradientBrush>
     <SolidColorBrush x:Key="ThemeSidebarPatternBrush" Color="Transparent"/>
-    <!-- Sweep: warm sand trace, more vivid -->
+    <!-- Moving highlight trace -->
     <SolidColorBrush x:Key="ThemeSweepBrush" Color="#2A2010"/>
     <sys:Double x:Key="ThemeShellPatternOpacity">0.05</sys:Double>
     <sys:Double x:Key="ThemeSidebarPatternOpacity">0.06</sys:Double>
     <sys:Double x:Key="ThemeSweepOpacity">0.065</sys:Double>
     <sys:Double x:Key="ThemeRainOverlayOpacity">0.07</sys:Double>
     <sys:Double x:Key="ThemeSweepOverlayOpacity">0.07</sys:Double>
+    <DrawingBrush x:Key="ThemeGrainBrush"
+                  Viewport="0,0,48,48"
+                  ViewportUnits="Absolute"
+                  TileMode="Tile"
+                  Stretch="None">
+        <DrawingBrush.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#12FFFFFF" Geometry="M1,2 L2,2 2,3 1,3 Z"/>
+                <GeometryDrawing Brush="#0E000000" Geometry="M11,7 L12,7 12,8 11,8 Z"/>
+                <GeometryDrawing Brush="#10FFFFFF" Geometry="M23,3 L24,3 24,4 23,4 Z"/>
+                <GeometryDrawing Brush="#0C000000" Geometry="M35,11 L36,11 36,12 35,12 Z"/>
+                <GeometryDrawing Brush="#0FFFFFFF" Geometry="M44,20 L45,20 45,21 44,21 Z"/>
+                <GeometryDrawing Brush="#0A000000" Geometry="M6,28 L7,28 7,29 6,29 Z"/>
+                <GeometryDrawing Brush="#0DFFFFFF" Geometry="M18,36 L19,36 19,37 18,37 Z"/>
+                <GeometryDrawing Brush="#09000000" Geometry="M31,42 L32,42 32,43 31,43 Z"/>
+            </DrawingGroup>
+        </DrawingBrush.Drawing>
+    </DrawingBrush>
+    <sys:Double x:Key="ThemeGrainOpacity">0.12</sys:Double>
     <SolidColorBrush x:Key="ProfileSurfaceAtmosphereBrush" Color="#18FFFFFF"/>
     <SolidColorBrush x:Key="ProfileSurfacePatternBrush" Color="Transparent"/>
     <SolidColorBrush x:Key="ProfileSurfaceSweepBrush" Color="#44FFFFFF"/>
@@ -247,27 +267,27 @@
     <sys:Double x:Key="ProfileSurfacePatternOpacity">0.12</sys:Double>
     <sys:Double x:Key="ProfileSurfaceSweepOpacity">0.16</sys:Double>
     <sys:Double x:Key="ProfileBadgePulseOpacity">0.18</sys:Double>
-    <!-- ── Motion / interaction tokens — Black Flash kinetic language ──────────── -->
-    <sys:Double x:Key="ThemeHoverLiftDistance">-3</sys:Double>
-    <sys:Double x:Key="ThemeHoverScale">1.012</sys:Double>
-    <sys:Double x:Key="ThemeHoverAnimationFastMs">55</sys:Double>
-    <sys:Double x:Key="ThemeHoverAnimationSlowMs">95</sys:Double>
-    <!-- Black Flash specific motion tokens -->
-    <sys:Double x:Key="FlashImpactScale">1.025</sys:Double>
-    <sys:Double x:Key="FlashRecoilScale">0.98</sys:Double>
+    <!-- Motion / interaction tokens; runtime themes replace these values. -->
+    <sys:Double x:Key="ThemeHoverLiftDistance">-2</sys:Double>
+    <sys:Double x:Key="ThemeHoverScale">1.008</sys:Double>
+    <sys:Double x:Key="ThemeHoverAnimationFastMs">75</sys:Double>
+    <sys:Double x:Key="ThemeHoverAnimationSlowMs">130</sys:Double>
+    <!-- Fast-impact motion tokens -->
+    <sys:Double x:Key="FlashImpactScale">1.016</sys:Double>
+    <sys:Double x:Key="FlashRecoilScale">0.988</sys:Double>
     <sys:Double x:Key="FlashBurstDurationMs">85</sys:Double>
     <sys:Double x:Key="FlashSettleDurationMs">140</sys:Double>
-    <!-- Artwork / overlay opacities — Black Flash optimized -->
+    <!-- Optional theme artwork opacities -->
     <sys:Double x:Key="NierArtworkOpacity">0</sys:Double>
     <sys:Double x:Key="WutheringArtworkOpacity">0</sys:Double>
-    <!-- Yuji images: increased visibility while maintaining subtle blend -->
-    <sys:Double x:Key="BlackFlashArtworkOpacity">0.85</sys:Double>
+    <!-- Impact artwork visibility -->
+    <sys:Double x:Key="BlackFlashArtworkOpacity">0.62</sys:Double>
     <sys:Double x:Key="NierDeletionEffectOpacity">0</sys:Double>
     <sys:Double x:Key="ThemeShellOverlayOpacity">0.92</sys:Double>
-    <!-- Black Flash particle & effect opacities — SUBTLE MODE -->
-    <sys:Double x:Key="FlashParticleOpacity">0.35</sys:Double>
-    <sys:Double x:Key="FlashArcOpacity">0.28</sys:Double>
-    <sys:Double x:Key="FlashGlowOpacity">0.15</sys:Double>
+    <!-- Impact particle and light opacities -->
+    <sys:Double x:Key="FlashParticleOpacity">0.24</sys:Double>
+    <sys:Double x:Key="FlashArcOpacity">0.2</sys:Double>
+    <sys:Double x:Key="FlashGlowOpacity">0.1</sys:Double>
     <DrawingBrush x:Key="NierDeletionBrush"
                   Viewport="0,0,72,28"
                   ViewportUnits="Absolute"
@@ -286,49 +306,88 @@
     </DrawingBrush>
 
     <!-- ════════════════════════════════════════════════════════════════════
-         THEME PROFILE TOKENS
-         Monospace / terminal font · Sharp square corners · 1px borders
+         SHARED DESIGN TOKENS
+         Stable dimensions and hierarchy; themes replace material and color.
          ════════════════════════════════════════════════════════════════════ -->
-    <!-- Modern 3D & Depth Resources -->
-    <!-- ── 3-D depth & glow tokens ─────────────────────────────────────────── -->
-    <Color x:Key="ThemePanelShadowColor">#14100A</Color>
-    <!-- Subtle warm-gold glow on primary button hover -->
-    <Color x:Key="ThemePrimaryButtonGlowColor">#8A7040</Color>
-    <Color x:Key="ThemePointerGlowCenterColor">#38FFFFFF</Color>
-    <Color x:Key="ThemePointerGlowMidColor">#2C8A7040</Color>
-    <Color x:Key="ThemePointerClickColor">#CC8A7040</Color>
-    <!-- Panel border: top-left bright, bottom-right dark for 3-D lift -->
+    <Color x:Key="ThemePanelShadowColor">#020509</Color>
+    <Color x:Key="ThemePrimaryButtonGlowColor">#62D5F6</Color>
+    <Color x:Key="MintGlowColor">#58D6B2</Color>
+    <Color x:Key="ThemePointerGlowCenterColor">#28FFFFFF</Color>
+    <Color x:Key="ThemePointerGlowMidColor">#207DA8FF</Color>
+    <Color x:Key="ThemePointerClickColor">#B062D5F6</Color>
     <LinearGradientBrush x:Key="ThemePanelBorderGradientBrush" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Offset="0"   Color="#50EEE4CC"/>
-        <GradientStop Offset="0.5" Color="#2A2010"/>
-        <GradientStop Offset="1"   Color="#1A140A"/>
+        <GradientStop Offset="0"   Color="#7262D5F6"/>
+        <GradientStop Offset="0.5" Color="#3C6074"/>
+        <GradientStop Offset="1"   Color="#243546"/>
     </LinearGradientBrush>
     <SolidColorBrush x:Key="ThemeAtmosphereBlobBrush" Color="Transparent"/>
     <SolidColorBrush x:Key="ThemeAtmosphereBlobSecondaryBrush" Color="Transparent"/>
 
-    <FontFamily x:Key="ThemeBodyFontFamily">Share Tech Mono, Courier New, Consolas, Lucida Console</FontFamily>
-    <FontFamily x:Key="ThemeDisplayFontFamily">Share Tech Mono, Courier New, Consolas</FontFamily>
-    <CornerRadius x:Key="ThemeCornerRadiusControl">0</CornerRadius>
-    <CornerRadius x:Key="ThemeCornerRadiusPanel">2</CornerRadius>
-    <CornerRadius x:Key="ThemeCornerRadiusLarge">3</CornerRadius>
-    <CornerRadius x:Key="ThemeCornerRadiusPill">2</CornerRadius>
+    <FontFamily x:Key="ThemeBodyFontFamily">Segoe UI Variable Text, Segoe UI, Arial</FontFamily>
+    <FontFamily x:Key="ThemeDisplayFontFamily">Segoe UI Variable Display, Segoe UI Semibold, Segoe UI</FontFamily>
+    <FontFamily x:Key="ThemeInputFontFamily">Segoe UI Variable Text, Segoe UI, Arial</FontFamily>
+    <FontFamily x:Key="ThemePathFontFamily">Cascadia Mono, Consolas, Lucida Console, Courier New</FontFamily>
+    <CornerRadius x:Key="ThemeCornerRadiusControl">6</CornerRadius>
+    <CornerRadius x:Key="ThemeCornerRadiusPanel">8</CornerRadius>
+    <CornerRadius x:Key="ThemeCornerRadiusLarge">8</CornerRadius>
+    <CornerRadius x:Key="ThemeCornerRadiusPill">999</CornerRadius>
     <Thickness x:Key="ThemeBorderThickness">1</Thickness>
-    <!-- Panel fills: slightly more opaque for crisper card legibility -->
-    <SolidColorBrush x:Key="ThemePanelFillBrush"            Color="#F0CEC29E"/>
-    <SolidColorBrush x:Key="ThemePanelFillSoftBrush"        Color="#D8DAD0AE"/>
-    <SolidColorBrush x:Key="ThemePanelEdgeBrush"            Color="#2A2010"/>
-    <SolidColorBrush x:Key="ThemePanelShadowBrush"          Color="#14100A"/>
-    <SolidColorBrush x:Key="ThemeDeckFrameBrush"            Color="#22C2B48E"/>
-    <SolidColorBrush x:Key="ThemeDeckFrameBorderBrush"      Color="#2A2010"/>
-    <!-- Nav items: deeper ink selection, brighter hover wash for clarity -->
-    <SolidColorBrush x:Key="ThemeNavItemBackgroundBrush"         Color="#18000000"/>
-    <SolidColorBrush x:Key="ThemeNavItemHoverBackgroundBrush"    Color="#26EEE4CC"/>
-    <SolidColorBrush x:Key="ThemeNavItemSelectedBackgroundBrush" Color="#2A2010"/>
-    <SolidColorBrush x:Key="ThemeNavItemBorderBrush"             Color="#2A2010"/>
-    <SolidColorBrush x:Key="ThemeNavItemHoverBorderBrush"        Color="#EEE4CC"/>
-    <SolidColorBrush x:Key="ThemeNavItemSelectedBorderBrush"     Color="#EEE4CC"/>
-    <SolidColorBrush x:Key="ThemeNavItemTopEdgeBrush"            Color="#50EEE4CC"/>
-    <!-- Pill tabs: glass fills now for a premium tactile feel -->
+
+    <!--
+        Type scale. Shared across every theme skin so text sizes stay consistent no
+        matter which of the 9 palettes is active — only color/font-family should vary
+        by theme, not size. Steps roughly follow a 1.15-1.25 ratio; each step is meant
+        to be visually distinct from its neighbors, not a 0.5pt nudge.
+
+        Caption   - timestamps, muted sub-labels, badge text
+        Small     - secondary list/grid text (platform, last-played)
+        Body      - default reading size for most UI text
+        BodyLarge - primary list/card titles, form labels
+        Heading   - section headers, dialog titles
+        Title     - page titles
+        Display   - hero/detail-panel game titles
+    -->
+    <sys:Double x:Key="FontSizeMicro">10</sys:Double>
+    <sys:Double x:Key="FontSizeCaption">11</sys:Double>
+    <sys:Double x:Key="FontSizeSmall">12</sys:Double>
+    <sys:Double x:Key="FontSizeBody">14</sys:Double>
+    <sys:Double x:Key="FontSizeBodyLarge">16</sys:Double>
+    <sys:Double x:Key="FontSizeHeading">20</sys:Double>
+    <sys:Double x:Key="FontSizeTitle">26</sys:Double>
+    <sys:Double x:Key="FontSizeDisplay">36</sys:Double>
+    <sys:Double x:Key="FontSizeStatMedium">24</sys:Double>
+    <sys:Double x:Key="FontSizeStatLarge">30</sys:Double>
+
+    <!--
+        Spacing scale. Same rationale as the type scale above — shared across every
+        theme, and meant to replace the current sprawl of near-duplicate literal
+        Margin/Padding values (10,6 vs 10,5 vs 9,5 vs 9,7, etc.) with a small set of
+        values that are actually distinct from one another and consistent everywhere.
+        Use as Thickness building blocks, e.g. Margin="{StaticResource SpaceM}" for
+        uniform, or compose manually ("{StaticResource SpaceS},{StaticResource SpaceM}")
+        where XAML allows it.
+    -->
+    <sys:Double x:Key="SpaceXS">4</sys:Double>
+    <sys:Double x:Key="SpaceS">8</sys:Double>
+    <sys:Double x:Key="SpaceM">14</sys:Double>
+    <sys:Double x:Key="SpaceL">20</sys:Double>
+    <sys:Double x:Key="SpaceXL">32</sys:Double>
+    <!-- Optical-depth surfaces -->
+    <SolidColorBrush x:Key="ThemePanelFillBrush"            Color="#EA111C27"/>
+    <SolidColorBrush x:Key="ThemePanelFillSoftBrush"        Color="#C90E1822"/>
+    <SolidColorBrush x:Key="ThemePanelEdgeBrush"            Color="#3C6074"/>
+    <SolidColorBrush x:Key="ThemePanelShadowBrush"          Color="#020509"/>
+    <SolidColorBrush x:Key="ThemeDeckFrameBrush"            Color="#241C3342"/>
+    <SolidColorBrush x:Key="ThemeDeckFrameBorderBrush"      Color="#345466"/>
+    <!-- Navigation -->
+    <SolidColorBrush x:Key="ThemeNavItemBackgroundBrush"         Color="#160E1822"/>
+    <SolidColorBrush x:Key="ThemeNavItemHoverBackgroundBrush"    Color="#2A183447"/>
+    <SolidColorBrush x:Key="ThemeNavItemSelectedBackgroundBrush" Color="#3A1C4054"/>
+    <SolidColorBrush x:Key="ThemeNavItemBorderBrush"             Color="#294858"/>
+    <SolidColorBrush x:Key="ThemeNavItemHoverBorderBrush"        Color="#62D5F6"/>
+    <SolidColorBrush x:Key="ThemeNavItemSelectedBorderBrush"     Color="#E4C47D"/>
+    <SolidColorBrush x:Key="ThemeNavItemTopEdgeBrush"            Color="#72FFFFFF"/>
+    <!-- Segmented tabs -->
     <LinearGradientBrush x:Key="ThemePillFillBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Offset="0" Color="#20FFFFFF"/>
         <GradientStop Offset="1" Color="#10000000"/>
@@ -337,29 +396,26 @@
         <GradientStop Offset="0" Color="#32FFFFFF"/>
         <GradientStop Offset="1" Color="#18000000"/>
     </LinearGradientBrush>
-    <SolidColorBrush x:Key="ThemePillSelectedFillBrush"          Color="#2A2010"/>
-    <SolidColorBrush x:Key="ThemePillBorderBrush"                Color="#2A2010"/>
-    <SolidColorBrush x:Key="ThemePillHoverBorderBrush"           Color="#14100A"/>
-    <SolidColorBrush x:Key="ThemePillSelectedBorderBrush"        Color="#14100A"/>
-    <SolidColorBrush x:Key="ThemePillLabelBrush"                 Color="#4A3E2A"/>
-    <SolidColorBrush x:Key="ThemePillLabelActiveBrush"           Color="#EEE4CC"/>
-    <!-- ── Button tokens ──────────────────────────────────────────────────── -->
-    <!-- Primary: deep ink with warm-cream text; gold glow on hover -->
-    <SolidColorBrush x:Key="ThemePrimaryButtonTextBrush"         Color="#EEE4CC"/>
-    <SolidColorBrush x:Key="ThemePrimaryButtonFillBrush"         Color="#2A2010"/>
-    <SolidColorBrush x:Key="ThemePrimaryButtonHoverFillBrush"    Color="#1E1808"/>
-    <SolidColorBrush x:Key="ThemePrimaryButtonPressedFillBrush"  Color="#120E04"/>
-    <!-- Secondary: richer parchment, slightly deeper hover -->
-    <SolidColorBrush x:Key="ThemeSecondaryButtonTextBrush"       Color="#14100A"/>
-    <SolidColorBrush x:Key="ThemeSecondaryButtonFillBrush"       Color="#CEBE9C"/>
-    <SolidColorBrush x:Key="ThemeSecondaryButtonHoverFillBrush"  Color="#C2B28A"/>
-    <SolidColorBrush x:Key="ThemeSecondaryButtonPressedFillBrush" Color="#B8A880"/>
-    <SolidColorBrush x:Key="ThemeSecondaryButtonBorderBrush"     Color="#2A2010"/>
-    <!-- Ghost: glass feel, gold-tinted border -->
-    <SolidColorBrush x:Key="ThemeGhostButtonHoverFillBrush"      Color="#1AEEE4CC"/>
-    <SolidColorBrush x:Key="ThemeGhostButtonPressedFillBrush"    Color="#30C8BC9C"/>
-    <SolidColorBrush x:Key="ThemeGhostButtonBorderBrush"         Color="#4A3E2A"/>
-    <SolidColorBrush x:Key="ThemeGhostButtonHoverBorderBrush"    Color="#2A2010"/>
+    <SolidColorBrush x:Key="ThemePillSelectedFillBrush"          Color="#3821465B"/>
+    <SolidColorBrush x:Key="ThemePillBorderBrush"                Color="#335466"/>
+    <SolidColorBrush x:Key="ThemePillHoverBorderBrush"           Color="#62D5F6"/>
+    <SolidColorBrush x:Key="ThemePillSelectedBorderBrush"        Color="#E4C47D"/>
+    <SolidColorBrush x:Key="ThemePillLabelBrush"                 Color="#A9BAC4"/>
+    <SolidColorBrush x:Key="ThemePillLabelActiveBrush"           Color="#FFFFFF"/>
+    <!-- Buttons -->
+    <SolidColorBrush x:Key="ThemePrimaryButtonTextBrush"         Color="#031117"/>
+    <SolidColorBrush x:Key="ThemePrimaryButtonFillBrush"         Color="#62D5F6"/>
+    <SolidColorBrush x:Key="ThemePrimaryButtonHoverFillBrush"    Color="#9AEAFF"/>
+    <SolidColorBrush x:Key="ThemePrimaryButtonPressedFillBrush"  Color="#35A8C9"/>
+    <SolidColorBrush x:Key="ThemeSecondaryButtonTextBrush"       Color="#E6F1F6"/>
+    <SolidColorBrush x:Key="ThemeSecondaryButtonFillBrush"       Color="#233846"/>
+    <SolidColorBrush x:Key="ThemeSecondaryButtonHoverFillBrush"  Color="#2D4859"/>
+    <SolidColorBrush x:Key="ThemeSecondaryButtonPressedFillBrush" Color="#1A2C38"/>
+    <SolidColorBrush x:Key="ThemeSecondaryButtonBorderBrush"     Color="#42677A"/>
+    <SolidColorBrush x:Key="ThemeGhostButtonHoverFillBrush"      Color="#281C4053"/>
+    <SolidColorBrush x:Key="ThemeGhostButtonPressedFillBrush"    Color="#3A173648"/>
+    <SolidColorBrush x:Key="ThemeGhostButtonBorderBrush"         Color="#35596B"/>
+    <SolidColorBrush x:Key="ThemeGhostButtonHoverBorderBrush"    Color="#62D5F6"/>
 
 
     <!-- ════════════════════════════════════════════════════════════════════
@@ -369,15 +425,17 @@
     <Style TargetType="Window">
         <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-        <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontFamily" Value="{DynamicResource ThemeInputFontFamily}"/>
+        <Setter Property="FontSize" Value="14"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+        <Setter Property="TextOptions.TextHintingMode" Value="Fixed"/>
+        <Setter Property="RenderOptions.BitmapScalingMode" Value="HighQuality"/>
     </Style>
 
-    <!-- AtmosphereBlobStyle — no glow in NieR; flat transparent overlay -->
+    <!-- Reserved ambient geometry layer. -->
     <Style x:Key="AtmosphereBlobStyle" TargetType="Border">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="CornerRadius" Value="0"/>
@@ -385,7 +443,7 @@
         <Setter Property="IsHitTestVisible" Value="False"/>
     </Style>
 
-    <!-- MatrixTitleTextStyle — NieR: plain charcoal label, no animation -->
+    <!-- Theme-reactive display title. -->
     <Style x:Key="MatrixTitleTextStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeDisplayFontFamily}"/>
@@ -394,85 +452,128 @@
 
 
     <!-- ════════════════════════════════════════════════════════════════════
-         SCROLLBAR — 4 px thin, dark brown thumb on parchment track
+         SCROLLBAR
          ════════════════════════════════════════════════════════════════════ -->
 
     <Style TargetType="ScrollBar">
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Width" Value="8"/>
-        <Setter Property="MinWidth" Value="8"/>
+        <Setter Property="Width" Value="12"/>
+        <Setter Property="MinWidth" Value="12"/>
+        <Setter Property="Focusable" Value="False"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ScrollBar">
-                    <Grid Background="Transparent" Width="8">
-                        <Track x:Name="PART_Track" IsDirectionReversed="True" Margin="2,3">
+                    <Grid Width="12" Background="Transparent">
+                        <Border x:Name="Rail"
+                                Width="8"
+                                Margin="2"
+                                HorizontalAlignment="Center"
+                                Background="{DynamicResource GlassChipFillBrush}"
+                                BorderBrush="{DynamicResource GlassPanelBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusPill}"
+                                Opacity="0.22"/>
+                        <Track x:Name="PART_Track" IsDirectionReversed="True" Margin="2,4">
                             <Track.DecreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.LineUpCommand" Opacity="0" Focusable="False"/>
+                                <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/>
                             </Track.DecreaseRepeatButton>
                             <Track.Thumb>
-                                <Thumb>
+                                <Thumb x:Name="Thumb"
+                                       Width="4"
+                                       MinHeight="38"
+                                       HorizontalAlignment="Center"
+                                       Background="{DynamicResource ThemePanelEdgeBrush}"
+                                       Opacity="0.74">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Border x:Name="Tb" Background="{DynamicResource BorderBrush}" CornerRadius="{DynamicResource ThemeCornerRadiusPill}" Opacity="0.75"/>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="Tb" Property="Background" Value="{DynamicResource BerryBrush}"/>
-                                                    <Setter TargetName="Tb" Property="Opacity" Value="1"/>
-                                                </Trigger>
-                                                <Trigger Property="IsDragging" Value="True">
-                                                    <Setter TargetName="Tb" Property="Background" Value="{DynamicResource BerryBrush}"/>
-                                                    <Setter TargetName="Tb" Property="Opacity" Value="1"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
+                                            <Border Background="{TemplateBinding Background}"
+                                                    CornerRadius="{DynamicResource ThemeCornerRadiusPill}"
+                                                    BorderBrush="{DynamicResource GlassPanelBorderBrush}"
+                                                    BorderThickness="1"/>
                                         </ControlTemplate>
                                     </Thumb.Template>
                                 </Thumb>
                             </Track.Thumb>
                             <Track.IncreaseRepeatButton>
-                                <RepeatButton Command="ScrollBar.LineDownCommand" Opacity="0" Focusable="False"/>
+                                <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/>
                             </Track.IncreaseRepeatButton>
                         </Track>
                     </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Rail" Property="Opacity" Value="0.62"/>
+                            <Setter TargetName="Thumb" Property="Width" Value="7"/>
+                            <Setter TargetName="Thumb" Property="Background" Value="{DynamicResource CloudBrush}"/>
+                            <Setter TargetName="Thumb" Property="Opacity" Value="1"/>
+                        </Trigger>
+                        <Trigger SourceName="Thumb" Property="IsDragging" Value="True">
+                            <Setter TargetName="Rail" Property="Opacity" Value="0.78"/>
+                            <Setter TargetName="Thumb" Property="Width" Value="8"/>
+                            <Setter TargetName="Thumb" Property="Background" Value="{DynamicResource BerryBrush}"/>
+                            <Setter TargetName="Thumb" Property="Opacity" Value="1"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
         <Style.Triggers>
             <Trigger Property="Orientation" Value="Horizontal">
-                <Setter Property="Height" Value="8"/>
-                <Setter Property="MinHeight" Value="8"/>
+                <Setter Property="Height" Value="12"/>
+                <Setter Property="MinHeight" Value="12"/>
                 <Setter Property="Width" Value="Auto"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ScrollBar">
-                            <Grid Background="Transparent" Height="8">
-                                <Track x:Name="PART_Track" IsDirectionReversed="False" Margin="3,2">
+                            <Grid Height="12" Background="Transparent">
+                                <Border x:Name="Rail"
+                                        Height="8"
+                                        Margin="2"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource GlassChipFillBrush}"
+                                        BorderBrush="{DynamicResource GlassPanelBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="{DynamicResource ThemeCornerRadiusPill}"
+                                        Opacity="0.22"/>
+                                <Track x:Name="PART_Track" IsDirectionReversed="False" Margin="4,2">
                                     <Track.DecreaseRepeatButton>
-                                        <RepeatButton Command="ScrollBar.LineLeftCommand" Opacity="0" Focusable="False"/>
+                                        <RepeatButton Command="ScrollBar.PageLeftCommand" Opacity="0" Focusable="False"/>
                                     </Track.DecreaseRepeatButton>
                                     <Track.Thumb>
-                                        <Thumb>
+                                        <Thumb x:Name="Thumb"
+                                               Height="4"
+                                               MinWidth="52"
+                                               VerticalAlignment="Center"
+                                               Background="{DynamicResource ThemePanelEdgeBrush}"
+                                               Opacity="0.74">
                                             <Thumb.Template>
                                                 <ControlTemplate TargetType="Thumb">
-                                                    <Border x:Name="Tb" Background="{DynamicResource BorderBrush}" CornerRadius="{DynamicResource ThemeCornerRadiusPill}" Opacity="0.75"/>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="Tb" Property="Background" Value="{DynamicResource BerryBrush}"/>
-                                                            <Setter TargetName="Tb" Property="Opacity" Value="1"/>
-                                                        </Trigger>
-                                                        <Trigger Property="IsDragging" Value="True">
-                                                            <Setter TargetName="Tb" Property="Background" Value="{DynamicResource BerryBrush}"/>
-                                                            <Setter TargetName="Tb" Property="Opacity" Value="1"/>
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
+                                                    <Border Background="{TemplateBinding Background}"
+                                                            CornerRadius="{DynamicResource ThemeCornerRadiusPill}"
+                                                            BorderBrush="{DynamicResource GlassPanelBorderBrush}"
+                                                            BorderThickness="1"/>
                                                 </ControlTemplate>
                                             </Thumb.Template>
                                         </Thumb>
                                     </Track.Thumb>
                                     <Track.IncreaseRepeatButton>
-                                        <RepeatButton Command="ScrollBar.LineRightCommand" Opacity="0" Focusable="False"/>
+                                        <RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0" Focusable="False"/>
                                     </Track.IncreaseRepeatButton>
                                 </Track>
                             </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Rail" Property="Opacity" Value="0.62"/>
+                                    <Setter TargetName="Thumb" Property="Height" Value="7"/>
+                                    <Setter TargetName="Thumb" Property="Background" Value="{DynamicResource CloudBrush}"/>
+                                    <Setter TargetName="Thumb" Property="Opacity" Value="1"/>
+                                </Trigger>
+                                <Trigger SourceName="Thumb" Property="IsDragging" Value="True">
+                                    <Setter TargetName="Rail" Property="Opacity" Value="0.78"/>
+                                    <Setter TargetName="Thumb" Property="Height" Value="8"/>
+                                    <Setter TargetName="Thumb" Property="Background" Value="{DynamicResource BerryBrush}"/>
+                                    <Setter TargetName="Thumb" Property="Opacity" Value="1"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>
@@ -481,6 +582,10 @@
     </Style>
 
     <Style TargetType="ScrollViewer">
+        <Setter Property="PanningMode" Value="Both"/>
+        <Setter Property="PanningDeceleration" Value="0.0016"/>
+        <Setter Property="PanningRatio" Value="1"/>
+        <Setter Property="ScrollViewer.IsDeferredScrollingEnabled" Value="False"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ScrollViewer">
@@ -551,8 +656,7 @@
 
 
     <!-- ════════════════════════════════════════════════════════════════════
-         SIDEBAR NAVIGATION — dark panel, cream text on selection
-         Mirrors NieR left panel: very dark bg, thin bordered items
+         SIDEBAR NAVIGATION
          ════════════════════════════════════════════════════════════════════ -->
 
     <Style x:Key="NavListBoxStyle" TargetType="ListBox">
@@ -675,7 +779,7 @@
         </Setter>
     </Style>
 
-    <!-- Cloud Deck / Blade nav — flat NieR terminal tab style -->
+    <!-- Compact blade navigation -->
     <Style x:Key="BladeNavListStyle" TargetType="ListBox">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
@@ -790,7 +894,7 @@
         </Setter>
     </Style>
 
-    <!-- Pill tab button — flat NieR box style -->
+    <!-- Segmented tab button -->
     <Style x:Key="PillTabButtonStyle" TargetType="Button">
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Padding" Value="14,7"/>
@@ -799,10 +903,11 @@
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
         <Setter Property="BorderThickness" Value="{DynamicResource GlassButtonBorderThickness}"/>
         <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource ThemePillLabelBrush}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Grid TextElement.Foreground="{DynamicResource ThemePillLabelBrush}"
+                    <Grid TextElement.Foreground="{TemplateBinding Foreground}"
                           TextElement.FontFamily="{DynamicResource ThemeBodyFontFamily}"
                           TextElement.FontSize="{TemplateBinding FontSize}">
                         <Border x:Name="PillBg"
@@ -827,7 +932,7 @@
                         </Trigger>
                         <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
                             <Setter TargetName="ActiveBar" Property="Opacity" Value="1"/>
-                            <Setter TargetName="PillContent" Property="TextElement.Foreground" Value="{DynamicResource ThemePillLabelActiveBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource ThemePillLabelActiveBrush}"/>
                             <Setter TargetName="PillBg" Property="Background" Value="{DynamicResource ThemePillSelectedFillBrush}"/>
                             <Setter TargetName="PillBg" Property="BorderBrush" Value="{DynamicResource ThemePillBorderBrush}"/>
                         </DataTrigger>
@@ -1009,18 +1114,16 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Control">
-                    <Border BorderBrush="{DynamicResource GoldBrush}"
-                            BorderThickness="2"
-                            CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
-                            Margin="-3"
-                            Opacity="0.92">
-                        <Border.Effect>
-                            <DropShadowEffect Color="#8A7040"
-                                              BlurRadius="10"
-                                              ShadowDepth="0"
-                                              Opacity="0.42"/>
-                        </Border.Effect>
-                    </Border>
+                    <Grid Margin="-5" SnapsToDevicePixels="True" IsHitTestVisible="False">
+                        <Border BorderBrush="{DynamicResource ThemeAccentBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
+                                Opacity="0.45"/>
+                        <Border Margin="2"
+                                BorderBrush="{DynamicResource GoldBrush}"
+                                BorderThickness="2"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusControl}"/>
+                    </Grid>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -1028,21 +1131,19 @@
 
 
     <!-- ════════════════════════════════════════════════════════════════════
-         ACTION BUTTONS — NieR terminal style
-         Primary  = dark charcoal fill + cream text (like NieR status header)
-         Secondary = parchment fill + dark border
-         Ghost    = transparent + thin border
+         ACTION BUTTONS
          ════════════════════════════════════════════════════════════════════ -->
 
     <Style x:Key="PrimaryButtonStyle" TargetType="Button">
         <Setter Property="FocusVisualStyle" Value="{StaticResource CloudFocusVisualStyle}"/>
         <Setter Property="Foreground" Value="{DynamicResource ThemePrimaryButtonTextBrush}"/>
-        <Setter Property="Background" Value="{DynamicResource GlassButtonFillBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource ThemePrimaryButtonFillBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BerryBrush}"/>
         <Setter Property="BorderThickness" Value="{DynamicResource GlassButtonBorderThickness}"/>
         <Setter Property="Padding" Value="16,9"/>
         <Setter Property="Margin" Value="0,0,6,0"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
@@ -1057,8 +1158,8 @@
                         <!-- Base fill -->
                         <Border x:Name="Bg"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
-                                Background="{DynamicResource GlassButtonFillBrush}"
-                                BorderBrush="{DynamicResource GlassButtonBorderBrush}"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 SnapsToDevicePixels="True">
                             <Border.Effect>
@@ -1072,14 +1173,15 @@
                         <Border x:Name="Sheen"
                                 IsHitTestVisible="False"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
-                                Background="{DynamicResource GlassSheenBrush}"/>
+                                Background="{DynamicResource GlassSheenBrush}"
+                                Opacity="0.10"/>
                         <Border x:Name="InnerEdge"
                                 Margin="1"
                                 IsHitTestVisible="False"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
                                 BorderBrush="#46FFFFFF"
                                 BorderThickness="1"
-                                Opacity="0.55"/>
+                                Opacity="0.14"/>
                         <!-- Pressed darkener -->
                         <Border x:Name="PressOverlay"
                                 IsHitTestVisible="False"
@@ -1090,7 +1192,8 @@
                         <Border x:Name="BottomBar"
                                 Height="2" VerticalAlignment="Bottom"
                                 IsHitTestVisible="False"
-                                Background="#60E8DEC8"/>
+                                Background="{DynamicResource BerryHoverBrush}"
+                                Opacity="0"/>
                         <Border x:Name="FxTrace"
                                 Width="76"
                                 HorizontalAlignment="Left"
@@ -1112,43 +1215,19 @@
                                           Margin="{TemplateBinding Padding}"/>
                     </Grid>
                     <ControlTemplate.Triggers>
-                        <EventTrigger RoutedEvent="Button.MouseEnter">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.014" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.014" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)" To="0.38" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)" To="14" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="FxTrace" Storyboard.TargetProperty="Opacity" To="0.62" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="FxTrace" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="220" Duration="0:0:0.26">
-                                        <DoubleAnimation.EasingFunction>
-                                            <QuarticEase EasingMode="EaseOut"/>
-                                        </DoubleAnimation.EasingFunction>
-                                    </DoubleAnimation>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                        <EventTrigger RoutedEvent="Button.MouseLeave">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)" To="0" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)" To="8" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="FxTrace" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="FxTrace" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="-92" Duration="0:0:0.01"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource GlassButtonHoverFillBrush}"/>
-                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GlassButtonBorderBrush}"/>
-                            <Setter TargetName="BottomBar" Property="Background" Value="#A0E8DEC8"/>
-                            <Setter TargetName="InnerEdge" Property="Opacity" Value="0.82"/>
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource ThemePrimaryButtonHoverFillBrush}"/>
+                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource BerryHoverBrush}"/>
+                            <Setter TargetName="BottomBar" Property="Opacity" Value="0.55"/>
+                            <Setter TargetName="InnerEdge" Property="Opacity" Value="0.26"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource ThemePrimaryButtonHoverFillBrush}"/>
+                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GoldBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource GlassButtonPressedFillBrush}"/>
-                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GlassButtonBorderBrush}"/>
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource ThemePrimaryButtonPressedFillBrush}"/>
+                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource BerryPressedBrush}"/>
                             <Setter TargetName="PressOverlay" Property="Opacity" Value="1"/>
                             <Setter TargetName="Sheen" Property="Opacity" Value="0.4"/>
                         </Trigger>
@@ -1164,12 +1243,13 @@
     <Style x:Key="SecondaryButtonStyle" TargetType="Button">
         <Setter Property="FocusVisualStyle" Value="{StaticResource CloudFocusVisualStyle}"/>
         <Setter Property="Foreground" Value="{DynamicResource ThemeSecondaryButtonTextBrush}"/>
-        <Setter Property="Background" Value="{DynamicResource GlassButtonFillBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource ThemeSecondaryButtonFillBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ThemeSecondaryButtonBorderBrush}"/>
         <Setter Property="BorderThickness" Value="{DynamicResource GlassButtonBorderThickness}"/>
         <Setter Property="Padding" Value="14,9"/>
         <Setter Property="Margin" Value="0,0,6,0"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
@@ -1183,8 +1263,8 @@
                         </Grid.RenderTransform>
                         <Border x:Name="Bg"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
-                                Background="{DynamicResource GlassButtonFillBrush}"
-                                BorderBrush="{DynamicResource GlassButtonBorderBrush}"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 SnapsToDevicePixels="True">
                             <Border.Effect>
@@ -1198,14 +1278,15 @@
                         <Border x:Name="Sheen"
                                 IsHitTestVisible="False"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
-                                Background="{DynamicResource GlassSheenBrush}"/>
+                                Background="{DynamicResource GlassSheenBrush}"
+                                Opacity="0"/>
                         <Border x:Name="InnerEdge"
                                 Margin="1"
                                 IsHitTestVisible="False"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
                                 BorderBrush="#52FFFFFF"
                                 BorderThickness="1"
-                                Opacity="0.46"/>
+                                Opacity="0.08"/>
                         <!-- Pressed darkener -->
                         <Border x:Name="PressOverlay"
                                 IsHitTestVisible="False"
@@ -1216,39 +1297,41 @@
                         <Border x:Name="BottomBar"
                                 Height="2" VerticalAlignment="Bottom"
                                 IsHitTestVisible="False"
-                                Background="#30000000"/>
+                                Background="{DynamicResource BerryBrush}"
+                                Opacity="0"/>
+                        <Border x:Name="FxTrace"
+                                Width="68"
+                                HorizontalAlignment="Left"
+                                Background="{DynamicResource ThemeSweepBrush}"
+                                Opacity="0"
+                                IsHitTestVisible="False">
+                            <Border.RenderTransform>
+                                <TranslateTransform X="-84"/>
+                            </Border.RenderTransform>
+                            <Border.OpacityMask>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Offset="0" Color="#00FFFFFF"/>
+                                    <GradientStop Offset="0.5" Color="#FFFFFFFF"/>
+                                    <GradientStop Offset="1" Color="#00FFFFFF"/>
+                                </LinearGradientBrush>
+                            </Border.OpacityMask>
+                        </Border>
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Margin="{TemplateBinding Padding}"/>
                     </Grid>
                     <ControlTemplate.Triggers>
-                        <EventTrigger RoutedEvent="Button.MouseEnter">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.014" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.014" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)" To="0.22" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)" To="14" Duration="0:0:0.11"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                        <EventTrigger RoutedEvent="Button.MouseLeave">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)" To="0" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)" To="6" Duration="0:0:0.16"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource GlassButtonHoverFillBrush}"/>
-                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GlassButtonBorderBrush}"/>
-                            <Setter TargetName="BottomBar" Property="Background" Value="#50000000"/>
-                            <Setter TargetName="InnerEdge" Property="Opacity" Value="0.72"/>
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource ThemeSecondaryButtonHoverFillBrush}"/>
+                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource ThemeGhostButtonHoverBorderBrush}"/>
+                            <Setter TargetName="BottomBar" Property="Opacity" Value="0.30"/>
+                            <Setter TargetName="InnerEdge" Property="Opacity" Value="0.18"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource ThemeSecondaryButtonHoverFillBrush}"/>
+                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GoldBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource GlassButtonPressedFillBrush}"/>
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource ThemeSecondaryButtonPressedFillBrush}"/>
                             <Setter TargetName="PressOverlay" Property="Opacity" Value="1"/>
                             <Setter TargetName="Sheen" Property="Opacity" Value="0.3"/>
                         </Trigger>
@@ -1264,13 +1347,13 @@
     <Style x:Key="GhostButtonStyle" TargetType="Button">
         <Setter Property="FocusVisualStyle" Value="{StaticResource CloudFocusVisualStyle}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-        <Setter Property="Background" Value="{DynamicResource GlassChipFillBrush}"/>
+        <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderBrush" Value="{DynamicResource ThemeGhostButtonBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="14,8"/>
         <Setter Property="Margin" Value="0,0,6,0"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
@@ -1285,7 +1368,7 @@
                         <Border x:Name="Bg"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
                                 Background="{TemplateBinding Background}"
-                                BorderBrush="{DynamicResource GlassButtonBorderBrush}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 SnapsToDevicePixels="True">
                             <Border.Effect>
@@ -1300,50 +1383,51 @@
                                 IsHitTestVisible="False"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
                                 Background="{DynamicResource GlassSheenBrush}"
-                                Opacity="0"/>
+                                Opacity="0.05"/>
                         <Border x:Name="InnerEdge"
                                 Margin="1"
                                 IsHitTestVisible="False"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
                                 BorderBrush="#38FFFFFF"
                                 BorderThickness="1"
-                                Opacity="0.28"/>
+                                Opacity="0"/>
                         <!-- Pressed darkener -->
                         <Border x:Name="PressOverlay"
                                 IsHitTestVisible="False"
                                 CornerRadius="{DynamicResource GlassButtonCornerRadius}"
                                 Background="{DynamicResource GlassPressedOverlayBrush}"
                                 Opacity="0"/>
+                        <Border x:Name="FxTrace"
+                                Width="62"
+                                HorizontalAlignment="Left"
+                                Background="{DynamicResource ThemeSweepBrush}"
+                                Opacity="0"
+                                IsHitTestVisible="False">
+                            <Border.RenderTransform>
+                                <TranslateTransform X="-78"/>
+                            </Border.RenderTransform>
+                            <Border.OpacityMask>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Offset="0" Color="#00FFFFFF"/>
+                                    <GradientStop Offset="0.5" Color="#FFFFFFFF"/>
+                                    <GradientStop Offset="1" Color="#00FFFFFF"/>
+                                </LinearGradientBrush>
+                            </Border.OpacityMask>
+                        </Border>
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Margin="{TemplateBinding Padding}"/>
                     </Grid>
                     <ControlTemplate.Triggers>
-                        <EventTrigger RoutedEvent="Button.MouseEnter">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.014" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.014" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)" To="0.16" Duration="0:0:0.11"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)" To="12" Duration="0:0:0.11"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                        <EventTrigger RoutedEvent="Button.MouseLeave">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)" To="0" Duration="0:0:0.16"/>
-                                    <DoubleAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)" To="4" Duration="0:0:0.16"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource GlassButtonHoverFillBrush}"/>
-                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GlassButtonBorderBrush}"/>
-                            <Setter TargetName="Sheen" Property="Opacity" Value="1"/>
-                            <Setter TargetName="InnerEdge" Property="Opacity" Value="0.68"/>
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource ThemeGhostButtonHoverFillBrush}"/>
+                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource ThemeGhostButtonHoverBorderBrush}"/>
+                            <Setter TargetName="Sheen" Property="Opacity" Value="0.18"/>
+                            <Setter TargetName="InnerEdge" Property="Opacity" Value="0.18"/>
                             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource ThemeGhostButtonHoverFillBrush}"/>
+                            <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GoldBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Bg" Property="Background" Value="{DynamicResource GlassButtonPressedFillBrush}"/>
@@ -1369,7 +1453,7 @@
         <Setter Property="Padding" Value="14,8"/>
         <Setter Property="Margin" Value="0,0,6,0"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
@@ -1528,7 +1612,7 @@
 
 
     <!-- ════════════════════════════════════════════════════════════════════
-         TEXT INPUTS — parchment bg, dark border, focus = darker border
+         TEXT INPUTS
          ════════════════════════════════════════════════════════════════════ -->
 
     <Style x:Key="TextFieldStyle" TargetType="TextBox">
@@ -1539,10 +1623,10 @@
         <Setter Property="SelectionBrush" Value="{DynamicResource CardSelectedBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Padding" Value="9,8"/>
+        <Setter Property="Padding" Value="11,9"/>
         <Setter Property="Margin" Value="0,0,0,8"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
@@ -1560,7 +1644,7 @@
                             <Setter TargetName="InputBorder" Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}"/>
                         </Trigger>
                         <Trigger Property="IsFocused" Value="True">
-                            <Setter TargetName="InputBorder" Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+                            <Setter TargetName="InputBorder" Property="BorderBrush" Value="{DynamicResource BerryBrush}"/>
                             <Setter TargetName="InputBorder" Property="Background" Value="{DynamicResource SurfaceHighBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
@@ -1572,16 +1656,26 @@
         </Setter>
     </Style>
 
+    <Style x:Key="PathTextFieldStyle" TargetType="TextBox" BasedOn="{StaticResource TextFieldStyle}">
+        <Setter Property="FontFamily" Value="{DynamicResource ThemePathFontFamily}"/>
+    </Style>
+
+    <Style x:Key="PathTextBlockStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource ThemePathFontFamily}"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeCaption}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+    </Style>
+
     <Style x:Key="ComboFieldStyle" TargetType="ComboBox">
         <Setter Property="FocusVisualStyle" Value="{StaticResource CloudFocusVisualStyle}"/>
         <Setter Property="Background"       Value="{DynamicResource SurfaceElevatedBrush}"/>
         <Setter Property="Foreground"       Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="BorderBrush"      Value="{DynamicResource BorderBrush}"/>
         <Setter Property="BorderThickness"  Value="1"/>
-        <Setter Property="Padding"          Value="9,8"/>
+        <Setter Property="Padding"          Value="11,9"/>
         <Setter Property="Margin"           Value="0,0,0,8"/>
         <Setter Property="FontFamily"       Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize"         Value="12"/>
+        <Setter Property="FontSize"         Value="{DynamicResource FontSizeBody}"/>
         <Setter Property="Cursor"           Value="Hand"/>
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
         <Setter Property="Template">
@@ -1618,7 +1712,7 @@
                                             <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}"/>
                                         </Trigger>
                                         <Trigger Property="IsChecked" Value="True">
-                                            <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+                                            <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BerryBrush}"/>
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -1717,28 +1811,29 @@
     <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize" Value="9.5"/>
-        <Setter Property="Margin" Value="0,10,0,4"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeCaption}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Margin" Value="0,12,0,5"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
 
     <Style x:Key="SectionHeadingStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{DynamicResource ThemeDisplayFontFamily}"/>
-        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBodyLarge}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="Margin" Value="0,0,0,8"/>
     </Style>
 
 
     <!-- ════════════════════════════════════════════════════════════════════
-         PANELS — parchment fill, charcoal border, square corners
-         Mirrors NieR widget boxes: "Status", "System", "Weather"
+         PANELS
          ════════════════════════════════════════════════════════════════════ -->
 
     <Style x:Key="PanelBorderStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource ThemePanelFillBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource ThemePanelBorderGradientBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="{DynamicResource ThemeBorderThickness}"/>
         <Setter Property="CornerRadius" Value="{DynamicResource ThemeCornerRadiusPanel}"/>
         <Setter Property="Padding" Value="16"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
@@ -1751,45 +1846,11 @@
         <Setter Property="Effect">
             <Setter.Value>
                 <DropShadowEffect Color="{DynamicResource ThemePanelShadowColor}"
-                                  BlurRadius="16"
-                                  ShadowDepth="5"
-                                  Opacity="0.22"/>
+                                  BlurRadius="18"
+                                  ShadowDepth="2"
+                                  Opacity="0.10"/>
             </Setter.Value>
         </Setter>
-        <Style.Triggers>
-            <EventTrigger RoutedEvent="Border.MouseEnter">
-                <BeginStoryboard>
-                    <Storyboard>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                         To="-4" Duration="0:0:0.11">
-                            <DoubleAnimation.EasingFunction>
-                                <QuarticEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
-                                         To="22" Duration="0:0:0.11"/>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)"
-                                         To="0.28" Duration="0:0:0.11"/>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-            <EventTrigger RoutedEvent="Border.MouseLeave">
-                <BeginStoryboard>
-                    <Storyboard>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                         To="0" Duration="0:0:0.18">
-                            <DoubleAnimation.EasingFunction>
-                                <QuarticEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
-                                         To="16" Duration="0:0:0.18"/>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)"
-                                         To="0.22" Duration="0:0:0.18"/>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-        </Style.Triggers>
     </Style>
 
     <Style x:Key="GlowCardStyle" TargetType="Border">
@@ -2151,32 +2212,15 @@
     </Style>
 
     <Style x:Key="VisualFeaturePillStyle" TargetType="Border">
-        <Setter Property="Padding" Value="9,3"/>
+        <Setter Property="Padding" Value="8,3"/>
         <Setter Property="CornerRadius" Value="5"/>
-        <Setter Property="Background" Value="{DynamicResource GlassChipFillBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource GlassChipBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Background" Value="{DynamicResource ThemeNavItemBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Margin" Value="0,0,7,7"/>
-        <Setter Property="Effect">
-            <Setter.Value>
-                <DropShadowEffect Color="{DynamicResource ThemePanelShadowColor}"
-                                  BlurRadius="5"
-                                  ShadowDepth="0"
-                                  Opacity="0.14"/>
-            </Setter.Value>
-        </Setter>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{DynamicResource GlassChipActiveFillBrush}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource GlassButtonBorderBrush}"/>
-                <Setter Property="Effect">
-                    <Setter.Value>
-                        <DropShadowEffect Color="{DynamicResource ThemePrimaryButtonGlowColor}"
-                                          BlurRadius="9"
-                                          ShadowDepth="0"
-                                          Opacity="0.22"/>
-                    </Setter.Value>
-                </Setter>
+                <Setter Property="Background" Value="{DynamicResource ThemeNavItemHoverBackgroundBrush}"/>
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -2344,107 +2388,16 @@
     </Style>
 
     <Style x:Key="PageHeroPanelStyle" TargetType="Border" BasedOn="{StaticResource PanelBorderStyle}">
-        <Setter Property="Padding" Value="18,16"/>
-        <Setter Property="Background" Value="{DynamicResource BladeGlassBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource ThemeDeckFrameBorderBrush}"/>
-        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
-        <Setter Property="RenderTransform">
-            <Setter.Value>
-                <TranslateTransform Y="0"/>
-            </Setter.Value>
-        </Setter>
-        <Style.Triggers>
-            <EventTrigger RoutedEvent="Border.MouseEnter">
-                <BeginStoryboard>
-                    <Storyboard>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                         To="-2"
-                                         Duration="0:0:0.14">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
-                                         To="24"
-                                         Duration="0:0:0.14"/>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)"
-                                         To="0.30"
-                                         Duration="0:0:0.14"/>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-            <EventTrigger RoutedEvent="Border.MouseLeave">
-                <BeginStoryboard>
-                    <Storyboard>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                         To="0"
-                                         Duration="0:0:0.22">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
-                                         To="12"
-                                         Duration="0:0:0.22"/>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)"
-                                         To="0.18"
-                                         Duration="0:0:0.22"/>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-        </Style.Triggers>
+        <Setter Property="Padding" Value="24,22"/>
+        <Setter Property="Background" Value="{DynamicResource ThemePanelFillBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ThemePanelBorderGradientBrush}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource ThemeCornerRadiusLarge}"/>
     </Style>
 
     <Style x:Key="AccentPanelStyle" TargetType="Border" BasedOn="{StaticResource PanelBorderStyle}">
         <Setter Property="Background" Value="{DynamicResource ThemePanelFillSoftBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource ThemePanelEdgeBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
         <Setter Property="Padding" Value="14,12"/>
-        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
-        <Setter Property="RenderTransform">
-            <Setter.Value>
-                <TranslateTransform Y="0"/>
-            </Setter.Value>
-        </Setter>
-        <Style.Triggers>
-            <EventTrigger RoutedEvent="Border.MouseEnter">
-                <BeginStoryboard>
-                    <Storyboard>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                         To="-3"
-                                         Duration="0:0:0.13">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
-                                         To="20"
-                                         Duration="0:0:0.13"/>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)"
-                                         To="0.28"
-                                         Duration="0:0:0.13"/>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-            <EventTrigger RoutedEvent="Border.MouseLeave">
-                <BeginStoryboard>
-                    <Storyboard>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                         To="0"
-                                         Duration="0:0:0.20">
-                            <DoubleAnimation.EasingFunction>
-                                <CubicEase EasingMode="EaseOut"/>
-                            </DoubleAnimation.EasingFunction>
-                        </DoubleAnimation>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
-                                         To="12"
-                                         Duration="0:0:0.20"/>
-                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)"
-                                         To="0.18"
-                                         Duration="0:0:0.20"/>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-        </Style.Triggers>
     </Style>
 
     <Style x:Key="InsetCardStyle" TargetType="Border">
@@ -2586,7 +2539,7 @@
         <Setter Property="Padding" Value="12,8"/>
         <Setter Property="Margin" Value="0,0,6,0"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
@@ -2672,30 +2625,25 @@
          ════════════════════════════════════════════════════════════════════ -->
 
     <Style x:Key="AchievementProgressBarStyle" TargetType="ProgressBar">
-        <Setter Property="Height" Value="5"/>
+        <Setter Property="Height" Value="6"/>
         <Setter Property="Background" Value="{DynamicResource BorderSubtleBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource BerryBrush}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ProgressBar">
-                    <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="2">
-                        <Border x:Name="PART_Indicator" HorizontalAlignment="Left" CornerRadius="2">
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                    <GradientStop Offset="0"   Color="#2A2010"/>
-                                    <GradientStop Offset="0.6" Color="#4A3820"/>
-                                    <GradientStop Offset="1"   Color="#8A7040"/>
-                                </LinearGradientBrush>
-                            </Border.Background>
-                        </Border>
+                    <Border x:Name="PART_Track" Background="{TemplateBinding Background}"
+                            CornerRadius="{DynamicResource ThemeCornerRadiusPill}" ClipToBounds="True">
+                        <Border x:Name="PART_Indicator" HorizontalAlignment="Left"
+                                Background="{TemplateBinding Foreground}"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusPill}"/>
                     </Border>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
     </Style>
 
-    <Style x:Key="BusyBarStyle" TargetType="ProgressBar">
+    <Style x:Key="BusyBarStyle" TargetType="ProgressBar" BasedOn="{StaticResource AchievementProgressBarStyle}">
         <Setter Property="Height" Value="4"/>
         <Setter Property="Background" Value="{DynamicResource BorderSubtleBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource BerryBrush}"/>
@@ -2705,25 +2653,262 @@
         <Setter Property="Margin" Value="0,0,6,0"/>
     </Style>
 
+    <!-- ════════════════════════════════════════════════════════════════════
+         CONTEXT MENUS
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="{DynamicResource ThemePanelFillBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ThemePanelBorderGradientBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="5"/>
+        <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}"/>
+        <Setter Property="HasDropShadow" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{DynamicResource ThemeCornerRadiusPanel}"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect Color="{DynamicResource ThemePanelShadowColor}"
+                                              BlurRadius="28" ShadowDepth="8" Opacity="0.48"/>
+                        </Border.Effect>
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Padding" Value="8,7"/>
+        <Setter Property="MinHeight" Value="34"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Grid>
+                        <Border x:Name="ItemSurface"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
+                                Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="20"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="18"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="CheckGlyph" Grid.Column="0"
+                                           Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="9"
+                                           Foreground="{DynamicResource BerryBrush}"
+                                           VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <ContentPresenter Grid.Column="1" ContentSource="Header"
+                                                  RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Margin="20,0,8,0"
+                                           Text="{TemplateBinding InputGestureText}"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SubmenuGlyph" Grid.Column="3"
+                                           Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="9"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                                           Visibility="Collapsed"/>
+                            </Grid>
+                        </Border>
+                        <Popup x:Name="PART_Popup"
+                               Placement="Right" HorizontalOffset="-3" VerticalOffset="-5"
+                               IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                               AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                            <Border Background="{DynamicResource ThemePanelFillBrush}"
+                                    BorderBrush="{DynamicResource ThemePanelBorderGradientBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{DynamicResource ThemeCornerRadiusPanel}"
+                                    Padding="5">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="{DynamicResource ThemePanelShadowColor}"
+                                                      BlurRadius="28" ShadowDepth="8" Opacity="0.48"/>
+                                </Border.Effect>
+                                <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource ThemeNavItemHoverBackgroundBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckGlyph" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="HasItems" Value="True">
+                            <Setter TargetName="SubmenuGlyph" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.42"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
     <!-- ════════════════════════════════════════════════════════════════════
-         CHECKBOX — NieR terminal square box
+         SLIDER
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <Style TargetType="Slider">
+        <Setter Property="Width" Value="220"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{StaticResource CloudFocusVisualStyle}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid VerticalAlignment="Center">
+                        <Track x:Name="PART_Track" Height="18" VerticalAlignment="Center">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Height="4" Background="{DynamicResource BerryBrush}"
+                                                    CornerRadius="{DynamicResource ThemeCornerRadiusPill}"/>
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Height="4" Background="{DynamicResource BorderSubtleBrush}"
+                                                    CornerRadius="{DynamicResource ThemeCornerRadiusPill}"/>
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Width="18" Height="18">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Grid>
+                                                <Ellipse x:Name="ThumbGlow" Fill="{DynamicResource AppBackgroundBrush}"
+                                                         Stroke="{DynamicResource BerryBrush}" StrokeThickness="2"/>
+                                                <Ellipse Margin="5" Fill="{DynamicResource BerryBrush}"/>
+                                            </Grid>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ThumbGlow" Property="Fill" Value="{DynamicResource CardHoverBrush}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsDragging" Value="True">
+                                                    <Setter TargetName="ThumbGlow" Property="Fill" Value="{DynamicResource BerryBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         EXPANDER
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <Style TargetType="Expander">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Expander">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <ToggleButton x:Name="HeaderToggle" Grid.Row="0"
+                                      Style="{x:Null}" Focusable="True" Cursor="Hand"
+                                      IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="HeaderSurface" Padding="12,9"
+                                            Background="{DynamicResource ThemePanelFillSoftBrush}"
+                                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                            CornerRadius="{DynamicResource ThemeCornerRadiusControl}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="24"/>
+                                            </Grid.ColumnDefinitions>
+                                            <ContentPresenter Grid.Column="0" ContentSource="Content" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="Chevron" Grid.Column="1" Text="&#xE70D;"
+                                                       FontFamily="Segoe MDL2 Assets" FontSize="9"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="HeaderSurface" Property="BorderBrush" Value="{DynamicResource BerryBrush}"/>
+                                        </Trigger>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="Chevron" Property="Text" Value="&#xE70E;"/>
+                                            <Setter TargetName="HeaderSurface" Property="Background" Value="{DynamicResource ThemeNavItemSelectedBackgroundBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                            <ContentPresenter Content="{TemplateBinding Header}"/>
+                        </ToggleButton>
+                        <ContentPresenter x:Name="ExpandedContent" Grid.Row="1"
+                                          ContentSource="Content" Visibility="Collapsed"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="True">
+                            <Setter TargetName="ExpandedContent" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         CHECKBOX
          ════════════════════════════════════════════════════════════════════ -->
 
     <Style TargetType="CheckBox">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource CloudFocusVisualStyle}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="MinHeight" Value="28"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="CheckBox">
                     <StackPanel Orientation="Horizontal">
-                        <Border x:Name="Box" Width="16" Height="16" CornerRadius="0"
+                        <Border x:Name="Box" Width="18" Height="18"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
                                 Background="{DynamicResource SurfaceElevatedBrush}"
                                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                                 VerticalAlignment="Center">
                             <TextBlock x:Name="Mark" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets"
-                                       FontSize="8" Foreground="{DynamicResource TextOnDarkBrush}"
+                                       FontSize="9" Foreground="{DynamicResource ThemePrimaryButtonTextBrush}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        Visibility="Collapsed"/>
                         </Border>
@@ -2736,7 +2921,11 @@
                             <Setter TargetName="Mark" Property="Visibility" Value="Visible"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}"/>
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BerryBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -2763,7 +2952,7 @@
 
 
     <!-- ════════════════════════════════════════════════════════════════════
-         SEPARATOR — NieR ruled line
+         SEPARATOR
          ════════════════════════════════════════════════════════════════════ -->
 
     <Style TargetType="Separator">
@@ -2784,7 +2973,7 @@
 
 
     <!-- ════════════════════════════════════════════════════════════════════
-         TOOLTIP — crisp ink panel with gold rule
+         TOOLTIP
          ════════════════════════════════════════════════════════════════════ -->
 
     <Style TargetType="ToolTip">
@@ -2792,9 +2981,9 @@
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="Padding" Value="11,8"/>
         <Setter Property="FontFamily" Value="{DynamicResource ThemeBodyFontFamily}"/>
-        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeCaption}"/>
         <Setter Property="HasDropShadow" Value="True"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -2802,20 +2991,20 @@
                     <Border Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="1"
+                            CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
                             Padding="{TemplateBinding Padding}">
                         <Border.Effect>
-                            <DropShadowEffect Color="#14100A" BlurRadius="12" ShadowDepth="2" Opacity="0.36"/>
+                            <DropShadowEffect Color="{DynamicResource ThemePanelShadowColor}" BlurRadius="20" ShadowDepth="5" Opacity="0.42"/>
                         </Border.Effect>
                         <Grid>
-                            <!-- Subtle top gold rule -->
+                            <!-- Subtle optical highlight -->
                             <Border Height="1" VerticalAlignment="Top" Margin="0,-1,0,0">
                                 <Border.Background>
                                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                        <GradientStop Offset="0"   Color="#008A7040"/>
-                                        <GradientStop Offset="0.3" Color="#558A7040"/>
-                                        <GradientStop Offset="0.7" Color="#558A7040"/>
-                                        <GradientStop Offset="1"   Color="#008A7040"/>
+                                        <GradientStop Offset="0"   Color="#0062D5F6"/>
+                                        <GradientStop Offset="0.3" Color="#5562D5F6"/>
+                                        <GradientStop Offset="0.7" Color="#55E4C47D"/>
+                                        <GradientStop Offset="1"   Color="#00E4C47D"/>
                                     </LinearGradientBrush>
                                 </Border.Background>
                             </Border>
@@ -2826,6 +3015,12 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- Premium fallbacks for controls that do not opt into a specialized role. -->
+    <Style TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}"/>
+    <Style TargetType="TextBox" BasedOn="{StaticResource TextFieldStyle}"/>
+    <Style TargetType="ComboBox" BasedOn="{StaticResource ComboFieldStyle}"/>
+    <Style TargetType="ProgressBar" BasedOn="{StaticResource AchievementProgressBarStyle}"/>
 
 
     <!-- ═══════════════════════════════════════════════════════════════

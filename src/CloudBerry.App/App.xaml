@@ -10,6 +10,7 @@
             </ResourceDictionary.MergedDictionaries>
             <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
             <resources:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+            <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
             <converters:StringToImageSourceConverter x:Key="StringToImageSourceConverter" />
             <converters:BooleanToStringConverter x:Key="BooleanToStringConverter" />
             <converters:BooleanToGridLengthConverter x:Key="BooleanToGridLengthConverter" />

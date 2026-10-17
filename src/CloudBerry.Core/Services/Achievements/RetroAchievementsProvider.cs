@@ -71,8 +71,6 @@ public sealed class RetroAchievementsProvider : IGameAchievementProvider
             achievements = await FetchPublicMetadataAsync(raGameId, cancellationToken);
         }
 
-        AchievementScoreCalculator.AssignScores(achievements);
-
         return new GameAchievementSnapshot
         {
             ProviderId = Descriptor.Id,
@@ -151,7 +149,13 @@ public sealed class RetroAchievementsProvider : IGameAchievementProvider
             return [];
         }
 
-        return ParseAchievementObject(achievementsEl, withUserData: true);
+        // Total distinct players who've played the game — needed to turn each
+        // achievement's raw NumAwarded count into an actual unlock percentage.
+        var totalPlayers = TryGetDouble(root, out var casualPlayers, "NumDistinctPlayersCasual")
+            ? casualPlayers
+            : (TryGetDouble(root, out var hardcorePlayers, "NumDistinctPlayersHardcore") ? hardcorePlayers : null);
+
+        return ParseAchievementObject(achievementsEl, withUserData: true, totalPlayers);
     }
 
     private async Task<List<AchievementRecord>> FetchMetadataOnlyAsync(
@@ -167,13 +171,18 @@ public sealed class RetroAchievementsProvider : IGameAchievementProvider
             return [];
         }
 
-        return ParseAchievementObject(achievementsEl, withUserData: false);
+        var totalPlayers = TryGetDouble(root, out var casualPlayers, "NumDistinctPlayersCasual")
+            ? casualPlayers
+            : (TryGetDouble(root, out var hardcorePlayers, "NumDistinctPlayersHardcore") ? hardcorePlayers : null);
+
+        return ParseAchievementObject(achievementsEl, withUserData: false, totalPlayers);
     }
 
     private async Task<List<AchievementRecord>> FetchPublicMetadataAsync(
         string gameId, CancellationToken ct)
     {
-        // Public endpoint – no key needed
+        // Public endpoint – no key needed. This legacy page doesn't reliably expose a
+        // distinct-player total, so rarity is intentionally omitted here rather than guessed.
         var url = $"https://retroachievements.org/game/{gameId}/json";
         try
         {
@@ -181,7 +190,7 @@ public sealed class RetroAchievementsProvider : IGameAchievementProvider
             using var doc = JsonDocument.Parse(json);
             if (TryGetProperty(doc.RootElement, out var achievementsEl, "achievements", "Achievements"))
             {
-                return ParseAchievementObject(achievementsEl, withUserData: false);
+                return ParseAchievementObject(achievementsEl, withUserData: false, totalPlayers: null);
             }
         }
         catch
@@ -191,7 +200,7 @@ public sealed class RetroAchievementsProvider : IGameAchievementProvider
         return [];
     }
 
-    private static List<AchievementRecord> ParseAchievementObject(JsonElement achievementsEl, bool withUserData)
+    private static List<AchievementRecord> ParseAchievementObject(JsonElement achievementsEl, bool withUserData, double? totalPlayers)
     {
         var list = new List<AchievementRecord>();
         int order = 0;
@@ -201,7 +210,7 @@ public sealed class RetroAchievementsProvider : IGameAchievementProvider
         {
             foreach (var prop in achievementsEl.EnumerateObject())
             {
-                var record = ParseSingle(prop.Value, order++, withUserData);
+                var record = ParseSingle(prop.Value, order++, withUserData, totalPlayers);
                 if (record is not null)
                 {
                     list.Add(record);
@@ -212,7 +221,7 @@ public sealed class RetroAchievementsProvider : IGameAchievementProvider
         {
             foreach (var item in achievementsEl.EnumerateArray())
             {
-                var record = ParseSingle(item, order++, withUserData);
+                var record = ParseSingle(item, order++, withUserData, totalPlayers);
                 if (record is not null)
                 {
                     list.Add(record);
@@ -223,7 +232,7 @@ public sealed class RetroAchievementsProvider : IGameAchievementProvider
         return list;
     }
 
-    private static AchievementRecord? ParseSingle(JsonElement el, int order, bool withUserData)
+    private static AchievementRecord? ParseSingle(JsonElement el, int order, bool withUserData, double? totalPlayers)
     {
         if (el.ValueKind != JsonValueKind.Object)
         {
@@ -234,18 +243,21 @@ public sealed class RetroAchievementsProvider : IGameAchievementProvider
         TryGetString(el, out var title, "Title", "title");
         TryGetString(el, out var description, "Description", "description");
         TryGetString(el, out var badgeUrl, "BadgeURL", "BadgeName");
-        TryGetDouble(el, out var rarity, "TrueRatio", "TrueRatioDivisor", "NumAwarded");
-        TryGetDouble(el, out var globalPct, "GlobalUnlockPercent", "NumAwardedHardcore");
+        TryGetDouble(el, out var numAwarded, "NumAwarded");
 
-        // Determine actual rarity percent
+        // The real rarity percent is NumAwarded / total distinct players * 100.
+        // "TrueRatio" (aka Retro Ratio) is NOT a percentage — it's a difficulty-weighted
+        // point value (base Points times a rarity multiplier, per RA's own scoring docs),
+        // commonly landing in the same 1-100-ish numeric range as a percent would, which
+        // made it easy to mistake for one. Using it directly as GlobalUnlockPercent gave
+        // systematically wrong rarity/scoring. NumAwarded alone is a raw unlock COUNT
+        // (can run into the thousands), never a percent on its own either — it only
+        // becomes meaningful once divided by the total player count for this game.
         double? rarityPercent = null;
-        if (globalPct.HasValue && globalPct > 0)
+        if (numAwarded.HasValue && totalPlayers.HasValue && totalPlayers > 0)
         {
-            rarityPercent = globalPct;
-        }
-        else if (rarity.HasValue && rarity > 0 && rarity <= 100)
-        {
-            rarityPercent = rarity;
+            var computed = numAwarded.Value / totalPlayers.Value * 100.0;
+            rarityPercent = computed is > 0 and <= 100 ? computed : null;
         }
 
         // Resolve badge URL

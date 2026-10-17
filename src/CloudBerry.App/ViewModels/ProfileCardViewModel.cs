@@ -24,7 +24,7 @@ public sealed class ProfileCardViewModel : ViewModelBase
 
 	private string _shellStyle = "Blade";
 
-	private string _preferredTheme = "CloudBerry Dark";
+	private string _preferredTheme = "Cirra Core";
 
 	private bool _broadcastPresence = true;
 
@@ -210,7 +210,7 @@ public sealed class ProfileCardViewModel : ViewModelBase
 				return string.Concat(from part in DisplayName.Split(new char[3] { ' ', '-', '_' }, StringSplitOptions.RemoveEmptyEntries).Take(2)
 					select char.ToUpperInvariant(part[0]));
 			}
-			return "CB";
+			return "CI";
 		}
 	}
 
@@ -226,10 +226,27 @@ public sealed class ProfileCardViewModel : ViewModelBase
 			PresenceLine = (string.IsNullOrWhiteSpace(profile.PresenceLine) ? "Signed in locally" : profile.PresenceLine),
 			HighlightTone = (string.IsNullOrWhiteSpace(profile.HighlightTone) ? "Arcade Gold" : profile.HighlightTone),
 			ShellStyle = (string.IsNullOrWhiteSpace(profile.ShellStyle) ? "Blade" : profile.ShellStyle),
-			PreferredTheme = (string.IsNullOrWhiteSpace(profile.PreferredTheme) ? "CloudBerry Dark" : profile.PreferredTheme),
+			PreferredTheme = NormalizeThemeName(profile.PreferredTheme),
 			BroadcastPresence = profile.BroadcastPresence,
 			CreatedAtUtc = ((profile.CreatedAtUtc == default(DateTime)) ? DateTime.UtcNow : profile.CreatedAtUtc),
 			LastUsedAtUtc = ((profile.LastUsedAtUtc == default(DateTime)) ? DateTime.UtcNow : profile.LastUsedAtUtc)
+		};
+	}
+
+	private static string NormalizeThemeName(string? themeName)
+	{
+		return themeName?.Trim() switch
+		{
+			"CloudBerry Dark" => "Cirra Core",
+			"Neon Matrix" => "Signal Rain",
+			"Retro Glitch" => "Arcade Static",
+			"NieR Automata" => "Archive Ivory",
+			"Wuthering Waves" => "Tidal Glass",
+			"Blueberry Midnight" => "Midnight Observatory",
+			"Mint Cloud" => "Verdant Glass",
+			"Black Flash" => "Impact Noir",
+			null or "" => "Cirra Core",
+			var current => current
 		};
 	}
 

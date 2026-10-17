@@ -29,9 +29,37 @@ public sealed partial class SteamAchievementProvider : IGameAchievementProvider
         var providerGameId = request.ProviderGameId.Trim();
         if (string.IsNullOrWhiteSpace(providerGameId))
         {
-            throw new InvalidOperationException("CloudBerry needs a Steam App ID before it can pull fallback achievement metadata.");
+            throw new InvalidOperationException("Cirra needs a Steam App ID before it can pull fallback achievement metadata.");
         }
 
+        // Real per-user unlock state requires the Steam Web API (an API key + the
+        // player's SteamID64). Try that first when the user has configured it in
+        // Settings > Achievements > Steam. This is the only path that can report
+        // IsUnlocked = true for a legitimately-owned Steam game.
+        var apiKey = settings?.Steam?.ApiKey?.Trim();
+        var steamId = settings?.Steam?.SteamId?.Trim();
+        if (!string.IsNullOrWhiteSpace(apiKey) && !string.IsNullOrWhiteSpace(steamId))
+        {
+            var liveAchievements = await TryGetPlayerAchievementsAsync(providerGameId, apiKey!, steamId!, cancellationToken);
+            if (liveAchievements is { Count: > 0 })
+            {
+                await MergeGlobalPercentagesAsync(providerGameId, liveAchievements, cancellationToken);
+                AchievementScoreCalculator.AssignScores(liveAchievements);
+
+                return new GameAchievementSnapshot
+                {
+                    ProviderId = Descriptor.Id,
+                    ProviderName = Descriptor.DisplayName,
+                    ProviderGameId = providerGameId,
+                    SyncedAtUtc = DateTime.UtcNow,
+                    Achievements = liveAchievements
+                };
+            }
+        }
+
+        // No credentials configured, or the API call failed (private profile, game
+        // has no stats, network error, etc.) — fall back to the anonymous community
+        // page, which has no per-user data and always reports achievements as locked.
         var html = await _httpClient.GetStringAsync(
             $"https://steamcommunity.com/stats/{Uri.EscapeDataString(providerGameId)}/achievements/?l=english",
             cancellationToken);
@@ -53,6 +81,106 @@ public sealed partial class SteamAchievementProvider : IGameAchievementProvider
             SyncedAtUtc = DateTime.UtcNow,
             Achievements = achievements
         };
+    }
+
+    /// <summary>
+    /// Calls the Steam Web API's GetPlayerAchievements endpoint, which is the only
+    /// endpoint that can tell CloudBerry whether THIS user has actually unlocked each
+    /// achievement. Returns null if the call fails or the profile/game has no stats.
+    /// </summary>
+    private async Task<List<AchievementRecord>?> TryGetPlayerAchievementsAsync(
+        string appId,
+        string apiKey,
+        string steamId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var json = await _httpClient.GetStringAsync(
+                $"https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/?appid={Uri.EscapeDataString(appId)}&key={Uri.EscapeDataString(apiKey)}&steamid={Uri.EscapeDataString(steamId)}&l=english",
+                cancellationToken);
+
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("playerstats", out var playerStats))
+            {
+                return null;
+            }
+
+            if (playerStats.TryGetProperty("success", out var successElement) &&
+                successElement.ValueKind is JsonValueKind.False)
+            {
+                // Private profile, game not owned, or stats not public for this app.
+                return null;
+            }
+
+            if (!playerStats.TryGetProperty("achievements", out var achievementsElement) ||
+                achievementsElement.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var index = 0;
+            var results = new List<AchievementRecord>();
+            foreach (var item in achievementsElement.EnumerateArray())
+            {
+                var apiName = GetString(item, "apiname") ?? $"steam_achievement_{index}";
+                var achieved = item.TryGetProperty("achieved", out var achievedElement) &&
+                               achievedElement.ValueKind == JsonValueKind.Number &&
+                               achievedElement.GetInt32() != 0;
+                var unlockTimeSeconds = item.TryGetProperty("unlocktime", out var unlockElement) &&
+                                        unlockElement.ValueKind == JsonValueKind.Number
+                    ? unlockElement.GetInt64()
+                    : 0L;
+                var title = GetString(item, "name");
+                var description = GetString(item, "description");
+
+                results.Add(new AchievementRecord
+                {
+                    ApiName = apiName,
+                    Title = string.IsNullOrWhiteSpace(title) ? FormatAchievementTitle(apiName) : title!,
+                    Description = description ?? string.Empty,
+                    IsHidden = false,
+                    IsUnlocked = achieved,
+                    UnlockedAtUtc = achieved && unlockTimeSeconds > 0
+                        ? DateTimeOffset.FromUnixTimeSeconds(unlockTimeSeconds).UtcDateTime
+                        : null,
+                    DisplayOrder = index++
+                });
+            }
+
+            return results.Count > 0 ? results : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Fills in global rarity percentages (used for score weighting) on live player achievements.</summary>
+    private async Task MergeGlobalPercentagesAsync(
+        string appId,
+        List<AchievementRecord> achievements,
+        CancellationToken cancellationToken)
+    {
+        var globalPercentages = await TryGetGlobalPercentageFallbackAsync(appId, cancellationToken);
+        if (globalPercentages.Count == 0)
+        {
+            return;
+        }
+
+        var byApiName = globalPercentages
+            .Where(a => !string.IsNullOrWhiteSpace(a.ApiName))
+            .GroupBy(a => a.ApiName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().GlobalUnlockPercent, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var achievement in achievements)
+        {
+            if (achievement.GlobalUnlockPercent is null &&
+                byApiName.TryGetValue(achievement.ApiName, out var percent))
+            {
+                achievement.GlobalUnlockPercent = percent;
+            }
+        }
     }
 
     private static IEnumerable<AchievementRecord> ParseCommunityHtml(string html)

@@ -1,9 +1,9 @@
-using System;
 using System.ComponentModel;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Media;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using CloudBerry.App.Services;
 using CloudBerry.App.ViewModels;
 
@@ -11,91 +11,76 @@ namespace CloudBerry.App;
 
 public partial class SplashWindow : Window
 {
-    public SplashWindow()
+    private readonly bool _motion;
+    private bool _closed;
+    private DispatcherOperation? _pendingUpdate;
+
+    public SplashWindow(bool horizon = false, bool motionEnabled = true)
     {
         InitializeComponent();
-        Loaded += OnLoaded;
-        DataContextChanged += OnDataContextChanged;
-    }
-
-    private void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        Loaded -= OnLoaded;
-        SoundDesignService.PlayStartupBoot();
-    }
-
-    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (e.OldValue is INotifyPropertyChanged oldNotify)
+        _motion = motionEnabled && SystemParameters.ClientAreaAnimation && !SystemParameters.HighContrast;
+        Atmosphere.IsEffectActive = _motion;
+        if (horizon)
         {
-            oldNotify.PropertyChanged -= OnSplashViewModelPropertyChanged;
-        }
-
-        if (e.NewValue is SplashViewModel splash)
-        {
-            StartupProgressBar.Value = splash.ProgressValue;
-        }
-
-        if (e.NewValue is INotifyPropertyChanged newNotify)
-        {
-            newNotify.PropertyChanged += OnSplashViewModelPropertyChanged;
-        }
-    }
-
-    private void OnSplashViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(SplashViewModel.ProgressValue) || sender is not SplashViewModel splash)
-        {
-            return;
-        }
-
-        Dispatcher.BeginInvoke(() =>
-        {
-            var animation = new DoubleAnimation
+            Title = "Cirra Horizon";
+            BrandTitleText.Text = "Horizon";
+            BrandSubtitleText.Text = "Cirra / Your full-screen library";
+            StartupProgressBar.Visibility = ProgressLabel.Visibility = Visibility.Collapsed;
+            HorizonBusyBar.Visibility = Visibility.Visible;
+            CancelEntryButton.Visibility = Visibility.Visible;
+            PreviewKeyDown += (_, e) =>
             {
-                From = StartupProgressBar.Value,
-                To = splash.ProgressValue,
-                Duration = TimeSpan.FromMilliseconds(260),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                if (e.Key != Key.Escape) return;
+                e.Handled = true;
+                Close();
             };
-            StartupProgressBar.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, animation, HandoffBehavior.SnapshotAndReplace);
-        });
+            if (!_motion) HorizonBusyBar.IsIndeterminate = false;
+        }
+        Loaded += (_, _) =>
+        {
+            if (!horizon) SoundDesignService.PlayStartupBoot();
+            if (_motion) BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
+            else Opacity = 1;
+        };
+        DataContextChanged += (_, e) =>
+        {
+            if (e.OldValue is INotifyPropertyChanged previous) previous.PropertyChanged -= ProgressChanged;
+            if (e.NewValue is INotifyPropertyChanged current) current.PropertyChanged += ProgressChanged;
+        };
+        Closed += (_, _) =>
+        {
+            _closed = true;
+            _pendingUpdate?.Abort();
+            if (DataContext is INotifyPropertyChanged current) current.PropertyChanged -= ProgressChanged;
+        };
     }
 
-    public Task PlayCloseTransitionAsync()
+    private void ProgressChanged(object? sender, PropertyChangedEventArgs e)
     {
-        var completion = new TaskCompletionSource<object?>();
-        var storyboard = new Storyboard();
-
-        var fade = new DoubleAnimation
+        if (_closed || e.PropertyName != nameof(SplashViewModel.ProgressValue) ||
+            _pendingUpdate?.Status == DispatcherOperationStatus.Pending) return;
+        _pendingUpdate = Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
         {
-            From = Opacity,
-            To = 0,
-            Duration = TimeSpan.FromMilliseconds(220),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-        };
-        Storyboard.SetTarget(fade, this);
-        Storyboard.SetTargetProperty(fade, new PropertyPath(Window.OpacityProperty));
-        storyboard.Children.Add(fade);
+            if (_closed || DataContext is not SplashViewModel model) return;
+            double current = StartupProgressBar.Value;
+            double target = Math.Max(current, model.ProgressValue);
+            StartupProgressBar.BeginAnimation(RangeBase.ValueProperty, null);
+            StartupProgressBar.Value = target;
+            if (_motion)
+                StartupProgressBar.BeginAnimation(RangeBase.ValueProperty, new DoubleAnimation(current, target, TimeSpan.FromMilliseconds(180))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop
+                });
+        }));
+    }
 
-        if (RootBorder.RenderTransform is not TranslateTransform)
-        {
-            RootBorder.RenderTransform = new TranslateTransform();
-        }
+    private void CancelEntryClick(object sender, RoutedEventArgs e) => Close();
 
-        var slide = new DoubleAnimation
-        {
-            From = 0,
-            To = -10,
-            Duration = TimeSpan.FromMilliseconds(220),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-        };
-        Storyboard.SetTarget(slide, RootBorder);
-        Storyboard.SetTargetProperty(slide, new PropertyPath("(UIElement.RenderTransform).(TranslateTransform.Y)"));
-        storyboard.Children.Add(slide);
-
-        storyboard.Completed += (_, _) => completion.TrySetResult(null);
-        storyboard.Begin(this);
-        return completion.Task;
+    public async Task PlayCloseTransitionAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_closed || !_motion) return;
+        BeginAnimation(OpacityProperty, new DoubleAnimation(Opacity, 0, TimeSpan.FromMilliseconds(220)));
+        await Task.Delay(230, cancellationToken);
     }
 }

@@ -1,6 +1,6 @@
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-$installedExe = 'C:\Users\conno\AppData\Local\Programs\CloudBerry\CloudBerry.exe'
+$installedExe = 'C:\Users\conno\AppData\Local\Programs\Cirra\Cirra.exe'
 $tempDir = 'C:\Users\conno\AppData\Local\Temp\cb_decompile'
 New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 

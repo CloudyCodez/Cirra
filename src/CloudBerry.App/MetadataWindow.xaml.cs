@@ -24,17 +24,17 @@ public partial class MetadataWindow : Window
     private MainViewModel ViewModel { get; }
 
     private async void SearchClick(object sender, RoutedEventArgs e) =>
-        await RunUiTaskAsync(() => ViewModel.SearchMetadataAsync(), "CloudBerry couldn't run metadata search.");
+        await RunUiTaskAsync(() => ViewModel.SearchMetadataAsync(), "Cirra couldn't run metadata search.");
 
     private async void UseSelectedGameClick(object sender, RoutedEventArgs e) =>
-        await RunUiTaskAsync(() => ViewModel.SearchMetadataForSelectedGameAsync(), "CloudBerry couldn't search metadata for the selected game.");
+        await RunUiTaskAsync(() => ViewModel.SearchMetadataForSelectedGameAsync(), "Cirra couldn't search metadata for the selected game.");
 
     private async void FillLibraryClick(object sender, RoutedEventArgs e) =>
-        await RunUiTaskAsync(() => ViewModel.DownloadMissingMetadataAsync(), "CloudBerry couldn't fill missing metadata right now.");
+        await RunUiTaskAsync(() => ViewModel.DownloadMissingMetadataAsync(), "Cirra couldn't fill missing metadata right now.");
 
     private async void ApplyClick(object sender, RoutedEventArgs e)
     {
-        await RunUiTaskAsync(() => ViewModel.ApplySelectedMetadataAsync(), "CloudBerry couldn't apply the selected metadata.");
+        await RunUiTaskAsync(() => ViewModel.ApplySelectedMetadataAsync(), "Cirra couldn't apply the selected metadata.");
         if (ViewModel.MetadataStatusMessage.StartsWith("Applied metadata", StringComparison.OrdinalIgnoreCase))
         {
             _sound.PlayMetadataApply();
@@ -68,7 +68,7 @@ public partial class MetadataWindow : Window
     {
         if (e.Key == Key.Enter)
         {
-            await RunUiTaskAsync(() => ViewModel.SearchMetadataAsync(), "CloudBerry couldn't run metadata search.");
+            await RunUiTaskAsync(() => ViewModel.SearchMetadataAsync(), "Cirra couldn't run metadata search.");
             e.Handled = true;
             return;
         }
@@ -84,7 +84,7 @@ public partial class MetadataWindow : Window
     {
         if (e.Key == Key.Enter)
         {
-            await RunUiTaskAsync(() => ViewModel.ApplySelectedMetadataAsync(), "CloudBerry couldn't apply the selected metadata.");
+            await RunUiTaskAsync(() => ViewModel.ApplySelectedMetadataAsync(), "Cirra couldn't apply the selected metadata.");
             if (ViewModel.MetadataStatusMessage.StartsWith("Applied metadata", StringComparison.OrdinalIgnoreCase))
             {
                 _sound.PlayMetadataApply();
@@ -108,7 +108,7 @@ public partial class MetadataWindow : Window
 
     private async void MetadataResultsSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        await RunUiTaskAsync(() => ViewModel.LoadMetadataDetailsForSelectedResultAsync(), "CloudBerry couldn't load metadata details.");
+        await RunUiTaskAsync(() => ViewModel.LoadMetadataDetailsForSelectedResultAsync(), "Cirra couldn't load metadata details.");
     }
 
     private async Task RunUiTaskAsync(Func<Task> action, string errorMessage)
@@ -121,13 +121,13 @@ public partial class MetadataWindow : Window
         catch (Exception exception)
         {
             MessageBox.Show(this, $"{errorMessage}\n\n{exception.Message}",
-                "CloudBerry", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "Cirra", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
     private async Task ApplyInlineAsync()
     {
-        await RunUiTaskAsync(() => ViewModel.ApplySelectedMetadataAsync(), "CloudBerry couldn't apply the selected metadata.");
+        await RunUiTaskAsync(() => ViewModel.ApplySelectedMetadataAsync(), "Cirra couldn't apply the selected metadata.");
         if (ViewModel.MetadataStatusMessage.StartsWith("Applied metadata", StringComparison.OrdinalIgnoreCase))
         {
             _sound.PlayMetadataApply();

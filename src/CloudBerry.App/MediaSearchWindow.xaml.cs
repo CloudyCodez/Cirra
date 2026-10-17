@@ -26,19 +26,19 @@ public partial class MediaSearchWindow : Window
         Loaded -= OnLoaded;
         await RunUiTaskAsync(
             () => ViewModel.SearchMediaMetadataForSelectedGameAsync(_mediaKind),
-            "CloudBerry couldn't load media search results.");
+            "Cirra couldn't load media search results.");
     }
 
     private async void SearchClick(object sender, RoutedEventArgs e) =>
         await RunUiTaskAsync(
             () => ViewModel.SearchMediaMetadataForSelectedGameAsync(_mediaKind),
-            "CloudBerry couldn't run media search.");
+            "Cirra couldn't run media search.");
 
     private async void SelectClick(object sender, RoutedEventArgs e)
     {
         await RunUiTaskAsync(
             () => ViewModel.ApplySelectedMediaSearchResultAsync(),
-            "CloudBerry couldn't apply the selected artwork.");
+            "Cirra couldn't apply the selected artwork.");
         if (ViewModel.MediaSearchStatusMessage.StartsWith("Applied ", StringComparison.OrdinalIgnoreCase))
         {
             Close();
@@ -48,7 +48,7 @@ public partial class MediaSearchWindow : Window
     private async void ResultDoubleClick(object sender, MouseButtonEventArgs e) =>
         await RunUiTaskAsync(
             () => ViewModel.ApplySelectedMediaSearchResultAsync(),
-            "CloudBerry couldn't apply the selected artwork.");
+            "Cirra couldn't apply the selected artwork.");
 
     private async void MediaSearchBoxKeyDown(object sender, KeyEventArgs e)
     {
@@ -56,7 +56,7 @@ public partial class MediaSearchWindow : Window
         {
             await RunUiTaskAsync(
                 () => ViewModel.SearchMediaMetadataForSelectedGameAsync(_mediaKind),
-                "CloudBerry couldn't run media search.");
+                "Cirra couldn't run media search.");
             e.Handled = true;
             return;
         }
@@ -74,7 +74,7 @@ public partial class MediaSearchWindow : Window
         {
             await RunUiTaskAsync(
                 () => ViewModel.ApplySelectedMediaSearchResultAsync(),
-                "CloudBerry couldn't apply the selected artwork.");
+                "Cirra couldn't apply the selected artwork.");
             if (ViewModel.MediaSearchStatusMessage.StartsWith("Applied ", StringComparison.OrdinalIgnoreCase))
             {
                 Close();
@@ -163,7 +163,7 @@ public partial class MediaSearchWindow : Window
         catch (Exception exception)
         {
             MessageBox.Show(this, $"{errorMessage}\n\n{exception.Message}",
-                "CloudBerry", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "Cirra", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 

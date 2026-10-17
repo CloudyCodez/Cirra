@@ -9,6 +9,16 @@ public sealed class CloudBerrySettings
     /// <summary>CloudBerry uses the unified IGDB-first metadata pipeline by default.</summary>
     public string SelectedMetadataProviderId { get; set; } = "aggregated";
 
+    /// <summary>
+    /// Roadmap: "provider priority settings." The aggregated pipeline fans out to six internal
+    /// sub-sources (igdb-proxy, igdb-direct, steam-store, pcgamingwiki, opencritic, wikipedia)
+    /// with a fixed internal ranking — there's no separate top-level provider to switch between,
+    /// so the meaningful user-facing lever is which of those six sources CloudBerry is allowed to
+    /// use at all. Provider ids listed here are skipped entirely during search/enrichment. Empty
+    /// by default — every source stays on until the user turns one off.
+    /// </summary>
+    public List<string> DisabledMetadataProviderIds { get; set; } = [];
+
     public RawgMetadataSettings Rawg { get; set; } = new();
 
     public IgdbMetadataSettings Igdb { get; set; } = new();
@@ -58,6 +68,9 @@ public sealed class CloudBerrySettings
     /// <summary>Audio personalization preferences for UI sound design.</summary>
     public AudioSettings Audio { get; set; } = new();
 
+    /// <summary>Local experience overrides for this PC, handheld, or living-room device.</summary>
+    public DeviceProfileSettings Devices { get; set; } = new();
+
     /// <summary>Optional external runtimes CloudBerry can use for advanced helper jobs.</summary>
     public CompanionToolsSettings CompanionTools { get; set; } = new();
 
@@ -72,6 +85,30 @@ public sealed class CloudBerrySettings
 
     /// <summary>User-created, manually-curated game collections (Library "My Collections" section).</summary>
     public CollectionSettings Collections { get; set; } = new();
+
+    /// <summary>Named, one-click-reapplyable snapshots of the Library filter bar.</summary>
+    public List<LibraryFilterPreset> LibraryFilterPresets { get; set; } = [];
+
+    /// <summary>
+    /// Duplicate ownership groups the user has explicitly said are "not the same game," keyed by
+    /// a stable, order-independent signature of the group's member GameRecord Ids (sorted GUID
+    /// strings joined with '|'). Persisted so a dismissed group never resurfaces in the Duplicate
+    /// Ownership Detector across sessions.
+    /// </summary>
+    public List<string> DismissedDuplicateGroupKeys { get; set; } = [];
+
+    /// <summary>A5: remembered main window size, position, and maximized state between sessions.</summary>
+    public WindowSettings Window { get; set; } = new();
+}
+
+/// <summary>A5: persisted main window bounds. Values are in device-independent pixels (WPF units).</summary>
+public sealed class WindowSettings
+{
+    public double Left { get; set; } = double.NaN;
+    public double Top { get; set; } = double.NaN;
+    public double Width { get; set; } = 1560;
+    public double Height { get; set; } = 940;
+    public bool IsMaximized { get; set; }
 }
 
 public sealed class RawgMetadataSettings
@@ -132,7 +169,7 @@ public sealed class SteamAchievementSettings
 
 public sealed class AppearanceSettings
 {
-    public string ThemePreset { get; set; } = "CloudBerry Dark";
+    public string ThemePreset { get; set; } = "Cirra Core";
 
     public string Density { get; set; } = "Comfortable";
 
@@ -142,11 +179,14 @@ public sealed class AppearanceSettings
 
     public double VisualEffectIntensity { get; set; } = 1.0;
 
+    /// <summary>Off, Efficient, or Full. Automatic runtime fallbacks may temporarily reduce it.</summary>
+    public string EffectsQuality { get; set; } = "Full";
+
     /// <summary>
-    /// Which view opens on launch. "CloudBerry" (default) opens the desktop shell;
+    /// Which view opens on launch. "Cirra" (default) opens the desktop shell;
     /// "Cloudscape" immediately opens the full-screen Big Picture mode.
     /// </summary>
-    public string StartupView { get; set; } = "CloudBerry";
+    public string StartupView { get; set; } = "Cirra";
 
     /// <summary>Per-widget show/hide preferences for the Home page hero stat bar.</summary>
     public HomeWidgetSettings HomeWidgets { get; set; } = new();
@@ -171,6 +211,13 @@ public sealed class AppearanceSettings
     public bool SidebarMaintenanceExpanded { get; set; } = false;
 
     /// <summary>
+    /// Whether the Library page's secondary toolbar row (platform/achievement filters, Pick For
+    /// Me, Reset, Clean Missing, saved presets, and the stat-tile grid) is expanded. Defaults to
+    /// collapsed so the page opens on just search + sort + the Collections lane.
+    /// </summary>
+    public bool LibraryToolsExpanded { get; set; } = false;
+
+    /// <summary>
     /// Xbox/PS5-dashboard-style ambient showcase: after <see cref="AttractModeIdleSeconds"/> of no
     /// input while sitting on Cloudscape's Home tab, CloudBerry takes over the full screen with a
     /// slow Ken-Burns cycle through the library's best-looking games (favorites, most played,
@@ -178,8 +225,25 @@ public sealed class AppearanceSettings
     /// </summary>
     public bool AttractModeEnabled { get; set; } = true;
 
+    public bool HorizonSpotlightPaused { get; set; }
+
     /// <summary>Seconds of idle time on Cloudscape's Home tab before Attract Mode engages.</summary>
     public int AttractModeIdleSeconds { get; set; } = 100;
+
+    /// <summary>
+    /// When on, CloudBerry periodically checks whether any library game's own executable is running
+    /// under a process it didn't start itself — launched from Steam directly, a desktop shortcut, or
+    /// double-clicked by hand — and starts tracking that session (playtime, achievements, Now Playing)
+    /// exactly as if it had been launched through CloudBerry's own Play button. Off by default: this
+    /// means periodically enumerating every running process on the system to check its executable
+    /// path, which is a real (if lightweight) background cost and touches "what's currently running"
+    /// territory that should be an explicit opt-in rather than a silent default. Only matches by exact
+    /// resolved executable path, never by process name alone, so it can't mis-credit playtime to the
+    /// wrong game. ROM/emulator games can't be reliably attributed this way — the running process is
+    /// the emulator, not something that uniquely identifies which ROM is loaded — so this only ever
+    /// applies to native/EXE library entries with a real resolvable launch target.
+    /// </summary>
+    public bool EnableExternalPlaytimeTracking { get; set; } = false;
 }
 
 /// <summary>
@@ -225,11 +289,19 @@ public sealed class UpdateSettings
 {
     public string FeedEndpoint { get; set; } = CloudBerrySettings.BuiltInUpdateFeedEndpoint;
 
+    /// <summary>Checking for updates is safe and silent, so this stays on by default.</summary>
     public bool AutoCheckEnabled { get; set; } = true;
 
-    public bool AutoDownloadEnabled { get; set; } = true;
+    /// <summary>
+    /// Downloading and installing updates without asking is not something a fresh install
+    /// should do silently. Defaults to false so a new user's first experience is never an
+    /// unannounced update; CloudBerry will still notify them a new version is available via
+    /// AutoCheckEnabled, and they can opt into silent download/install from Settings.
+    /// </summary>
+    public bool AutoDownloadEnabled { get; set; } = false;
 
-    public bool InstallOnExit { get; set; } = true;
+    /// <summary>Same reasoning as <see cref="AutoDownloadEnabled"/> — opt-in, not opt-out.</summary>
+    public bool InstallOnExit { get; set; } = false;
 }
 
 public sealed class TheatreSettings
@@ -299,7 +371,7 @@ public sealed class CloudBerryProfile
 
     public string ShellStyle { get; set; } = "Blade";
 
-    public string PreferredTheme { get; set; } = "CloudBerry Dark";
+    public string PreferredTheme { get; set; } = "Cirra Core";
 
     public bool BroadcastPresence { get; set; } = true;
 
@@ -316,7 +388,7 @@ public sealed class CloudBerryFriend
 
     public string IconKey { get; set; } = "Controller";
 
-    public string DisplayName { get; set; } = "CloudBerry Friend";
+    public string DisplayName { get; set; } = "Cirra Friend";
 
     public string Motto { get; set; } = "Library ready.";
 
@@ -326,7 +398,7 @@ public sealed class CloudBerryFriend
 
     public string ShellStyle { get; set; } = "Blade";
 
-    public string PreferredTheme { get; set; } = "CloudBerry Dark";
+    public string PreferredTheme { get; set; } = "Cirra Core";
 
     public string FavoritePlatform { get; set; } = "Unknown";
 
@@ -365,6 +437,21 @@ public sealed class EmulatorSettings
 {
     /// <summary>Optional RetroArch executable path used by the setup assistant.</summary>
     public string RetroArchPath           { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When a game launches through an emulator, CloudBerry tries to keep that emulator's own window
+    /// living inside the CloudBerry window instead of it popping out separately. For RetroArch
+    /// specifically, this also forces windowed mode for that one launch via a temp
+    /// <c>--appendconfig</c> override (never touching the user's real retroarch.cfg) and disables
+    /// RetroArch's "pause when not focused" behavior, since reparenting would otherwise trigger it.
+    /// Standalone emulators (PCSX2, Dolphin, RPCS3, etc.) get no such pre-launch override — CloudBerry
+    /// just attempts to reparent whatever window they open, which works when they're already in
+    /// windowed/borderless mode but won't attach cleanly if one is running in true exclusive
+    /// fullscreen from a prior session. Always falls back to a normal, completely unaffected external
+    /// launch if a window can't be found or attached within a few seconds, so turning this off — or
+    /// an attach simply not working for a given emulator — never changes whether a game actually runs.
+    /// </summary>
+    public bool EnableEmbeddedPlayForRetroArch { get; set; } = true;
 
     // Nintendo
     public string NesEmulatorPath        { get; set; } = string.Empty;  // NES

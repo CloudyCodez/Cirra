@@ -18,8 +18,8 @@ public partial class CleanMissingPreviewWindow : Window
         DataContext = _viewModel;
 
         SummaryText.Text = missingGames.Count == 1
-            ? "CloudBerry found 1 library entry whose launch file or folder no longer exists. Uncheck anything you want to keep, then confirm removal."
-            : $"CloudBerry found {missingGames.Count} library entries whose launch files or folders no longer exist. Uncheck anything you want to keep, then confirm removal.";
+            ? "Cirra found 1 library entry whose launch file or folder no longer exists. Uncheck anything you want to keep, then confirm removal."
+            : $"Cirra found {missingGames.Count} library entries whose launch files or folders no longer exist. Uncheck anything you want to keep, then confirm removal.";
 
         UpdateSelectionCount();
         foreach (var entry in _viewModel.Entries)

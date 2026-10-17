@@ -38,7 +38,7 @@ public static class YouTubeHelper
         if (startTime.HasValue && startTime > 0)
             url += $"&start={startTime.Value}";
 
-        // Black Flash theme: subtle crimson border for visual cohesion
+        // Impact Noir theme: subtle crimson border for visual cohesion
         url += "&color=white";
         
         return url;
@@ -68,7 +68,7 @@ public static class YouTubeHelper
     }
 
     /// <summary>
-    /// Generates a Black Flash-themed placeholder image URL for failed trailers.
+    /// Generates a Impact Noir-themed placeholder image URL for failed trailers.
     /// Uses your existing yuji assets with crimson overlay for seamless fallback.
     /// </summary>
     /// <param name="yujiAssetIndex">Index 1-7 for yuji{N}.png</param>

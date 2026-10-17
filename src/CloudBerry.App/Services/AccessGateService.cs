@@ -17,19 +17,23 @@ namespace CloudBerry.App.Services;
 /// </summary>
 public static class AccessGateService
 {
-    // Keys are compared as SHA-256 hashes rather than kept in plaintext, so a casual look at
-    // the source or a decompiled binary doesn't just hand out the active list in the open.
+    // This offline allowlist is a beta invitation gate, not server-enforced licensing.
+    // Existing keys remain valid; never put new plaintext invitations in the source.
     private static readonly HashSet<string> ValidKeyHashes = new(StringComparer.Ordinal)
     {
-        Hash("bear"),
-        Hash("iru"),
-        Hash("cjmxo"),
+        "BC98BB50E8094B2AC3CEB90BA2512587C0513CD294A07EFCFDCF467198DA6266",
+        "095CAC40C31D4BEC0DDBEB2999E792DE517C364B9EDB8FA33DA6580FE76853F5",
+        "D6F7EF93CEFAB4D11F99C075523FB126ACBA1B4BF52153EA680FFA0B8C05B214",
+        // September 2026 closed beta: invitations 1-5, in the issued order.
+        "EE9EC5A4B144A216C84138D6E917C97E44C74FCB4BE2D1C4E4DBBCD04BC01D1E",
+        "060B3885C7F407575CF5DC2E5ADC0E76765128F846590B91772225A866C2727C",
+        "A21D9A57E605927827668D98D39D7D5FE5988A4245A40EAD358242AA6EFFD45B",
+        "010523CF176DBEF9D5E97A2FE60A7696F738EB0799DDB8A819EBDF3517C58E0E",
+        "6D168B5EB2AC08C554D94E57B66D5E5BC32512997CEE50AB889F42D2C4882C64",
     };
 
-    // Extra entropy mixed into the DPAPI call. Doesn't add real secrecy on its own (DPAPI's
-    // protection comes from the user's Windows credentials, not this), but it does mean a
-    // marker produced by CloudBerry can't be silently unprotected by some unrelated app that
-    // also happens to call ProtectedData for the same Windows user.
+    // Keep this legacy value and marker location so previously activated installs still work.
+    // Entropy is application context, not a secret or protection from other code under this user.
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("CloudBerry.AccessGate.v1");
 
     private const string GrantedMarkerPrefix = "CLOUDBERRY-ACCESS-GRANTED|";
@@ -44,16 +48,18 @@ public static class AccessGateService
     /// Returns false for a missing, corrupt, or foreign-machine/foreign-account marker - all
     /// of those are indistinguishable from "never redeemed" and simply show the gate again.
     /// </summary>
-    public static bool HasValidAccess()
+    public static bool HasValidAccess() => HasValidAccess(MarkerFilePath);
+
+    internal static bool HasValidAccess(string markerFilePath)
     {
         try
         {
-            if (!File.Exists(MarkerFilePath))
+            if (!File.Exists(markerFilePath))
             {
                 return false;
             }
 
-            var encrypted = File.ReadAllBytes(MarkerFilePath);
+            var encrypted = File.ReadAllBytes(markerFilePath);
             var decrypted = ProtectedData.Unprotect(encrypted, Entropy, DataProtectionScope.CurrentUser);
             var marker = Encoding.UTF8.GetString(decrypted);
             return marker.StartsWith(GrantedMarkerPrefix, StringComparison.Ordinal);
@@ -69,15 +75,14 @@ public static class AccessGateService
     /// encrypted grant marker bound to this Windows user/machine and returns true. The actual
     /// key that was used is never stored - only the fact that a valid one was redeemed once.
     /// </summary>
-    public static bool TryRedeem(string? enteredKey)
-    {
-        if (string.IsNullOrWhiteSpace(enteredKey))
-        {
-            return false;
-        }
+    public static bool TryRedeem(string? enteredKey) => TryRedeem(enteredKey, MarkerFilePath);
 
-        var normalized = enteredKey.Trim().ToLowerInvariant();
-        if (!ValidKeyHashes.Contains(Hash(normalized)))
+    internal static bool IsValidKey(string? enteredKey) =>
+        !string.IsNullOrWhiteSpace(enteredKey) && ValidKeyHashes.Contains(Hash(enteredKey.Trim().ToLowerInvariant()));
+
+    internal static bool TryRedeem(string? enteredKey, string markerFilePath)
+    {
+        if (!IsValidKey(enteredKey))
         {
             return false;
         }
@@ -88,9 +93,9 @@ public static class AccessGateService
             var plain = Encoding.UTF8.GetBytes(marker);
             var encrypted = ProtectedData.Protect(plain, Entropy, DataProtectionScope.CurrentUser);
 
-            var directory = Path.GetDirectoryName(MarkerFilePath)!;
+            var directory = Path.GetDirectoryName(markerFilePath)!;
             Directory.CreateDirectory(directory);
-            File.WriteAllBytes(MarkerFilePath, encrypted);
+            File.WriteAllBytes(markerFilePath, encrypted);
         }
         catch
         {

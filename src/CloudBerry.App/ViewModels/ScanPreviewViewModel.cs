@@ -33,6 +33,24 @@ public sealed class ScanPreviewViewModel : ViewModelBase
         {
             MetadataSearchText = SelectedCandidate.Title;
         }
+
+        StatusMessage = BuildScanSummaryMessage();
+    }
+
+    private string BuildScanSummaryMessage()
+    {
+        if (Candidates.Count == 0)
+        {
+            return "No games found in that folder.";
+        }
+
+        var newCount = Candidates.Count - AlreadyOwnedCount;
+        if (AlreadyOwnedCount == 0)
+        {
+            return $"Found {Candidates.Count} game{(Candidates.Count == 1 ? "" : "s")}. Review the list, then import the ones you want.";
+        }
+
+        return $"Found {Candidates.Count} game{(Candidates.Count == 1 ? "" : "s")} \u2014 {newCount} new, {AlreadyOwnedCount} already in your library (unchecked automatically).";
     }
 
     public ObservableCollection<ImportCandidateViewModel> Candidates { get; } = [];
@@ -63,6 +81,8 @@ public sealed class ScanPreviewViewModel : ViewModelBase
     public int CandidatesSelected => Candidates.Count(candidate => candidate.IsSelected && !candidate.AlreadyExists);
 
     public int CandidatesPrepared => Candidates.Count(candidate => candidate.HasStagedMetadata && !candidate.AlreadyExists);
+
+    public int AlreadyOwnedCount => Candidates.Count(candidate => candidate.AlreadyExists);
 
     public string PreparationSummary => CandidatesPrepared == 0
         ? "No import metadata staged yet"
@@ -182,7 +202,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
             var details = await _mainVm.ResolveMetadataDetailsAsync(SelectedMetadataResult);
             if (details is null)
             {
-                StatusMessage = $"CloudBerry could not load details for '{SelectedMetadataResult.Title}'.";
+                StatusMessage = $"Cirra could not load details for '{SelectedMetadataResult.Title}'.";
                 return;
             }
 
@@ -225,7 +245,19 @@ public sealed class ScanPreviewViewModel : ViewModelBase
                 attempted++;
                 StatusMessage = $"Preparing {attempted}/{selected.Count}: {candidate.Title}";
                 var results = await _mainVm.SearchMetadataForTitleAsync(candidate.Title, candidate.Platform);
-                var best = results.FirstOrDefault();
+                if (results.Count == 0)
+                {
+                    continue;
+                }
+
+                // Confidence-scored match (same selector used by "Refresh Metadata" and the batch
+                // fill-missing pass) instead of blindly taking the first search result — the API's
+                // own result ordering is not reliably "best fit for this exact title/platform".
+                var bestRecord = _mainVm.SelectBestMetadataMatch(candidate.Title, candidate.Platform, results.Select(r => r.ToModel()));
+                var best = bestRecord is null
+                    ? null
+                    : results.FirstOrDefault(r => r.ProviderId == bestRecord.ProviderId && r.RemoteId == bestRecord.RemoteId)
+                      ?? results.FirstOrDefault();
                 if (best is null)
                 {
                     continue;
@@ -284,7 +316,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
             SelectedMediaResult = MediaResults.FirstOrDefault();
             StatusMessage = MediaResults.Count == 0
                 ? $"No {SelectedMediaKind} art found for '{title}'."
-                : $"Found {MediaResults.Count} {SelectedMediaKind} art candidate(s). Select one and apply it to the import.";
+                : $"Found {MediaResults.Count} {SelectedMediaKind} art {Pluralize(MediaResults.Count, "candidate", "candidates")}. Select one and apply it to the import.";
         }
         catch (Exception exception)
         {
@@ -294,6 +326,11 @@ public sealed class ScanPreviewViewModel : ViewModelBase
         {
             IsBusy = false;
         }
+    }
+
+    private static string Pluralize(int count, string singular, string plural)
+    {
+        return count == 1 ? singular : plural;
     }
 
     public void ApplySelectedMedia()

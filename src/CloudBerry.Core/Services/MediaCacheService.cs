@@ -14,7 +14,7 @@ public sealed class MediaCacheService
         _httpClient = httpClient ?? new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(30),
-            DefaultRequestHeaders = { { "User-Agent", "CloudBerry/1.0" } }
+            DefaultRequestHeaders = { { "User-Agent", "Cirra/1.0" } }
         };
         MediaRootPath = mediaRootPath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

@@ -17,7 +17,7 @@ public sealed class UniversalAchievementProvider : IGameAchievementProvider
     public AchievementProviderDescriptor Descriptor { get; } = new()
     {
         Id = "cloudberry-universal",
-        DisplayName = "CloudBerry Universal",
+        DisplayName = "Cirra Universal",
         Description = "Tries online sources beyond Steam by title, and auto-generates achievement sets when a game has no public achievement data."
     };
 
@@ -98,7 +98,7 @@ public sealed class UniversalAchievementProvider : IGameAchievementProvider
 
         var templates = new (string Slug, string Title, string Description)[]
         {
-            ("first_boot", "First Boot", $"Launch {title} for the first time in CloudBerry."),
+            ("first_boot", "First Boot", $"Launch {title} for the first time in Cirra."),
             ("first_steps", "First Steps", $"Complete the opening section and establish your run in this {genrePhrase} experience."),
             ("world_tour", "World Tour", $"Visit 3 distinct areas or scenarios in {title}."),
             ("specialist", "Specialist", $"Complete a challenge focused on {tagPhrase}."),

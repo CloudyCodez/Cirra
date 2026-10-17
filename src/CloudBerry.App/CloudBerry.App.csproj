@@ -6,9 +6,12 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <PackageReference Include="PDFiumSharp" Version="1.4660.0-alpha1" />
+    <PackageReference Include="PDFiumSharp.Wpf" Version="1.4660.0-alpha1" />
+    <PackageReference Include="PDFiumSharp.NativeBinaries" Version="1.4660.0" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(IncludeCompanionTools)' != 'false'">
     <Content Include="CompanionTools\title_cleaner.py"
              CopyToOutputDirectory="PreserveNewest" />
     <Content Include="CompanionTools\library_insights.mjs"
@@ -16,7 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="Resources\Icons\cloudberry_app_icon_256.png" />
+    <Resource Include="Resources\Icons\cirra_app_icon_1024.png" />
+    <Resource Include="Resources\Icons\cirra_app_icon_256.png" />
     <Resource Include="Resources\Images\nier_theme.png" />
     <Resource Include="Resources\Images\wuwa_theme.jpg" />
     <Resource Include="Resources\Images\yuji*.png" />
@@ -28,17 +32,17 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <AssemblyName>CloudBerry</AssemblyName>
-    <AssemblyTitle>CloudBerry</AssemblyTitle>
-    <Product>CloudBerry</Product>
-    <Company>CloudBerry</Company>
-    <Authors>CloudBerry</Authors>
-    <Description>CloudBerry is a polished universal game library for Windows, ROM collections, and launcher discovery.</Description>
+    <AssemblyName>Cirra</AssemblyName>
+    <AssemblyTitle>Cirra</AssemblyTitle>
+    <Product>Cirra</Product>
+    <Company>Cirra</Company>
+    <Authors>Cirra</Authors>
+    <Description>Cirra is a premium universal game library for Windows, ROM collections, and launcher discovery.</Description>
     <Version>0.2.0.1</Version>
     <AssemblyVersion>0.2.0.1</AssemblyVersion>
     <FileVersion>0.2.0.1</FileVersion>
     <InformationalVersion>0.2.0.1</InformationalVersion>
-    <ApplicationIcon>Resources\Icons\cloudberry_app_icon.ico</ApplicationIcon>
+    <ApplicationIcon>Resources\Icons\cirra_app_icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Self-contained single-file publish defaults (used by publish.bat) -->

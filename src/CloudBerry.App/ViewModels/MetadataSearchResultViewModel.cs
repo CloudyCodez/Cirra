@@ -25,6 +25,9 @@ public sealed class MetadataSearchResultViewModel : ViewModelBase
     private string _tagsText = string.Empty;
     private List<string> _screenshots = [];
     private string _trailerUrl = string.Empty;
+    private List<GameGuidebook> _guidebooks = [];
+    private double _matchScore;
+    private string _matchConfidenceLabel = string.Empty;
 
     public MetadataSearchResultViewModel()
     {
@@ -214,6 +217,33 @@ public sealed class MetadataSearchResultViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Raw title-match score from <see cref="CloudBerry.Core.Services.Metadata.GameMetadataMatchSelector"/>,
+    /// set by MainViewModel right after a search so results can be ordered best-first and labeled.
+    /// Zero/default for results that were never scored (e.g. built via a path other than the
+    /// interactive search list) — <see cref="HasMatchConfidence"/> gates the badge for that case.
+    /// </summary>
+    public double MatchScore
+    {
+        get => _matchScore;
+        set => SetProperty(ref _matchScore, value);
+    }
+
+    /// <summary>"Strong match" / "Possible match" / "Manual review needed", or empty if unscored.</summary>
+    public string MatchConfidenceLabel
+    {
+        get => _matchConfidenceLabel;
+        set
+        {
+            if (SetProperty(ref _matchConfidenceLabel, value))
+            {
+                OnPropertyChanged(nameof(HasMatchConfidence));
+            }
+        }
+    }
+
+    public bool HasMatchConfidence => !string.IsNullOrWhiteSpace(MatchConfidenceLabel);
+
     public bool HasCoverImage => !string.IsNullOrWhiteSpace(CoverImageUrl);
 
     public string HeroImageUrl => !string.IsNullOrWhiteSpace(BackgroundImageUrl) ? BackgroundImageUrl : CoverImageUrl;
@@ -281,6 +311,7 @@ public sealed class MetadataSearchResultViewModel : ViewModelBase
         TagsText = string.Join(", ", tags);
         _screenshots = new List<string>(screenshots);
         TrailerUrl = metadata.TrailerUrl;
+        _guidebooks = (metadata.Guidebooks ?? []).Select(guidebook => guidebook.Clone()).ToList();
         OnPropertyChanged(nameof(MediaSummary));
     }
 
@@ -308,7 +339,8 @@ public sealed class MetadataSearchResultViewModel : ViewModelBase
             Publishers = PublishersText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
             Tags = TagsText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
             Screenshots = new List<string>(_screenshots),
-            TrailerUrl = TrailerUrl
+            TrailerUrl = TrailerUrl,
+            Guidebooks = _guidebooks.Select(guidebook => guidebook.Clone()).ToList()
         };
     }
 }

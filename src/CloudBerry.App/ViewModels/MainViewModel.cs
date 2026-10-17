@@ -93,7 +93,18 @@ public sealed class MainViewModel : ViewModelBase
 
 	private readonly CloudBerryUpdateService _updateService;
 
+	private readonly LaunchPreflightService _launchPreflightService = new LaunchPreflightService();
+
+	private readonly ActivityCenterService _activityCenter = new ActivityCenterService();
+
+	private readonly DeviceProfileService _deviceProfileService = new DeviceProfileService();
+
+	private readonly SaveContinuityService _saveContinuityService;
+
+	private readonly GuidebookDiscoveryService _guidebookDiscoveryService = new GuidebookDiscoveryService();
+
 	private readonly Dictionary<Guid, GameLaunchSession> _activeSessions = new Dictionary<Guid, GameLaunchSession>();
+	private ExternalGameProcessMonitor? _externalProcessMonitor;
 
 	private readonly Dictionary<Guid, CancellationTokenSource> _achievementPollingSessions = new Dictionary<Guid, CancellationTokenSource>();
 
@@ -114,6 +125,14 @@ public sealed class MainViewModel : ViewModelBase
 	private CollectionOption? _selectedCollection;
 
 	private GameEntryViewModel? _selectedGame;
+	private GameEntryViewModel? _bigPictureSpotlightGame;
+	private bool _horizonSpotlightPaused;
+
+	private LaunchPreflightResult? _selectedLaunchPreflight;
+
+	private LibraryHistoryEntry? _selectedLibraryHistoryEntry;
+
+	private CirraDeviceProfile? _selectedDeviceProfile;
 
 	private ImportCandidateViewModel? _selectedCandidate;
 
@@ -127,6 +146,7 @@ public sealed class MainViewModel : ViewModelBase
 	private int _selectedCloudscapePage;
 
 	private bool _isCloudscapeCompact;
+	private bool _isBigPictureLibraryGrid;
 	private int _selectedSettingsCategoryIndex;
 	private string _bigPictureSearchText = string.Empty;
 	private string _bigPictureLibrarySortKey = "default";
@@ -145,7 +165,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private const string RuntimeAchievementProviderId = "cloudberry-runtime";
 
-	private const string RuntimeAchievementProviderName = "CloudBerry Runtime";
+	private const string RuntimeAchievementProviderName = "Cirra Runtime";
 
 	private string _selectedAchievementProviderId = "cloudberry-universal";
 
@@ -173,27 +193,42 @@ public sealed class MainViewModel : ViewModelBase
 
 	private string _statusMessage = "Add games or scan your libraries to begin.";
 
-	private string _productReadinessSummary = "Run a quick product check before testing.";
+	private string _productReadinessSummary = "Run a health check to review paths, art, achievements, emulators, and backups.";
 
-	private string _productReadinessDetail = "Checks launch paths, metadata, media, emulators, backups, and providers.";
+	private string _productReadinessDetail = "No health check has run yet.";
+	private string _libraryBackupStatusMessage = "No backup created yet this session.";
 
 	private int _productReadinessScore;
 
+	private DateTime? _productReadinessCheckedAt;
+
 	private string _metadataStatusMessage = "Search metadata for the selected game.";
 
-	private string _achievementStatusMessage = "Local achievements first. Online references fill the gaps.";
+	private string _achievementStatusMessage = "Achievements are ready when your games are.";
 
-	private string _appearanceThemeKey = "Mint Cloud";
+	private string _appearanceThemeKey = "Cirra Core";
 
 	private string _appearanceDensityKey = "Comfortable";
 
-	private string _startupView = "CloudBerry";
+	private string _startupView = "Cirra";
 
 	private int _homeRotationSeconds = 18;
 
 	private bool _visualEffectsEnabled = true;
 
 	private double _visualEffectIntensity = 1.0;
+
+	private string _effectsQuality = "Full";
+
+	private string _deviceProfileStatusMessage = "This device keeps its own experience settings.";
+
+	private string _saveContinuityStatusMessage = "Add one save file or folder per line, then run discovery.";
+
+	private string _guidebookStatusMessage = "Attach a local PDF or search verified manual and guide archives.";
+
+	private bool _isGuidebookBusy;
+
+	private bool _isSaveContinuityBusy;
 
 	private bool _showLibraryStat = true;
 
@@ -208,12 +243,14 @@ public sealed class MainViewModel : ViewModelBase
 	private bool _showPlaytimeStat = true;
 
 	private bool _sidebarMaintenanceExpanded;
+	private bool _libraryToolsExpanded;
 
 	private string _libraryViewMode = "List";
 
 	private string _libraryGridTileSize = "Normal";
 
 	private bool _attractModeEnabled = true;
+	private bool _enableExternalPlaytimeTracking;
 
 	private int _attractModeIdleSeconds = 100;
 
@@ -239,9 +276,12 @@ public sealed class MainViewModel : ViewModelBase
 
 	private bool _autoCheckForUpdates = true;
 
-	private bool _autoDownloadUpdates = true;
+	// Defaults to false: a fresh install should never silently download or install an
+	// update before the user has had a chance to see Settings. See CloudBerrySettings.
+	private bool _autoDownloadUpdates;
+	private bool _enableEmbeddedPlayForRetroArch;
 
-	private bool _installUpdatesOnExit = true;
+	private bool _installUpdatesOnExit;
 
 	private bool _isCheckingForUpdates;
 
@@ -273,7 +313,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private string _profileShellStyle = "Blade";
 
-	private string _profilePreferredTheme = "Mint Cloud";
+	private string _profilePreferredTheme = "Cirra Core";
 
 	private string _profileIconKey = "Controller";
 
@@ -283,7 +323,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private string _friendCloudCodeSearch = string.Empty;
 
-	private string _socialStatusMessage = "Cloud Code ready.";
+	private string _socialStatusMessage = "Ready to add friends.";
 
 	private bool _isCloudTheatreUnlocked;
 
@@ -353,6 +393,8 @@ public sealed class MainViewModel : ViewModelBase
 
 	private string _randomBacklogSummary = "Pick a ready game from the library.";
 
+	private int _selectedPlayWindowMinutes = 30;
+
 	private bool _isBusy;
 
 	private bool _isMetadataBusy;
@@ -360,6 +402,15 @@ public sealed class MainViewModel : ViewModelBase
 	private bool _isAchievementBusy;
 
 	private readonly SemaphoreSlim _metadataSearchGate = new SemaphoreSlim(1, 1);
+
+	// Batch "Fill Missing"/retry cancellation and retry-failed tracking (roadmap: batch progress /
+	// cancellation / retry failed items). Only one metadata batch runs at a time (gated by
+	// IsMetadataBusy), so a single CTS field is enough — no need for a session dictionary.
+	private CancellationTokenSource? _metadataBatchCts;
+
+	private List<GameEntryViewModel> _lastFailedMetadataTargets = new List<GameEntryViewModel>();
+
+	private bool _replaceExistingMetadata;
 
 	private readonly SemaphoreSlim _mediaSearchGate = new SemaphoreSlim(1, 1);
 
@@ -415,9 +466,9 @@ public sealed class MainViewModel : ViewModelBase
 
 	private RetroArchDetectionResult? _retroArchDetectionResult;
 
-	private string _emulatorDetectionSummary = "Scan installed emulators and let CloudBerry suggest mappings.";
+	private string _emulatorDetectionSummary = "Scan installed emulators and let Cirra suggest mappings.";
 
-	private string _companionToolsStatusMessage = "Helper tools can polish metadata and media in the background.";
+	private string _companionToolsStatusMessage = "Optional tools can polish titles, artwork, and library insights.";
 
 	private readonly Dictionary<string, IReadOnlyList<string>> _companionQueryCache = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
 
@@ -430,6 +481,8 @@ public sealed class MainViewModel : ViewModelBase
 	public ObservableCollection<BigPictureShelfViewModel> BigPictureHomeShelves { get; } = new ObservableCollection<BigPictureShelfViewModel>();
 
 	public ObservableCollection<BigPictureShelfViewModel> BigPictureLibraryShelves { get; } = new ObservableCollection<BigPictureShelfViewModel>();
+
+	public ObservableCollection<GameEntryViewModel> BigPictureLibraryGridGames { get; } = new ObservableCollection<GameEntryViewModel>();
 
 	public ObservableCollection<BigPictureShelfViewModel> BigPictureAchievementShelves { get; } = new ObservableCollection<BigPictureShelfViewModel>();
 
@@ -472,11 +525,53 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
-	public GameEntryViewModel? BigPictureHeroGame => SelectedGame ?? ContinuePlayingGame ?? RecommendedGame ?? RandomBacklogGame ?? Games.FirstOrDefault();
+	public GameEntryViewModel? BigPictureHeroGame =>
+		(_bigPictureSpotlightGame != null && Games.Contains(_bigPictureSpotlightGame) ? _bigPictureSpotlightGame : null)
+		?? SelectedGame ?? ContinuePlayingGame ?? RecommendedGame ?? RandomBacklogGame ?? Games.FirstOrDefault();
+
+	public bool HorizonSpotlightPaused
+	{
+		get => _horizonSpotlightPaused;
+		set
+		{
+			if (SetProperty(ref _horizonSpotlightPaused, value))
+			{
+				OnPropertyChanged(nameof(HorizonSpotlightActionLabel));
+				SchedulePersist();
+			}
+		}
+	}
+
+	public string HorizonSpotlightActionLabel => HorizonSpotlightPaused ? "Resume spotlight rotation" : "Pause spotlight rotation";
+
+	internal bool AdvanceBigPictureSpotlight()
+	{
+		if (HorizonSpotlightPaused || Games.Count < 2) return false;
+		var current = BigPictureHeroGame;
+		var index = current != null ? Games.IndexOf(current) : -1;
+		_bigPictureSpotlightGame = Games[(index + 1) % Games.Count];
+		NotifyBigPictureHeroChanged();
+		return true;
+	}
+
+	internal void ResetBigPictureSpotlight()
+	{
+		if (_bigPictureSpotlightGame == null) return;
+		_bigPictureSpotlightGame = null;
+		NotifyBigPictureHeroChanged();
+	}
+
+	private void NotifyBigPictureHeroChanged()
+	{
+		OnPropertyChanged(nameof(BigPictureHeroGame));
+		OnPropertyChanged(nameof(HasBigPictureHeroGame));
+		OnPropertyChanged(nameof(BigPictureHeroSummary));
+		OnPropertyChanged(nameof(BigPictureHeroContextLabel));
+	}
 
 	public bool HasBigPictureHeroGame => BigPictureHeroGame != null;
 
-	public string BigPictureHeroSummary => BigPictureHeroGame?.SummaryOrPlaceholder ?? "Scan a folder, import a game, and CloudBerry will turn your collection into a full-screen dashboard.";
+	public string BigPictureHeroSummary => BigPictureHeroGame?.SummaryOrPlaceholder ?? "Scan a folder, import a game, and Cirra will turn your collection into a full-screen dashboard.";
 
 	public string BigPictureHeroContextLabel
 	{
@@ -486,7 +581,7 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				return $"{BigPictureHeroGame.Platform}  •  {BigPictureHeroGame.Status}  •  {BigPictureHeroGame.SourceKind}";
 			}
-			return "CloudBerry Cloudscape";
+			return "Cirra Cloudscape";
 		}
 	}
 
@@ -496,9 +591,9 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			if (SelectedBigPictureLibraryCategory != null)
 			{
-				return $"{SelectedBigPictureLibraryCategory.Subtitle} • {SelectedBigPictureLibraryCategory.Count} title(s)";
+				return $"{SelectedBigPictureLibraryCategory.Subtitle} • {SelectedBigPictureLibraryCategory.Count} {Pluralize(SelectedBigPictureLibraryCategory.Count, "game", "games")}";
 			}
-			return "Every title in your library";
+			return "Every game in your library";
 		}
 	}
 
@@ -509,9 +604,9 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			if (SelectedBigPictureEmulationPlatform != null)
 			{
-				return $"{SelectedBigPictureEmulationPlatform.Subtitle} • {SelectedBigPictureEmulationPlatform.Count} title(s)";
+				return $"{SelectedBigPictureEmulationPlatform.Subtitle} • {SelectedBigPictureEmulationPlatform.Count} {Pluralize(SelectedBigPictureEmulationPlatform.Count, "game", "games")}";
 			}
-			return $"{EmulationRomCount} ROM(s) across your library";
+			return $"{EmulationRomCount} {Pluralize(EmulationRomCount, "ROM", "ROMs")} across your library";
 		}
 	}
 
@@ -523,13 +618,120 @@ public sealed class MainViewModel : ViewModelBase
 
 	public bool HasEmulationGamesNeedingCore => EmulationNeedsCoreCount > 0;
 
-	public string BigPictureAchievementSummary => $"{GamesWithAchievementsCount} synced game(s) • {UnlockedAchievementsCount}/{TotalAchievementsCount} achievements unlocked • {LibraryGamerScoreLabel}";
+	public string BigPictureAchievementSummary => $"{GamesWithAchievementsCount} synced {Pluralize(GamesWithAchievementsCount, "game", "games")} • {UnlockedAchievementsCount}/{TotalAchievementsCount} achievements unlocked • {LibraryGamerScoreLabel}";
 
 	public ObservableCollection<GameEntryViewModel> Games { get; } = new ObservableCollection<GameEntryViewModel>();
+
+	public ObservableCollection<LibraryHistoryEntry> LibraryHistory { get; } = new ObservableCollection<LibraryHistoryEntry>();
+
+	public ObservableCollection<ActivityOperation> ActivityOperations { get; } = new ObservableCollection<ActivityOperation>();
+
+	public ObservableCollection<CirraDeviceProfile> DeviceProfiles { get; } = new ObservableCollection<CirraDeviceProfile>();
+
+	public bool HasActivityOperations => ActivityOperations.Count > 0;
+
+	public int RunningActivityCount => ActivityOperations.Count(operation => operation.IsRunning);
+
+	public string ActivityCenterSummary => RunningActivityCount > 0
+		? $"{RunningActivityCount} {Pluralize(RunningActivityCount, "operation", "operations")} running"
+		: HasActivityOperations ? "Recent work and results" : "No background work yet";
+
+	public LibraryHistoryEntry? SelectedLibraryHistoryEntry
+	{
+		get => _selectedLibraryHistoryEntry;
+		set
+		{
+			if (SetProperty(ref _selectedLibraryHistoryEntry, value, nameof(SelectedLibraryHistoryEntry)))
+			{
+				OnPropertyChanged(nameof(HasSelectedLibraryHistoryEntry));
+			}
+		}
+	}
+
+	public bool HasSelectedLibraryHistoryEntry => SelectedLibraryHistoryEntry != null;
+
+	public bool HasLibraryHistory => LibraryHistory.Count > 0;
+
+	public string LibraryHistorySummary => HasLibraryHistory
+		? $"{LibraryHistory.Count} reversible {Pluralize(LibraryHistory.Count, "change", "changes")} retained locally."
+		: "No reversible library changes have been recorded yet.";
+
+	public string LatestLibraryHistoryLabel => LibraryHistory.FirstOrDefault() is { } latest
+		? $"{latest.Title} - {latest.Summary}"
+		: "Nothing to undo";
+
+	public CirraDeviceProfile? SelectedDeviceProfile
+	{
+		get => _selectedDeviceProfile;
+		set
+		{
+			if (SetProperty(ref _selectedDeviceProfile, value, nameof(SelectedDeviceProfile)))
+			{
+				OnPropertyChanged(nameof(HasSelectedDeviceProfile));
+				OnPropertyChanged(nameof(SelectedDeviceProfileSummary));
+			}
+		}
+	}
+
+	public bool HasSelectedDeviceProfile => SelectedDeviceProfile != null;
+
+	public string SelectedDeviceProfileSummary => SelectedDeviceProfile is null
+		? "Choose a device profile."
+		: $"{SelectedDeviceProfile.DeviceKind} · {SelectedDeviceProfile.Density} · {SelectedDeviceProfile.EffectsQuality} FX";
+
+	public string DeviceProfileStatusMessage
+	{
+		get => _deviceProfileStatusMessage;
+		private set => SetProperty(ref _deviceProfileStatusMessage, value, nameof(DeviceProfileStatusMessage));
+	}
+
+	public string SaveContinuityStatusMessage
+	{
+		get => _saveContinuityStatusMessage;
+		private set => SetProperty(ref _saveContinuityStatusMessage, value, nameof(SaveContinuityStatusMessage));
+	}
+
+	public bool IsSaveContinuityBusy
+	{
+		get => _isSaveContinuityBusy;
+		private set
+		{
+			if (SetProperty(ref _isSaveContinuityBusy, value, nameof(IsSaveContinuityBusy)))
+			{
+				OnPropertyChanged(nameof(IsShellBusy));
+				OnPropertyChanged(nameof(ShellBusyLabel));
+			}
+		}
+	}
 
 	public ObservableCollection<ImportCandidateViewModel> ImportCandidates { get; } = new ObservableCollection<ImportCandidateViewModel>();
 
 	public ObservableCollection<MetadataSearchResultViewModel> MetadataResults { get; } = new ObservableCollection<MetadataSearchResultViewModel>();
+
+	public ObservableCollection<GameGuidebook> GuidebookSearchResults { get; } = new ObservableCollection<GameGuidebook>();
+
+	public bool HasGuidebookSearchResults => GuidebookSearchResults.Count > 0;
+
+	public string GuidebookStatusMessage
+	{
+		get => _guidebookStatusMessage;
+		private set => SetProperty(ref _guidebookStatusMessage, value, nameof(GuidebookStatusMessage));
+	}
+
+	public bool IsGuidebookBusy
+	{
+		get => _isGuidebookBusy;
+		private set
+		{
+			if (SetProperty(ref _isGuidebookBusy, value, nameof(IsGuidebookBusy)))
+			{
+				OnPropertyChanged(nameof(IsShellBusy));
+				OnPropertyChanged(nameof(ShellBusyLabel));
+			}
+		}
+	}
+
+	public string MetadataResultsCountLabel => $"{MetadataResults.Count} {Pluralize(MetadataResults.Count, "result", "results")}";
 
 	public ObservableCollection<MediaSearchResultViewModel> MediaSearchResults { get; } = new ObservableCollection<MediaSearchResultViewModel>();
 
@@ -538,13 +740,93 @@ public sealed class MainViewModel : ViewModelBase
 	/// <summary>User-created manual collections (name + explicit game membership). Persisted via CollectionSettings.</summary>
 	public ObservableCollection<CloudBerryCollection> UserCollections { get; } = new ObservableCollection<CloudBerryCollection>();
 
+	public ObservableCollection<LibraryFilterPresetViewModel> LibraryFilterPresets { get; } = new ObservableCollection<LibraryFilterPresetViewModel>();
+
+	public bool HasLibraryFilterPresets => LibraryFilterPresets.Count > 0;
+
 	public ObservableCollection<FilterOption> PlatformFilters { get; } = new ObservableCollection<FilterOption>();
 
 	public ObservableCollection<AchievementUnlockFeedItemViewModel> RecentAchievementUnlocks { get; } = new ObservableCollection<AchievementUnlockFeedItemViewModel>();
 
 	public ObservableCollection<GameEntryViewModel> JumpBackInGames { get; } = new ObservableCollection<GameEntryViewModel>();
 
+	public ObservableCollection<PlayWindowRecommendationViewModel> PlayWindowRecommendations { get; } = new();
+
+	/// <summary>
+	/// A5 "Almost There": games that are 70-99% through their achievement set, not
+	/// finished, and haven't been touched in 30+ days — the same criteria as the
+	/// "finishit" library filter, surfaced as a standalone Home widget. Nearest-to-
+	/// finished first, capped at 5 so the widget stays glanceable.
+	/// </summary>
+	public ObservableCollection<GameEntryViewModel> AlmostThereGames { get; } = new ObservableCollection<GameEntryViewModel>();
+
+	/// <summary>Roadmap: "provider priority settings." One row per internal metadata source, bound to Settings.</summary>
+	public ObservableCollection<MetadataProviderToggleViewModel> MetadataProviderToggles { get; } = new ObservableCollection<MetadataProviderToggleViewModel>();
+
+	public bool HasAlmostThereGames => AlmostThereGames.Count > 0;
+
+	public ObservableCollection<GameEntryViewModel> RecentlyImprovedGames { get; } = new ObservableCollection<GameEntryViewModel>();
+
+	private int _potentialDuplicateGroupCount;
+
+	/// <summary>
+	/// How many title clusters the Duplicate Ownership Detector currently sees as an unresolved
+	/// possible duplicate — same normalized title, not yet linked as the same game, not dismissed.
+	/// Kept as a cheap live count for a Library page banner; the actual groups (with full game
+	/// references) are built on demand via BuildPotentialDuplicateGroups when the review window opens.
+	/// </summary>
+	public int PotentialDuplicateGroupCount
+	{
+		get => _potentialDuplicateGroupCount;
+		private set
+		{
+			if (SetProperty(ref _potentialDuplicateGroupCount, value))
+			{
+				OnPropertyChanged(nameof(HasPotentialDuplicates));
+				OnPropertyChanged(nameof(PotentialDuplicateSummary));
+			}
+		}
+	}
+
+	public bool HasPotentialDuplicates => PotentialDuplicateGroupCount > 0;
+
+	public string PotentialDuplicateSummary => PotentialDuplicateGroupCount == 1
+		? "Cirra found 1 game that might be owned through more than one source."
+		: $"Cirra found {PotentialDuplicateGroupCount} games that might be owned through more than one source.";
+
+	public bool HasRecentlyImprovedGames => RecentlyImprovedGames.Count > 0;
+
 	public ObservableCollection<DashboardActivityEntry> RecentActivity { get; } = new ObservableCollection<DashboardActivityEntry>();
+
+	/// <summary>
+	/// Kinds worth surfacing to the user on Home's "Recent activity" feed. Deliberately
+	/// excludes internal/maintenance kinds (product.readiness, companion.*, library.backup/
+	/// export/restore) so the feed stays about what happened to their games, not app
+	/// housekeeping — keeps Home "public-safe" instead of turning into a diagnostics wall.
+	/// </summary>
+	private static readonly HashSet<string> HomeFeedKinds = new(StringComparer.OrdinalIgnoreCase)
+	{
+		"import.manual", "import.scan", "import.steam",
+		"metadata.apply", "metadata.batch", "metadata.refresh",
+		"achievements.sync", "achievements.local-scan",
+		"launch", "favorite.add", "favorite.remove",
+		"library.remove", "library.install-state", "library.repair", "library.recover", "library.link-duplicate", "session.external-detect"
+	};
+
+	/// <summary>Compact, filtered, display-ready view of RecentActivity for Home's activity feed.</summary>
+	public IReadOnlyList<ActivityFeedItemViewModel> HomeActivityFeed => RecentActivity
+		.Where(entry => HomeFeedKinds.Contains(entry.Kind))
+		.Take(8)
+		.Select(entry => new ActivityFeedItemViewModel
+		{
+			Kind = entry.Kind,
+			Detail = entry.Detail,
+			GameTitle = entry.GameTitle,
+			TimestampUtc = entry.TimestampUtc
+		})
+		.ToList();
+
+	public bool HasHomeActivityFeed => HomeActivityFeed.Count > 0;
 
 	public ObservableCollection<PlatformDashboardSummary> PlatformSummaries { get; } = new ObservableCollection<PlatformDashboardSummary>();
 
@@ -574,9 +856,13 @@ public sealed class MainViewModel : ViewModelBase
 
 	public IReadOnlyList<int> AchievementPollingChoices { get; } = Array.AsReadOnly(new int[6] { 15, 30, 45, 60, 90, 120 });
 
-	public IReadOnlyList<string> AppearanceThemeOptions { get; } = Array.AsReadOnly(new string[8] { "Neon Matrix", "Retro Glitch", "NieR Automata", "Wuthering Waves", "Blueberry Midnight", "Mint Cloud", "High Contrast", "Black Flash" }); // "CloudBerry Dark" parked — hidden from picker pending a visual overhaul, not deleted; still fully functional as ApplyAppearanceTheme()'s default/else case for any profile that already has it saved.
+	public IReadOnlyList<string> AppearanceThemeOptions { get; } = Array.AsReadOnly(new string[9] { "Cirra Core", "Signal Rain", "Arcade Static", "Archive Ivory", "Tidal Glass", "Midnight Observatory", "Verdant Glass", "High Contrast", "Impact Noir" });
 
 	public IReadOnlyList<string> AppearanceDensityOptions { get; } = Array.AsReadOnly(new string[3] { "Comfortable", "Compact", "Cinematic" });
+
+	public IReadOnlyList<string> EffectsQualityOptions { get; } = Array.AsReadOnly(new string[3] { "Off", "Efficient", "Full" });
+
+	public IReadOnlyList<string> DeviceKindOptions { get; } = Array.AsReadOnly(new string[3] { "Desktop", "Handheld", "LivingRoom" });
 
 	public IReadOnlyList<string> AudioProfileOptions { get; } = Array.AsReadOnly(new string[5] { "Subtle", "Balanced", "Cinematic", "Digital", "Theme Sync" });
 
@@ -591,6 +877,14 @@ public sealed class MainViewModel : ViewModelBase
 	});
 
 	public IReadOnlyList<int> HomeRotationChoices { get; } = Array.AsReadOnly(new int[6] { 0, 10, 18, 30, 45, 60 });
+
+	public IReadOnlyList<PlayWindowOptionViewModel> PlayWindowOptions { get; } = Array.AsReadOnly(new[]
+	{
+		new PlayWindowOptionViewModel(15, "15 min"),
+		new PlayWindowOptionViewModel(30, "30 min"),
+		new PlayWindowOptionViewModel(60, "1 hour"),
+		new PlayWindowOptionViewModel(0, "Open ended")
+	});
 
 	public IReadOnlyList<FilterOption> StatusFilters { get; } = Array.AsReadOnly(new FilterOption[5]
 	{
@@ -752,6 +1046,10 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			if ((value != null || _selectedGame == null || !Games.Contains(_selectedGame)) && SetProperty(ref _selectedGame, value, "SelectedGame"))
 			{
+				_bigPictureSpotlightGame = null;
+				GuidebookSearchResults.Clear();
+				OnPropertyChanged(nameof(HasGuidebookSearchResults));
+				GuidebookStatusMessage = "Attach a local PDF or search verified manual and guide archives.";
 				if (value != null && string.IsNullOrWhiteSpace(MetadataSearchText))
 				{
 					MetadataSearchText = value.Title;
@@ -766,9 +1064,49 @@ public sealed class MainViewModel : ViewModelBase
 				OnPropertyChanged("HasBigPictureHeroGame");
 				OnPropertyChanged("BigPictureHeroSummary");
 				OnPropertyChanged("BigPictureHeroContextLabel");
+				SaveContinuityStatusMessage = value?.HasSaveLocations == true
+					? "Save locations configured. Discover them or create a verified backup."
+					: "Add one save file or folder per line, then run discovery.";
+				RefreshSelectedLaunchPreflight();
+			}
+			else if (ReferenceEquals(value, _selectedGame))
+			{
+				ResetBigPictureSpotlight();
 			}
 		}
 	}
+
+	public LaunchPreflightResult? SelectedLaunchPreflight
+	{
+		get => _selectedLaunchPreflight;
+		private set
+		{
+			if (SetProperty(ref _selectedLaunchPreflight, value, nameof(SelectedLaunchPreflight)))
+			{
+				OnPropertyChanged(nameof(SelectedLaunchReadinessLabel));
+				OnPropertyChanged(nameof(SelectedLaunchReadinessDetail));
+				OnPropertyChanged(nameof(IsSelectedLaunchBlocked));
+			}
+		}
+	}
+
+	public string SelectedLaunchReadinessLabel => SelectedLaunchPreflight?.Summary ?? "Select a game";
+
+	public string SelectedLaunchReadinessDetail
+	{
+		get
+		{
+			if (SelectedLaunchPreflight == null)
+			{
+				return "Cirra checks files, launchers, and emulators before handing off.";
+			}
+
+			var issue = SelectedLaunchPreflight.Checks.FirstOrDefault(check => check.Readiness != LaunchReadiness.Ready);
+			return issue?.Detail ?? "Game files and launch dependencies are available.";
+		}
+	}
+
+	public bool IsSelectedLaunchBlocked => SelectedLaunchPreflight?.Readiness == LaunchReadiness.Blocked;
 
 	public ImportCandidateViewModel? SelectedCandidate
 	{
@@ -921,42 +1259,44 @@ public sealed class MainViewModel : ViewModelBase
 
 	public string ThemeBadgeLabel => AppearanceThemeKey switch
 	{
-		"CloudBerry Dark" => "Dark", 
-		"Neon Matrix" => "Matrix", 
-		"Retro Glitch" => "Glitch", 
-		"NieR Automata" => "NieR", 
-		"Wuthering Waves" => "Wuthering", 
-		"Blueberry Midnight" => "Blueberry", 
-		"Mint Cloud" => "Mint", 
-		"High Contrast" => "Contrast", 
-		"Black Flash" => "黒閃", 
-		_ => "Theme", 
+		"Cirra Core" => "Core",
+		"Signal Rain" => "Signal",
+		"Arcade Static" => "Arcade",
+		"Archive Ivory" => "Archive",
+		"Tidal Glass" => "Tidal",
+		"Midnight Observatory" => "Midnight",
+		"Verdant Glass" => "Verdant",
+		"High Contrast" => "Contrast",
+		"Impact Noir" => "Impact",
+		_ => "Theme",
 	};
 
 	public string ThemeMoodSummary => AppearanceThemeKey switch
 	{
-		"Neon Matrix" => "Dark glass, green code, tight contrast.", 
-		"Retro Glitch" => "Bold color, bright edges, arcade energy.", 
-		"NieR Automata" => "Parchment tones, quiet contrast, archive framing.", 
-		"Wuthering Waves" => "Cool glass, soft depth, strong artwork.", 
-		"Blueberry Midnight" => "Deep blue panels with crisp highlights.", 
-		"Mint Cloud" => "Fresh green surfaces with lighter contrast.", 
-		"High Contrast" => "Pure black, pure white, clear structure.", 
-		"Black Flash" => "Yuji black, blood-red impact, sharp white flash.", 
-		_ => "Balanced dark shell with clean accents.", 
+		"Cirra Core" => "Obsidian depth, ice focus, champagne milestones.",
+		"Signal Rain" => "Dark terminals, green signal, measured data motion.",
+		"Arcade Static" => "Electric color, CRT texture, cabinet energy.",
+		"Archive Ivory" => "Warm paper, quiet contrast, archival precision.",
+		"Tidal Glass" => "Cool glass, fluid light, spacious artwork.",
+		"Midnight Observatory" => "Deep navy, stellar traces, calm focus.",
+		"Verdant Glass" => "Botanical green, etched contours, soft lift.",
+		"High Contrast" => "Pure black, pure white, clear structure.",
+		"Impact Noir" => "Ink-black panels, red impact, sharp white recoil.",
+		_ => "Balanced dark shell with clean accents.",
 	};
 
 	public string ThemeMaterialSummary => AppearanceThemeKey switch
 	{
-		"NieR Automata" => "Paper, ink, and square utility panels.", 
-		"Wuthering Waves" => "Glass, mist, and layered character art.", 
-		"Neon Matrix" => "Code rain, phosphor glow, terminal lines.", 
-		"Retro Glitch" => "CRT color, bright edges, night-grid accents.", 
-		"Blueberry Midnight" => "Cool panels, deep gradients, light glow.", 
-		"Mint Cloud" => "Mint glass, dark teal surfaces, soft lift.", 
-		"High Contrast" => "Hard edges and stark contrast.", 
-		"Black Flash" => "Yuji panels, ink shadows, red Black Flash impact.", 
-		_ => "Dark panels with clean accent lighting.", 
+		"Cirra Core" => "Smoked mineral glass, titanium edges, quiet depth.",
+		"Archive Ivory" => "Paper, ink, and square utility panels.",
+		"Tidal Glass" => "Glass, mist, and layered wave fields.",
+		"Signal Rain" => "Code rain, phosphor glow, terminal lines.",
+		"Arcade Static" => "CRT color, bright edges, night-grid accents.",
+		"Midnight Observatory" => "Cool panels, orbit lines, restrained starlight.",
+		"Verdant Glass" => "Green glass, topographic lines, soft lift.",
+		"High Contrast" => "Hard edges and stark contrast.",
+		"Impact Noir" => "Dense ink, bright fracture lines, red impact planes.",
+		_ => "Dark panels with clean accent lighting.",
 	};
 
 	public string CurrentPageTitle => SelectedPrimaryPage switch
@@ -969,33 +1309,33 @@ public sealed class MainViewModel : ViewModelBase
 		5 => "Friends", 
 		6 => "Settings", 
 		7 => "Emulation Station", 
-		_ => "CloudBerry", 
+		_ => "Cirra",
 	};
 
 	public string CurrentPageSubtitle => SelectedPrimaryPage switch
 	{
-		0 => "Highlights, quick actions, and recent activity.", 
-		1 => (SelectedWorkspaceTab == 1) ? "Review imports before they land in the library." : "Browse, launch, rate, and clean up your collection.", 
-		2 => "Search, compare, and apply metadata.", 
-		3 => "Track unlocks, sync sources, and fill gaps.", 
-		4 => "Free streaming sources, saved sites, and picture-in-picture.", 
-		5 => "Watch who's online, add friends, and share your card.", 
-		6 => "Change themes, tools, profile, and update settings.", 
-		7 => "Detect, configure, and launch every emulator from one place.", 
-		_ => "Game library control center.", 
+		0 => "Your next game, recent progress, and the fastest ways to keep the library healthy.",
+		1 => (SelectedWorkspaceTab == 1) ? "Check new finds before they are added to your library." : "Find, launch, organize, and clean up every game you own.",
+		2 => "Fill in cover art, summaries, release info, and links without leaving Cirra.",
+		3 => "See progress, sync unlocks, and spot games worth finishing.",
+		4 => "Open saved video sites and keep a player close while you browse.",
+		5 => "Add friends, share your card, and see who is around to play.",
+		6 => "Tune appearance, profiles, tools, updates, and safety options.",
+		7 => "Set up emulators by platform and confirm what is ready to launch.",
+		_ => "Your game library control center.",
 	};
 
 	public string CurrentWorkspaceCallout => SelectedPrimaryPage switch
 	{
-		0 => "Pick a game, launch something, or run a scan.", 
-		1 => (SelectedWorkspaceTab == 1) ? $"{ReadyToImportCount} import(s) ready for review." : $"{FilteredGamesCount} title(s) in view. {MissingMetadataCount} still need metadata.", 
-		2 => HasMetadataResults ? $"{MetadataResults.Count} metadata result(s) ready to compare." : "Search for a title and compare sources before saving.", 
-		3 => $"{GamesWithAchievementsCount} title(s) are ready for achievement tracking.", 
-		4 => "Pick a saved site or search a free source to start watching.", 
-		5 => (Friends.Count == 0) ? "Bring in a friend by Cloud Code and keep their card close." : $"{FriendsOnlineCount} online out of {Friends.Count} linked friend(s).", 
-		6 => "Profiles, themes, tools, and updates live here.", 
-		7 => EmulatorMappingOverview, 
-		_ => "CloudBerry ready.", 
+		0 => HasGames ? "Choose a recommendation, continue a game, or run a cleanup pass when something feels off." : "Start with Scan Games Folder, or add one game manually if you want to try Cirra first.",
+		1 => (SelectedWorkspaceTab == 1) ? $"{ReadyToImportCount} ready to import after review." : $"{FilteredGamesCount} in view. {MissingMetadataCount} still need art or details.",
+		2 => HasMetadataResults ? $"{MetadataResults.Count} {Pluralize(MetadataResults.Count, "result", "results")} ready to compare." : "Pick a game or search a title, then save the best match.",
+		3 => $"{GamesWithAchievementsCount} achievement-ready {Pluralize(GamesWithAchievementsCount, "game", "games")}.",
+		4 => "Pick a saved site or search a supported source to start watching.",
+		5 => (Friends.Count == 0) ? "Add a friend by Cloud Code, or share your own card." : $"{FriendsOnlineCount} online out of {Friends.Count} linked {Pluralize(Friends.Count, "friend", "friends")}.",
+		6 => "Change how Cirra looks, updates, scans, and backs up your data.",
+		7 => EmulatorMappingOverview,
+		_ => "Cirra ready.",
 	};
 
 	public string FocusModeSummary
@@ -1080,7 +1420,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	public string ActiveFriendCode => BuildFriendCode();
 
-	public string ActiveFriendCodePreview => "Share " + ActiveProfileName + "'s CloudBerry card";
+	public string ActiveFriendCodePreview => "Share " + ActiveProfileName + "'s Cirra card";
 
 	public string ActiveProfileCloudCode => ActiveProfile?.CloudCode ?? "--------";
 
@@ -1203,6 +1543,12 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
+	public bool IsBigPictureLibraryGrid
+	{
+		get => _isBigPictureLibraryGrid;
+		set => SetProperty(ref _isBigPictureLibraryGrid, value, nameof(IsBigPictureLibraryGrid));
+	}
+
 	/// <summary>
 	/// Sort key for the BigPicture library tab shelves.
 	/// Values: "default", "az", "rating", "playtime", "recent"
@@ -1215,7 +1561,7 @@ public sealed class MainViewModel : ViewModelBase
 			var steamGames = _gameScanner.ReadInstalledSteamGames();
 			if (steamGames.Count == 0)
 			{
-				StatusMessage = "CloudBerry couldn't find any installed Steam games. Is Steam installed?";
+				StatusMessage = "Cirra couldn't find any installed Steam games. Is Steam installed?";
 				return;
 			}
 
@@ -1268,19 +1614,22 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				SelectedGame = firstAdded ?? Games.FirstOrDefault();
 				AppendRecentActivity("import.steam", firstAdded,
-					$"Imported {added} Steam game(s) into CloudBerry.");
-				await PersistAsync();
+					$"Imported {added} Steam {Pluralize(added, "game", "games")} into Cirra.");
+				await PersistWithHistoryAsync(new LibraryHistoryContext(
+					"import.steam",
+					$"Imported {added} Steam {Pluralize(added, "game", "games")}",
+					"Steam library import completed."));
 				RefreshDerivedState();
 			}
 
 			StatusMessage = added == 0
-				? $"All {steamGames.Count} Steam game(s) are already in your library."
+				? $"All {steamGames.Count} Steam {Pluralize(steamGames.Count, "game", "games")} are already in your library."
 				: $"Imported {added} Steam game{(added == 1 ? "" : "s")}. {skipped} already existed.";
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("import-steam", ex);
-			StatusMessage = "CloudBerry couldn't complete the Steam import.";
+			StatusMessage = "Cirra couldn't complete the Steam import.";
 		}
 		finally
 		{
@@ -1310,14 +1659,17 @@ public sealed class MainViewModel : ViewModelBase
 		try
 		{
 			SelectedGame.PlaytimeMinutes = Math.Max(0, totalMinutes);
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"session.playtime-edit",
+				"Adjusted playtime for " + SelectedGame.Title,
+				"Set tracked playtime to " + SelectedGame.PlaytimeLabel + "."));
 			RefreshDerivedState();
 			StatusMessage = $"Set playtime for {SelectedGame.Title} to {SelectedGame.PlaytimeLabel}.";
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("set-playtime", ex);
-			StatusMessage = "CloudBerry couldn't save the playtime change.";
+			StatusMessage = "Cirra couldn't save the playtime change.";
 		}
 	}
 
@@ -1789,9 +2141,14 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		set
 		{
-			SetProperty(ref _statusMessage, value, "StatusMessage");
+			if (SetProperty(ref _statusMessage, value, "StatusMessage"))
+			{
+				OnPropertyChanged(nameof(StatusBarMessage));
+			}
 		}
 	}
+
+	public string StatusBarMessage => ShortenForStatusBar(StatusMessage, 118);
 
 	public string MetadataStatusMessage
 	{
@@ -1813,7 +2170,11 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		set
 		{
-			SetProperty(ref _isBusy, value, "IsBusy");
+			if (SetProperty(ref _isBusy, value, "IsBusy"))
+			{
+				OnPropertyChanged(nameof(IsShellBusy));
+				OnPropertyChanged(nameof(ShellBusyLabel));
+			}
 		}
 	}
 
@@ -1825,8 +2186,29 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		set
 		{
-			SetProperty(ref _isMetadataBusy, value, "IsMetadataBusy");
+			if (SetProperty(ref _isMetadataBusy, value, "IsMetadataBusy"))
+			{
+				OnPropertyChanged(nameof(IsShellBusy));
+				OnPropertyChanged(nameof(ShellBusyLabel));
+			}
 		}
+	}
+
+	/// <summary>True once a "Fill Missing"/retry batch has finished with at least one failed game, so the Retry Failed action has something to do.</summary>
+	public bool HasFailedMetadataTargets => _lastFailedMetadataTargets.Count > 0;
+
+	public int FailedMetadataTargetCount => _lastFailedMetadataTargets.Count;
+
+	/// <summary>
+	/// Advanced batch option: when true, "Fill Missing"/"Retry Failed" overwrite fields that
+	/// already have a value with the freshly downloaded ones (PreferIncoming), matching the same
+	/// merge behavior as the per-game "Refresh Metadata" action. When false (default), the batch
+	/// only fills gaps and never touches a field the user or a prior download already set.
+	/// </summary>
+	public bool ReplaceExistingMetadata
+	{
+		get => _replaceExistingMetadata;
+		set => SetProperty(ref _replaceExistingMetadata, value, "ReplaceExistingMetadata");
 	}
 
 	public bool IsAchievementBusy
@@ -1837,9 +2219,21 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		set
 		{
-			SetProperty(ref _isAchievementBusy, value, "IsAchievementBusy");
+			if (SetProperty(ref _isAchievementBusy, value, "IsAchievementBusy"))
+			{
+				OnPropertyChanged(nameof(IsShellBusy));
+				OnPropertyChanged(nameof(ShellBusyLabel));
+			}
 		}
 	}
+
+	public bool IsShellBusy => IsBusy || IsMetadataBusy || IsAchievementBusy || IsGuidebookBusy || IsSaveContinuityBusy;
+
+	public string ShellBusyLabel => IsGuidebookBusy ? "Finding guides"
+		: IsSaveContinuityBusy ? "Protecting saves"
+		: IsMetadataBusy ? "Refreshing metadata"
+		: IsAchievementBusy ? "Syncing achievements"
+		: "Working";
 
 	public string AppearanceThemeKey
 	{
@@ -1893,7 +2287,7 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		set
 		{
-			StartupView = (value ? "Cloudscape" : "CloudBerry");
+			StartupView = (value ? "Cloudscape" : "Cirra");
 			OnPropertyChanged("StartupViewIsCloudscape");
 		}
 	}
@@ -1947,15 +2341,34 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
+	public string EffectsQuality
+	{
+		get => _effectsQuality;
+		set
+		{
+			string normalized = EffectsQualityOptions.Contains(value) ? value : "Full";
+			if (SetProperty(ref _effectsQuality, normalized, nameof(EffectsQuality)))
+			{
+				if (string.Equals(normalized, "Off", StringComparison.OrdinalIgnoreCase))
+				{
+					VisualEffectsEnabled = false;
+				}
+				OnPropertyChanged(nameof(EffectiveVisualEffectIntensity));
+				OnPropertyChanged(nameof(PerformancePostureLabel));
+			}
+		}
+	}
+
 	public double EffectiveVisualEffectIntensity
 	{
 		get
 		{
-			if (!VisualEffectsEnabled)
+			if (!VisualEffectsEnabled || string.Equals(EffectsQuality, "Off", StringComparison.OrdinalIgnoreCase))
 			{
 				return 0.0;
 			}
-			return Math.Clamp(VisualEffectIntensity * _runtimeVisualEffectScale, 0.18, 1.6);
+			double qualityScale = string.Equals(EffectsQuality, "Efficient", StringComparison.OrdinalIgnoreCase) ? 0.72 : 1.0;
+			return Math.Clamp(VisualEffectIntensity * _runtimeVisualEffectScale * qualityScale, 0.18, 1.6);
 		}
 	}
 
@@ -1965,9 +2378,13 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		get
 		{
-			if (!VisualEffectsEnabled)
+			if (!VisualEffectsEnabled || string.Equals(EffectsQuality, "Off", StringComparison.OrdinalIgnoreCase))
 			{
 				return "FX off";
+			}
+			if (string.Equals(EffectsQuality, "Efficient", StringComparison.OrdinalIgnoreCase))
+			{
+				return "Efficient FX";
 			}
 			if (_isGamePerformanceMode)
 			{
@@ -2086,6 +2503,25 @@ public sealed class MainViewModel : ViewModelBase
 	/// <summary>Convenience inverse of <see cref="IsLibraryGridView"/> for XAML visibility bindings.</summary>
 	public bool IsLibraryListView => !IsLibraryGridView;
 
+	/// <summary>
+	/// True when the Library toolbar's secondary row (platform/achievement filters, Pick For Me,
+	/// Reset, Clean Missing, saved presets, and the stat-tile grid) is expanded. Collapsed by
+	/// default so the page opens on just search + sort + the Collections lane — the toolbar was
+	/// four stacked rows plus a 3x2 stat grid before any games were even visible, which is exactly
+	/// the kind of "too much at once" clutter a cleaner Library page needs to cut down on.
+	/// </summary>
+	public bool IsLibraryToolsExpanded
+	{
+		get => _libraryToolsExpanded;
+		set
+		{
+			if (SetProperty(ref _libraryToolsExpanded, value, "IsLibraryToolsExpanded"))
+			{
+				SchedulePersist();
+			}
+		}
+	}
+
 	/// <summary>Tile size options offered in the Library grid-view toolbar.</summary>
 	public IReadOnlyList<string> LibraryGridTileSizes { get; } = Array.AsReadOnly(new[] { "Compact", "Normal", "Large" });
 
@@ -2134,6 +2570,32 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
+	/// <summary>
+	/// When on, CloudBerry periodically checks whether any library game's own executable is already
+	/// running under a process it didn't start (Steam's own launcher, a desktop shortcut, a manual
+	/// double-click) and starts tracking that session exactly as if Play had been clicked. Off by
+	/// default — see CloudBerrySettings.EnableExternalPlaytimeTracking for the full reasoning.
+	/// </summary>
+	public bool EnableExternalPlaytimeTracking
+	{
+		get => _enableExternalPlaytimeTracking;
+		set
+		{
+			if (SetProperty(ref _enableExternalPlaytimeTracking, value, "EnableExternalPlaytimeTracking"))
+			{
+				if (value)
+				{
+					StartExternalProcessMonitoringIfEnabled();
+				}
+				else
+				{
+					StopExternalProcessMonitoring();
+				}
+				SchedulePersist();
+			}
+		}
+	}
+
 	/// <summary>True while the full-screen ambient showcase is currently taking over Cloudscape.</summary>
 	public bool IsAttractModeActive
 	{
@@ -2155,7 +2617,7 @@ public sealed class MainViewModel : ViewModelBase
 	}
 
 	public string AttractModeContextLabel => AttractModeGame is null
-		? "CloudBerry Cloudscape"
+		? "Cirra Cloudscape"
 		: $"{AttractModeGame.Platform}  •  {AttractModeGame.SourceKind}";
 
 	/// <summary>
@@ -2601,7 +3063,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	public bool HasDetectedEmulatorMappings => DetectedEmulatorMappings.Count > 0;
 
-	public string EmulatorMappingOverview => $"{GetConfiguredEmulatorMappingCount()} platform mapping(s) configured";
+	public string EmulatorMappingOverview => $"{GetConfiguredEmulatorMappingCount()} {Pluralize(GetConfiguredEmulatorMappingCount(), "platform mapping", "platform mappings")} configured";
 
 	public ObservableCollection<EmulatorPlatformCardViewModel> EmulatorPlatformCards { get; } = new ObservableCollection<EmulatorPlatformCardViewModel>();
 
@@ -2617,8 +3079,8 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		get
 		{
-			RetroArchDetectionResult retroArchDetectionResult = _retroArchDetectionResult;
-			if (retroArchDetectionResult == (RetroArchDetectionResult)null)
+			RetroArchDetectionResult? retroArchDetectionResult = _retroArchDetectionResult;
+			if (retroArchDetectionResult is null)
 			{
 				return false;
 			}
@@ -2803,7 +3265,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			if (_cachedDominantPlatformCount > 0)
 			{
-				return $"{_cachedDominantPlatform} leads with {_cachedDominantPlatformCount} title(s)";
+				return $"{_cachedDominantPlatform} leads with {_cachedDominantPlatformCount} {Pluralize(_cachedDominantPlatformCount, "game", "games")}";
 			}
 			return "No platform identity yet";
 		}
@@ -2928,7 +3390,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			if (_dashboardState.Insights.GamerScoreTotal > 0)
 			{
-				return $"{_dashboardState.Insights.GamerScoreEarned:N0}/{_dashboardState.Insights.GamerScoreTotal:N0} G across {_dashboardState.Insights.SyncedAchievementGames} synced title(s)";
+				return $"{_dashboardState.Insights.GamerScoreEarned:N0}/{_dashboardState.Insights.GamerScoreTotal:N0} G across {_dashboardState.Insights.SyncedAchievementGames} synced {Pluralize(_dashboardState.Insights.SyncedAchievementGames, "game", "games")}";
 			}
 			return "No gamer score context yet";
 		}
@@ -3081,9 +3543,9 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			if (!HasGames)
 			{
-				return "CloudBerry is empty right now. Scan a folder or add a launch target to get your library started.";
+				return "No games yet. Scan a games folder, import Steam, or add one game manually to get started.";
 			}
-			return $"{TotalGames} titles organized, {InstalledCount} installed, {RunningCount} running, {MissingMetadataCount} still needing metadata. {DominantPlatformLabel}.";
+			return $"{TotalGames} games organized, {InstalledCount} installed, {RunningCount} running, {MissingMetadataCount} still need art or details. {DominantPlatformLabel}.";
 		}
 	}
 
@@ -3125,11 +3587,89 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		get
 		{
-			if (ProductReadinessScore > 0)
+			if (HasProductChecks)
 			{
 				return $"{ProductReadinessScore}% ready";
 			}
 			return "Not checked";
+		}
+	}
+
+	public string ProductReadinessLastCheckedLabel => _productReadinessCheckedAt.HasValue
+		? $"Checked {_productReadinessCheckedAt.Value:g}"
+		: "Not checked yet";
+
+	private ProductCheckViewModel? TopProductReadinessIssue =>
+		ProductChecks.FirstOrDefault(check => check.IsBlocking) ?? ProductChecks.FirstOrDefault(check => check.IsWarning);
+
+	public bool HasLibraryHealthAction => TopProductReadinessIssue != null;
+
+	public string LibraryHealthActionKey => TopProductReadinessIssue?.Title ?? string.Empty;
+
+	public string LibraryHealthActionLabel => LibraryHealthActionKey switch
+	{
+		"Library" => "Add Games",
+		"Game files" => "Clean Missing",
+		"Duplicates" => "Review Duplicates",
+		"Game details" => "Fill Details",
+		"Artwork" => "Fill Artwork",
+		"Achievements" => "Sync Achievements",
+		"Emulators" => "Map Emulators",
+		"Metadata sources" => "Review Sources",
+		"Storage" => "Open Storage",
+		_ => "Fix Next Issue"
+	};
+
+	public string LibraryHealthHeadline
+	{
+		get
+		{
+			if (!HasProductChecks)
+			{
+				return "Run a health check";
+			}
+
+			int actionCount = ProductChecks.Count(check => check.IsBlocking);
+			int warningCount = ProductChecks.Count(check => check.IsWarning);
+			if (actionCount > 0)
+			{
+				return $"{actionCount} {Pluralize(actionCount, "fix", "fixes")} need attention";
+			}
+
+			if (warningCount > 0)
+			{
+				return $"{warningCount} {Pluralize(warningCount, "polish warning", "polish warnings")}";
+			}
+
+			return "Library looks clean";
+		}
+	}
+
+	public string LibraryHealthNextStep
+	{
+		get
+		{
+			ProductCheckViewModel? next = TopProductReadinessIssue;
+			if (next == null)
+			{
+				return HasProductChecks
+					? "Create a backup before bigger edits, then keep playing."
+					: "Checks paths, duplicates, art, achievements, emulators, providers, and storage.";
+			}
+
+			return next.Title switch
+			{
+				"Library" => "Add games first, then Cirra can keep the library healthy.",
+				"Game files" => "Some games moved or disappeared. Clean missing games or edit their paths.",
+				"Duplicates" => "Duplicate game files found. Review before the library gets noisy.",
+				"Game details" => "Some games need summaries or store details.",
+				"Artwork" => "Some games need cover or background art.",
+				"Achievements" => "Some games need their first achievement sync.",
+				"Emulators" => "Some ROMs need an emulator before launch.",
+				"Metadata sources" => "IGDB is not configured; public metadata sources will be used.",
+				"Storage" => "Cirra could not confirm where the library is saved.",
+				_ => $"{next.Title}: {next.Status}."
+			};
 		}
 	}
 
@@ -3157,6 +3697,23 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
+	/// <summary>
+	/// Dedicated status line for the Settings → Library Storage panel, separate from
+	/// ProductReadinessDetail so an unrelated health-check run can't stomp on "where did my backup
+	/// go" messaging a few seconds after the player created one.
+	/// </summary>
+	public string LibraryBackupStatusMessage
+	{
+		get
+		{
+			return _libraryBackupStatusMessage;
+		}
+		private set
+		{
+			SetProperty(ref _libraryBackupStatusMessage, value, "LibraryBackupStatusMessage");
+		}
+	}
+
 	public bool HasProductChecks => ProductChecks.Count > 0;
 
 	public string ImportSummary
@@ -3179,7 +3736,7 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				return "Search by game title to pull down descriptions, release dates, ratings, genres, and artwork.";
 			}
-			return $"{MetadataResults.Count} metadata matches loaded from {SelectedMetadataProvider.DisplayName}.";
+			return $"{MetadataResults.Count} {Pluralize(MetadataResults.Count, "metadata match", "metadata matches")} loaded from {SelectedMetadataProvider.DisplayName}.";
 		}
 	}
 
@@ -3212,7 +3769,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	public bool CanSyncSelectedGameAchievements => SelectedGame != null;
 
-	public string AchievementTrackingSummary => "Real-time unlock detection via FileSystemWatcher (sub-second). " + $"Polling fallback every {AchievementPollingSeconds}s for emulators with slow file writes. " + "RetroAchievements, RPCS3 trophies, and local achievement files all supported.";
+	public string AchievementTrackingSummary => $"Detects unlocks instantly when it can, otherwise checks every {AchievementPollingSeconds}s. Works with RetroAchievements, RPCS3, and local save files.";
 
 	public bool HasRecentActivity => RecentActivity.Count > 0;
 
@@ -3224,7 +3781,7 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				return "Recent activity will appear here as you import, launch, and manage games.";
 			}
-			return $"{RecentActivity.Count} recent activity event(s) staged for Home and Cloudscape.";
+			return $"{RecentActivity.Count} recent {Pluralize(RecentActivity.Count, "activity event", "activity events")} ready for Home and Cloudscape.";
 		}
 	}
 
@@ -3338,6 +3895,33 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
+	public int SelectedPlayWindowMinutes
+	{
+		get => _selectedPlayWindowMinutes;
+		set
+		{
+			int normalized = value is 0 or 15 or 30 or 60 ? value : 30;
+			if (SetProperty(ref _selectedPlayWindowMinutes, normalized, nameof(SelectedPlayWindowMinutes)))
+			{
+				RefreshPlayWindowRecommendations();
+				RebuildBigPictureHomeShelves();
+				OnPropertyChanged(nameof(PlayWindowTitle));
+				OnPropertyChanged(nameof(PlayWindowSummary));
+			}
+		}
+	}
+
+	public bool HasPlayWindowRecommendations => PlayWindowRecommendations.Count > 0;
+
+	public PlayWindowRecommendationViewModel? PlayWindowPrimaryRecommendation => PlayWindowRecommendations.FirstOrDefault();
+
+	public string PlayWindowTitle => SelectedPlayWindowMinutes == 0
+		? "Open-ended session"
+		: $"A strong fit for {SelectedPlayWindowMinutes} minutes";
+
+	public string PlayWindowSummary => PlayWindowPrimaryRecommendation?.Reason
+		?? "Cirra will find a time-friendly match once an installed game is ready.";
+
 	public string StorageLocation => _libraryStore.FilePath;
 
 	public string StorageBackupLocation => _libraryStore.BackupDirectory;
@@ -3356,7 +3940,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	public string DiagnosticsFolderPath => Path.GetDirectoryName(_diagnostics.LogPath) ?? ".";
 
-	public string LocalUpdatePackageDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CloudBerry", "updates");
+	public string LocalUpdatePackageDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cirra", "updates");
 
 	public string LocalUpdatePackagePath => ResolveLocalUpdatePackagePath();
 
@@ -3401,6 +3985,19 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				OnPropertyChanged("UpdateWorkflowSummary");
 			}
+		}
+	}
+
+	/// <summary>Settings toggle for <see cref="Cirra.Core.Models.EmulatorSettings.EnableEmbeddedPlayForRetroArch"/> — turning it off just skips the reparenting attempt on future launches; it never affects whether a game runs.</summary>
+	public bool EnableEmbeddedPlayForRetroArch
+	{
+		get
+		{
+			return _enableEmbeddedPlayForRetroArch;
+		}
+		set
+		{
+			SetProperty(ref _enableEmbeddedPlayForRetroArch, value, "EnableEmbeddedPlayForRetroArch");
 		}
 	}
 
@@ -3611,7 +4208,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			if (!HasLocalUpdatePackage)
 			{
-				return "CloudBerry stores downloaded updates in " + LocalUpdatePackageDirectory + ".";
+				return "Cirra stores downloaded updates in " + LocalUpdatePackageDirectory + ".";
 			}
 			return "Ready to install from " + LocalUpdatePackagePath;
 		}
@@ -3625,15 +4222,15 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				if (!AutoDownloadUpdates)
 				{
-					return "CloudBerry can check for updates automatically and stage them when you are ready.";
+					return "Cirra can check for updates automatically and stage them when you are ready.";
 				}
-				return "CloudBerry checks the update feed, downloads newer builds in the background, and stages them for a clean handoff.";
+				return "Cirra checks the update feed, downloads newer builds in the background, and stages them for a clean handoff.";
 			}
 			if (!InstallUpdatesOnExit)
 			{
 				return "A downloaded update is staged. You can install it now or keep it ready for later.";
 			}
-			return "The next downloaded update can install quietly when you close CloudBerry.";
+			return "The next downloaded update can install quietly when you close Cirra.";
 		}
 	}
 
@@ -3714,7 +4311,7 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				return "No companion runtimes detected yet.";
 			}
-			return $"{num}/{CompanionTools.Count} companion runtime(s) ready.";
+			return $"{num}/{CompanionTools.Count} optional {Pluralize(CompanionTools.Count, "tool", "tools")} ready.";
 		}
 	}
 
@@ -3818,7 +4415,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private void RefreshBigPictureLibraryCategories()
 	{
-		string previousKey = SelectedBigPictureLibraryCategory?.Key;
+		string? previousKey = SelectedBigPictureLibraryCategory?.Key;
 		BigPictureLibraryCategories.Clear();
 		foreach (CollectionOption item in BuildBigPictureLibraryCategories())
 		{
@@ -3833,7 +4430,7 @@ public sealed class MainViewModel : ViewModelBase
 	/// <summary>A5: rebuilds the platform tile list for the Cloudscape Emulation tab from the current ROM set.</summary>
 	private void RefreshBigPictureEmulationPlatforms()
 	{
-		string previousKey = SelectedBigPictureEmulationPlatform?.Key;
+		string? previousKey = SelectedBigPictureEmulationPlatform?.Key;
 		BigPictureEmulationPlatforms.Clear();
 		foreach (CollectionOption item in BuildBigPictureEmulationPlatforms())
 		{
@@ -3872,13 +4469,13 @@ public sealed class MainViewModel : ViewModelBase
 	/// <summary>A5: shelves for the Cloudscape Emulation tab — selected platform, titles needing a core, and recently added ROMs.</summary>
 	private void RebuildBigPictureEmulationShelves()
 	{
-		CollectionOption selectedPlatform = SelectedBigPictureEmulationPlatform;
+		CollectionOption? selectedPlatform = SelectedBigPictureEmulationPlatform;
 		string platformKey = selectedPlatform?.Key ?? "all";
 		IEnumerable<GameEntryViewModel> platformGames = (from game in Games
 			where game.IsRom && (platformKey == "all" || game.Platform.Equals(platformKey.StartsWith("platform:") ? platformKey.Substring("platform:".Length) : platformKey, StringComparison.OrdinalIgnoreCase))
 			orderby game.IsRunning descending, game.LastPlayedOn ?? DateTime.MinValue descending, game.Title
 			select game);
-		ReplaceShelves(BigPictureEmulationShelves, new BigPictureShelfViewModel[3]
+		ReplaceShelves(BigPictureEmulationShelves, new BigPictureShelfViewModel?[3]
 		{
 			CreateShelf(selectedPlatform?.Title ?? "All ROMs", selectedPlatform?.Subtitle ?? "Every emulated title in your library", platformGames),
 			CreateShelf("Needs a core", "ROMs with no emulator resolved yet — set one up in Emulation Station", from game in Games
@@ -3898,7 +4495,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			Key = "all",
 			Title = "All Games",
-			Subtitle = "Everything CloudBerry knows about",
+			Subtitle = "Everything Cirra knows about",
 			Count = Games.Count
 		};
 		yield return new CollectionOption
@@ -3961,6 +4558,14 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		ObservableCollection<BigPictureShelfViewModel> bigPictureHomeShelves = BigPictureHomeShelves;
 		List<BigPictureShelfViewModel> list = new List<BigPictureShelfViewModel>();
+		var playWindowGames = PlayWindowRecommendations.Select(item => item.Game);
+		string playWindowShelfTitle = SelectedPlayWindowMinutes == 0
+			? "Open-ended picks"
+			: $"Fits {SelectedPlayWindowMinutes} minutes";
+		if (CreateShelf(playWindowShelfTitle, PlayWindowSummary, playWindowGames) is { } playWindowShelf)
+		{
+			list.Add(playWindowShelf);
+		}
 		IEnumerable<GameEntryViewModel> enumerable = ((ContinuePlayingGame == null) ? ((IEnumerable<GameEntryViewModel>)Array.Empty<GameEntryViewModel>()) : ((IEnumerable<GameEntryViewModel>)new GameEntryViewModel[1] { ContinuePlayingGame }));
 		IEnumerable<GameEntryViewModel> games = DistinctGames(enumerable, from game in Games
 			where game.IsRunning
@@ -3969,24 +4574,24 @@ public sealed class MainViewModel : ViewModelBase
 			where game.LastPlayedOn.HasValue
 			orderby game.LastPlayedOn ?? DateTime.MinValue descending
 			select game);
-		list.Add(CreateShelf("Continue playing", "Recent sessions and in-progress games", games));
+		AddShelfIfPresent(list, CreateShelf("Continue playing", "Recent sessions and in-progress games", games));
 		IEnumerable<GameEntryViewModel> enumerable2 = ((RecommendedGame == null) ? ((IEnumerable<GameEntryViewModel>)Array.Empty<GameEntryViewModel>()) : ((IEnumerable<GameEntryViewModel>)new GameEntryViewModel[1] { RecommendedGame }));
 		IEnumerable<GameEntryViewModel> enumerable3 = ((RandomBacklogGame == null) ? ((IEnumerable<GameEntryViewModel>)Array.Empty<GameEntryViewModel>()) : ((IEnumerable<GameEntryViewModel>)new GameEntryViewModel[1] { RandomBacklogGame }));
 		IEnumerable<GameEntryViewModel> games2 = DistinctGames(enumerable2, enumerable3, from game in Games
 			where game.IsInstalled && !game.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)
 			orderby game.IsFavorite descending, game.CriticRating ?? game.CommunityRating.GetValueOrDefault() descending, game.Title
 			select game);
-		list.Add(CreateShelf("Tonight's picks", "Good games to launch right now.", games2));
+		AddShelfIfPresent(list, CreateShelf("Tonight's picks", "Good games to launch right now.", games2));
 		IOrderedEnumerable<GameEntryViewModel> games3 = from game in Games
 			where game.IsFavorite
 			orderby game.IsRunning descending, game.LastPlayedOn ?? DateTime.MinValue descending, game.Title
 			select game;
-		list.Add(CreateShelf("Favorites", "Pinned titles for fast couch-mode access", games3));
+		AddShelfIfPresent(list, CreateShelf("Favorites", "Pinned titles for fast couch-mode access", games3));
 		IOrderedEnumerable<GameEntryViewModel> games4 = from game in Games
 			where (game.CriticRating ?? game.CommunityRating.GetValueOrDefault()) >= 7.5 && !game.NeedsMetadataRefresh
 			orderby game.CriticRating ?? game.CommunityRating.GetValueOrDefault() descending, game.IsFavorite descending, game.Title
 			select game;
-		list.Add(CreateShelf("Top Rated", "Highest-rated titles in your library", games4));
+		AddShelfIfPresent(list, CreateShelf("Top Rated", "Highest-rated titles in your library", games4));
 		foreach (IGrouping<string, (string, GameEntryViewModel)> item in (from g in (from pair in Games.Where((GameEntryViewModel game) => game.HasGenres).SelectMany((GameEntryViewModel game) => game.GenreList.Select((string g) => (Genre: NormalizeToBroadGenre(g), Game: game)))
 				where !string.IsNullOrEmpty(pair.Genre)
 				select pair).GroupBy<(string, GameEntryViewModel), string>(((string Genre, GameEntryViewModel Game) pair) => pair.Genre, StringComparer.OrdinalIgnoreCase)
@@ -3998,9 +4603,9 @@ public sealed class MainViewModel : ViewModelBase
 				orderby game.IsFavorite descending, game.CriticRating ?? game.CommunityRating.GetValueOrDefault() descending, game.Title
 				select game;
 			int value = item.Select<(string, GameEntryViewModel), Guid>(((string Genre, GameEntryViewModel Game) p) => p.Game.Id).Distinct().Count();
-			list.Add(CreateShelf(item.Key, $"{value} titles in your library", games5));
+			AddShelfIfPresent(list, CreateShelf(item.Key, $"{value} titles in your library", games5));
 		}
-		list.Add(CreateShelf("All games", "Everything CloudBerry has ready to browse", from game in Games
+		AddShelfIfPresent(list, CreateShelf("All games", "Everything Cirra has ready to browse", from game in Games
 			orderby game.IsRunning descending, game.IsFavorite descending,
 				   game.IsInstalled descending,
 				   game.LastPlayedOn ?? DateTime.MinValue descending,
@@ -4068,11 +4673,11 @@ public sealed class MainViewModel : ViewModelBase
 
 	private void RebuildBigPictureLibraryShelves()
 	{
-		CollectionOption selectedBigPictureLibraryCategory = SelectedBigPictureLibraryCategory;
+		CollectionOption? selectedBigPictureLibraryCategory = SelectedBigPictureLibraryCategory;
 		IReadOnlyList<GameEntryViewModel> rawGames = BuildBigPictureCategoryGames(selectedBigPictureLibraryCategory?.Key ?? "all");
 
 		// Apply user-selected sort to the primary shelf
-		IEnumerable<GameEntryViewModel> games = _bigPictureLibrarySortKey switch
+		IEnumerable<GameEntryViewModel> sortedGames = _bigPictureLibrarySortKey switch
 		{
 			"az"       => rawGames.OrderBy(g => g.Title),
 			"rating"   => rawGames.OrderByDescending(g => g.CriticRating ?? g.CommunityRating.GetValueOrDefault()).ThenBy(g => g.Title),
@@ -4080,7 +4685,13 @@ public sealed class MainViewModel : ViewModelBase
 			"recent"   => rawGames.OrderByDescending(g => g.LastPlayedOn ?? DateTime.MinValue).ThenBy(g => g.Title),
 			_          => rawGames,
 		};
-		ReplaceShelves(BigPictureLibraryShelves, new BigPictureShelfViewModel[4]
+		IReadOnlyList<GameEntryViewModel> games = sortedGames.ToList();
+		ReplaceGames(BigPictureLibraryGridGames, games);
+		if (games.Count > 0 && (SelectedGame is null || !games.Contains(SelectedGame)))
+		{
+			SelectedGame = games[0];
+		}
+		ReplaceShelves(BigPictureLibraryShelves, new BigPictureShelfViewModel?[4]
 		{
 			CreateShelf(selectedBigPictureLibraryCategory?.Title ?? "All Games", selectedBigPictureLibraryCategory?.Subtitle ?? "Everything in your library", games),
 			CreateShelf("Top rated", "High-review titles with art and metadata already in shape", from game in Games
@@ -4100,7 +4711,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private void RebuildBigPictureAchievementShelves()
 	{
-		ReplaceShelves(BigPictureAchievementShelves, new BigPictureShelfViewModel[4]
+		ReplaceShelves(BigPictureAchievementShelves, new BigPictureShelfViewModel?[4]
 		{
 			CreateShelf("In progress", "Games with active achievement progress", from game in Games
 				where game.HasAchievements && game.AchievementsUnlockedCount > 0 && game.AchievementsUnlockedCount < game.AchievementCount
@@ -4175,6 +4786,14 @@ public sealed class MainViewModel : ViewModelBase
 		return null;
 	}
 
+	private static void AddShelfIfPresent(List<BigPictureShelfViewModel> shelves, BigPictureShelfViewModel? shelf)
+	{
+		if (shelf is not null)
+		{
+			shelves.Add(shelf);
+		}
+	}
+
 	private static IEnumerable<GameEntryViewModel> DistinctGames(params IEnumerable<GameEntryViewModel>[] groups)
 	{
 		return (from game in groups.SelectMany((IEnumerable<GameEntryViewModel> @group) => @group)
@@ -4191,8 +4810,17 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
+	private static void ReplaceGames(ObservableCollection<GameEntryViewModel> target, IEnumerable<GameEntryViewModel> games)
+	{
+		target.Clear();
+		foreach (GameEntryViewModel game in games)
+		{
+			target.Add(game);
+		}
+	}
+
 	public MainViewModel()
-		: this(new LibraryStore((string)null), new GameScanner(), new MetadataProviderRegistry((HttpClient)null), new AchievementProviderRegistry((HttpClient)null), new LocalAchievementScanner(), new GameLauncher(), new MediaCacheService((HttpClient)null, (string)null), new ShellNavigationService(), new GameMetadataMatchSelector(), new SteamAppIdDetector(), new SteamAppIdResolver((HttpClient)null), new RetroArchCoreDetector(), new EmulatorDiscoveryService(), new WebImageSearchService((HttpClient)null), new CompanionRuntimeService(), new AppDiagnostics((string)null), new CloudBerrySocialService((HttpClient)null), new CloudBerryUpdateService((HttpClient)null))
+		: this(new LibraryStore(), new GameScanner(), new MetadataProviderRegistry(), new AchievementProviderRegistry(), new LocalAchievementScanner(), new GameLauncher(), new MediaCacheService(), new ShellNavigationService(), new GameMetadataMatchSelector(), new SteamAppIdDetector(), new SteamAppIdResolver(), new RetroArchCoreDetector(), new EmulatorDiscoveryService(), new WebImageSearchService(), new CompanionRuntimeService(), new AppDiagnostics(), new CloudBerrySocialService(), new CloudBerryUpdateService())
 	{
 	}//IL_0002: Unknown result type (might be due to invalid IL or missing references)
 	//IL_0007: Unknown result type (might be due to invalid IL or missing references)
@@ -4247,6 +4875,9 @@ public sealed class MainViewModel : ViewModelBase
 		//IL_0a6f: Unknown result type (might be due to invalid IL or missing references)
 		//IL_0a85: Expected O, but got Unknown
 		_libraryStore = libraryStore;
+		string libraryDirectory = Path.GetDirectoryName(libraryStore.FilePath)
+			?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+		_saveContinuityService = new SaveContinuityService(Path.Combine(libraryDirectory, "save-backups"));
 		_gameScanner = gameScanner;
 		_metadataProviderRegistry = metadataProviderRegistry;
 		_achievementProviderRegistry = achievementProviderRegistry;
@@ -4264,9 +4895,10 @@ public sealed class MainViewModel : ViewModelBase
 		_diagnostics = diagnostics;
 		_socialService = socialService;
 		_updateService = updateService;
+		_activityCenter.Changed += OnActivityOperationChanged;
 		LibraryView = CollectionViewSource.GetDefaultView(Games);
 		LibraryView.Filter = FilterGame;
-		SortOptions = Array.AsReadOnly(new string[8] { "Recently added", "Title A-Z", "Last played", "Most played", "Critic rating", "My rating", "Achievement completion", "Highest confidence" });
+		SortOptions = Array.AsReadOnly(new string[11] { "Recently added", "Title A-Z", "Title Z-A", "Last played", "Most played", "Critic rating", "My rating", "Achievement completion", "Highest confidence", "Release date", "Platform" });
 		MetadataProviders = _metadataProviderRegistry.Providers;
 		AchievementProviders = _achievementProviderRegistry.Providers;
 		_refreshDebounce = new DispatcherTimer((DispatcherPriority)4)
@@ -4297,18 +4929,25 @@ public sealed class MainViewModel : ViewModelBase
 			ReportStartup(progress, 0.12, "Opening your local library", "Loading from " + StorageLocation);
 			LibrarySnapshot snapshot = await _libraryStore.LoadAsync(default(CancellationToken));
 			_settings = (CloudBerrySettings)(((object)snapshot.Settings) ?? ((object)new CloudBerrySettings()));
+			_settings.Appearance ??= new AppearanceSettings();
+			_settings.Audio ??= new AudioSettings();
+			_settings.Devices ??= new DeviceProfileSettings();
 			_dashboardState = (DashboardSnapshotState)(((object)snapshot.Dashboard) ?? ((object)new DashboardSnapshotState()));
 			_selectedAchievementProviderId = _settings.SelectedAchievementProviderId;
 			_achievementPollingSeconds = ((_settings.Steam.PollingIntervalSeconds <= 0) ? 30 : _settings.Steam.PollingIntervalSeconds);
 			_retroAchievementsApiKey = _settings.RetroAchievementsApiKey ?? string.Empty;
 			_retroAchievementsUsername = _settings.RetroAchievementsUsername ?? string.Empty;
-			_appearanceThemeKey = (string.IsNullOrWhiteSpace(_settings.Appearance.ThemePreset) ? "Mint Cloud" : _settings.Appearance.ThemePreset);
+			_appearanceThemeKey = NormalizeThemeKey(_settings.Appearance.ThemePreset);
 			_appearanceDensityKey = (string.IsNullOrWhiteSpace(_settings.Appearance.Density) ? "Comfortable" : _settings.Appearance.Density);
-			_startupView = (string.IsNullOrWhiteSpace(_settings.Appearance.StartupView) ? "CloudBerry" : _settings.Appearance.StartupView);
+			_startupView = string.Equals(_settings.Appearance.StartupView, "Cirra", StringComparison.OrdinalIgnoreCase)
+				? "Cirra"
+				: (string.IsNullOrWhiteSpace(_settings.Appearance.StartupView) ? "Cirra" : _settings.Appearance.StartupView);
 			_homeRotationSeconds = ((_settings.Appearance.HomeRotationSeconds < 0) ? 18 : _settings.Appearance.HomeRotationSeconds);
 			_visualEffectsEnabled = _settings.Appearance.VisualEffectsEnabled;
 			_visualEffectIntensity = Math.Clamp((_settings.Appearance.VisualEffectIntensity <= 0.0) ? 1.0 : _settings.Appearance.VisualEffectIntensity, 0.35, 1.6);
+			_effectsQuality = EffectsQualityOptions.Contains(_settings.Appearance.EffectsQuality) ? _settings.Appearance.EffectsQuality : "Full";
 			_settings.Appearance.HomeWidgets ??= new HomeWidgetSettings();
+			RefreshMetadataProviderToggles();
 			_showLibraryStat = _settings.Appearance.HomeWidgets.ShowLibrary;
 			_showMetadataStat = _settings.Appearance.HomeWidgets.ShowMetadata;
 			_showAchievementsStat = _settings.Appearance.HomeWidgets.ShowAchievements;
@@ -4318,7 +4957,10 @@ public sealed class MainViewModel : ViewModelBase
 			_libraryViewMode = (string.IsNullOrWhiteSpace(_settings.Appearance.LibraryViewMode) ? "List" : _settings.Appearance.LibraryViewMode);
 			_libraryGridTileSize = (string.IsNullOrWhiteSpace(_settings.Appearance.LibraryGridTileSize) ? "Normal" : _settings.Appearance.LibraryGridTileSize);
 			_sidebarMaintenanceExpanded = _settings.Appearance.SidebarMaintenanceExpanded;
+			_libraryToolsExpanded = _settings.Appearance.LibraryToolsExpanded;
 			_attractModeEnabled = _settings.Appearance.AttractModeEnabled;
+			_horizonSpotlightPaused = _settings.Appearance.HorizonSpotlightPaused;
+			_enableExternalPlaytimeTracking = _settings.Appearance.EnableExternalPlaytimeTracking;
 			_attractModeIdleSeconds = _settings.Appearance.AttractModeIdleSeconds <= 0 ? 100 : Math.Clamp(_settings.Appearance.AttractModeIdleSeconds, 20, 600);
 			_settings.Collections ??= new CollectionSettings();
 			UserCollections.Clear();
@@ -4326,11 +4968,26 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				UserCollections.Add(collection);
 			}
+			_settings.LibraryFilterPresets ??= new List<LibraryFilterPreset>();
+			LibraryFilterPresets.Clear();
+			foreach (LibraryFilterPreset preset in _settings.LibraryFilterPresets)
+			{
+				LibraryFilterPresets.Add(new LibraryFilterPresetViewModel(preset));
+			}
 			_audioEnabled = _settings.Audio.Enabled;
 			_audioProfile = (string.IsNullOrWhiteSpace(_settings.Audio.Profile) ? "Subtle" : _settings.Audio.Profile);
+			CirraDeviceProfile currentDevice = _deviceProfileService.EnsureCurrent(_settings, Environment.MachineName, "Desktop");
+			DeviceProfiles.Clear();
+			foreach (CirraDeviceProfile device in _settings.Devices.Items)
+			{
+				DeviceProfiles.Add(device);
+			}
+			_selectedDeviceProfile = currentDevice;
+			DeviceProfileStatusMessage = $"{currentDevice.DisplayName} is active on this PC.";
 			_updateFeedEndpoint = (string.IsNullOrWhiteSpace(_settings.Updates.FeedEndpoint) ? "https://cloudberry-updates.pages.dev/latest.json" : _settings.Updates.FeedEndpoint);
 			_autoCheckForUpdates = _settings.Updates.AutoCheckEnabled;
 			_autoDownloadUpdates = _settings.Updates.AutoDownloadEnabled;
+			_enableEmbeddedPlayForRetroArch = _settings.Emulators.EnableEmbeddedPlayForRetroArch;
 			_installUpdatesOnExit = _settings.Updates.InstallOnExit;
 			EnsureTheatreState();
 			EnsureProfileState();
@@ -4343,7 +5000,7 @@ public sealed class MainViewModel : ViewModelBase
 			_igdbClientId = string.Empty;
 			_igdbClientSecret = string.Empty;
 			RefreshCompanionTools();
-			Window window = Application.Current?.MainWindow;
+			Window? window = Application.Current?.MainWindow;
 			if (window != null)
 			{
 				_achievementPopService.Initialize(window, (_settings.AchievementPopDurationSeconds > 0) ? _settings.AchievementPopDurationSeconds : 5, string.IsNullOrWhiteSpace(_settings.AchievementPopCorner) ? "BottomRight" : _settings.AchievementPopCorner);
@@ -4376,7 +5033,7 @@ public sealed class MainViewModel : ViewModelBase
 			ClearGames();
 			ClearImportCandidates();
 			MetadataResults.Clear();
-			ReportStartup(progress, 0.42, "Rehydrating your shelves", $"{snapshot.Games.Count} saved title(s) found");
+			ReportStartup(progress, 0.42, "Rehydrating your shelves", $"{snapshot.Games.Count} saved {Pluralize(snapshot.Games.Count, "game", "games")} found");
 			foreach (GameRecord game2 in snapshot.Games)
 			{
 				GameEntryViewModel game = new GameEntryViewModel(game2);
@@ -4402,6 +5059,7 @@ public sealed class MainViewModel : ViewModelBase
 			OnPropertyChanged("AchievementPlayerIdHelpText");
 			RefreshDerivedState();
 			RebuildRecentAchievementUnlocks();
+			await RefreshLibraryHistoryAsync();
 			if (_runtimeAchievementsDirty)
 			{
 				SchedulePersist();
@@ -4411,17 +5069,18 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				SelectedPrimaryPage = 1;
 			}
-			StatusMessage = (HasGames ? $"Loaded {TotalGames} games from your local CloudBerry library." : "CloudBerry is ready. Scan a folder to start building the library.");
-			ReportStartup(progress, 1.0, "CloudBerry is ready", LibrarySummary);
+			StatusMessage = (HasGames ? $"Loaded {TotalGames} games from your local Cirra library." : "Cirra is ready. Scan a folder to start building the library.");
+			ReportStartup(progress, 1.0, "Cirra is ready", LibrarySummary);
 			if (AutoCheckForUpdates)
 			{
-				CheckForAppUpdatesAsync(silent: true, allowAutoDownload: false);
+				_ = CheckForAppUpdatesAsync(silent: true, allowAutoDownload: false);
 			}
+			StartExternalProcessMonitoringIfEnabled();
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("initialize", ex);
-			StatusMessage = "CloudBerry couldn't load the previous library snapshot.";
+			StatusMessage = "Cirra couldn't load the previous library snapshot.";
 		}
 		finally
 		{
@@ -4453,14 +5112,14 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				_diagnostics.WriteWarning("scan", warning);
 			}
-			string text = ((val.ErrorsSkipped > 0) ? $" CloudBerry safely skipped {val.ErrorsSkipped} unreadable files or folders." : string.Empty);
-			StatusMessage = ((ImportCandidates.Count == 0) ? ("No likely games found in " + folderPath + "." + text).Trim() : $"Found {ImportCandidates.Count} candidate games in {folderPath}. Auto-selected {StrongMatchCount} strong match{((StrongMatchCount == 1) ? string.Empty : "es")} for review.{text}".Trim());
+			string text = ((val.ErrorsSkipped > 0) ? $" Cirra safely skipped {val.ErrorsSkipped} unreadable files or folders." : string.Empty);
+			StatusMessage = ((ImportCandidates.Count == 0) ? ("No likely games found in that folder." + text).Trim() : $"Found {ImportCandidates.Count} candidate {Pluralize(ImportCandidates.Count, "game", "games")}. Auto-selected {StrongMatchCount} strong {Pluralize(StrongMatchCount, "match", "matches")} for review.{text}".Trim());
 			RefreshDerivedState();
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("scan", ex);
-			StatusMessage = "CloudBerry couldn't finish scanning '" + folderPath + "'.";
+			StatusMessage = "Cirra couldn't finish scanning that folder.";
 		}
 		finally
 		{
@@ -4489,13 +5148,13 @@ public sealed class MainViewModel : ViewModelBase
 			SelectedCandidate = ImportCandidates.FirstOrDefault();
 			SelectedWorkspaceTab = (ImportCandidates.Any((ImportCandidateViewModel c) => !c.AlreadyExists) ? 1 : 0);
 			SelectedPrimaryPage = 1;
-			StatusMessage = ((ImportCandidates.Count == 0) ? ("No ROM files found in " + folderPath + ".") : ($"Found {ImportCandidates.Count} ROM{((ImportCandidates.Count == 1) ? string.Empty : "s")} in {folderPath}. Review and import." + ((val.ErrorsSkipped > 0) ? $" ({val.ErrorsSkipped} unreadable entries skipped)" : string.Empty)));
+			StatusMessage = ((ImportCandidates.Count == 0) ? "No ROM files found in that folder." : ($"Found {ImportCandidates.Count} {Pluralize(ImportCandidates.Count, "ROM", "ROMs")}. Review and import." + ((val.ErrorsSkipped > 0) ? $" {val.ErrorsSkipped} unreadable {Pluralize(val.ErrorsSkipped, "entry was", "entries were")} skipped." : string.Empty)));
 			RefreshDerivedState();
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("scan-rom", ex);
-			StatusMessage = "CloudBerry couldn't finish scanning '" + folderPath + "' for ROMs.";
+			StatusMessage = "Cirra couldn't finish scanning that ROM folder.";
 		}
 		finally
 		{
@@ -4525,20 +5184,23 @@ public sealed class MainViewModel : ViewModelBase
 			}
 			if (addedGames.Count == 0)
 			{
-				StatusMessage = "Those launch targets are already in your CloudBerry library.";
+			StatusMessage = "Those games are already in your Cirra library.";
 				return;
 			}
 			SelectedGame = addedGames.First();
 			SelectedWorkspaceTab = 0;
-			AppendRecentActivity("import.manual", addedGames.First(), $"Added {addedGames.Count} manual title(s) to the library.");
-			await PersistAsync();
+			AppendRecentActivity("import.manual", addedGames.First(), $"Added {addedGames.Count} manual {Pluralize(addedGames.Count, "game", "games")} to the library.");
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"import.manual",
+				$"Added {addedGames.Count} manual {Pluralize(addedGames.Count, "game", "games")}",
+				"Files were added directly by the player."));
 			RefreshDerivedState();
 			StatusMessage = $"Added {addedGames.Count} game{((addedGames.Count == 1) ? string.Empty : "s")} manually.";
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("manual-add", ex);
-			StatusMessage = "CloudBerry couldn't add the selected launch targets.";
+			StatusMessage = "Cirra couldn't add the selected games.";
 		}
 	}
 
@@ -4570,20 +5232,23 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				AppendRecentActivity("import.scan", list[0], $"Imported {list.Count} title{((list.Count == 1) ? string.Empty : "s")} from scan review.");
 			}
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"import.scan",
+				$"Imported {selectedCandidates.Count} {Pluralize(selectedCandidates.Count, "game", "games")}",
+				"Approved candidates from scan review."));
 			RefreshDerivedState();
-			StatusMessage = $"Imported {selectedCandidates.Count} game{((selectedCandidates.Count == 1) ? string.Empty : "s")} into CloudBerry.";
+			StatusMessage = $"Imported {selectedCandidates.Count} game{((selectedCandidates.Count == 1) ? string.Empty : "s")} into Cirra.";
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("import", ex);
-			StatusMessage = "CloudBerry couldn't import the selected games.";
+			StatusMessage = "Cirra couldn't import the selected games.";
 		}
 	}
 
 	public async Task SaveSelectedGameAsync()
 	{
-		GameEntryViewModel selectedGame = SelectedGame;
+		GameEntryViewModel? selectedGame = SelectedGame;
 		if (selectedGame == null)
 		{
 			StatusMessage = "Choose a game before saving changes.";
@@ -4591,15 +5256,200 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		try
 		{
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"game.edit",
+				"Edited " + selectedGame.Title,
+				"Saved changes from the game detail editor."));
 			RefreshDerivedState();
 			StatusMessage = "Saved changes for " + selectedGame.Title + ".";
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("save-game", ex);
-			StatusMessage = "CloudBerry couldn't save " + selectedGame.Title + ".";
+			StatusMessage = "Cirra couldn't save " + selectedGame.Title + ".";
 		}
+	}
+
+	public async Task SaveSelectedNextTimeNoteAsync()
+	{
+		GameEntryViewModel? selectedGame = SelectedGame;
+		if (selectedGame == null)
+		{
+			StatusMessage = "Choose a game before saving a next-time marker.";
+			return;
+		}
+
+		try
+		{
+			string normalized = (selectedGame.NextTimeNote ?? string.Empty).Trim();
+			if (normalized.Length > 360)
+			{
+				normalized = normalized[..360].TrimEnd();
+			}
+
+			selectedGame.NextTimeNote = normalized;
+			selectedGame.NextTimeUpdatedOn = string.IsNullOrWhiteSpace(normalized) ? null : DateTime.Now;
+			bool hasMarker = selectedGame.HasNextTimeNote;
+
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				hasMarker ? "game.next-time" : "game.next-time.clear",
+				hasMarker ? "Updated next time for " + selectedGame.Title : "Cleared next time for " + selectedGame.Title,
+				hasMarker ? "Saved a private return-to-game marker." : "Removed the return-to-game marker."));
+
+			AppendRecentActivity(
+				hasMarker ? "game.next-time" : "game.next-time.clear",
+				selectedGame,
+				hasMarker ? "Updated the next-session marker." : "Cleared the next-session marker.");
+			RefreshHomeDeck();
+			StatusMessage = hasMarker
+				? "Saved what to remember for " + selectedGame.Title + "."
+				: "Cleared the next-time marker for " + selectedGame.Title + ".";
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("save-next-time-note", ex);
+			StatusMessage = "Cirra couldn't save the next-time marker for " + selectedGame.Title + ".";
+		}
+	}
+
+	public async Task DiscoverSelectedGameGuidebooksAsync()
+	{
+		if (IsGuidebookBusy) return;
+		GameEntryViewModel? game = SelectedGame;
+		if (game is null)
+		{
+			GuidebookStatusMessage = "Choose a game before searching for guides.";
+			return;
+		}
+
+		IsGuidebookBusy = true;
+		GuidebookSearchResults.Clear();
+		OnPropertyChanged(nameof(HasGuidebookSearchResults));
+		GuidebookStatusMessage = "Searching preserved manuals and guides...";
+		ActivityOperationHandle activity = _activityCenter.Begin(
+			"guide.discover",
+			"Find guides for " + game.Title,
+			canCancel: true);
+		try
+		{
+			activity.Report(null, "Searching official and preservation archives...");
+			var discovery = await _guidebookDiscoveryService.DiscoverDetailedAsync(
+				game.Title,
+				game.Platform,
+				cancellationToken: activity.CancellationToken,
+				steamAppId: game.SteamAppId);
+			if (!ReferenceEquals(game, SelectedGame))
+			{
+				activity.Complete("Guide search completed for " + game.Title + ".");
+				return;
+			}
+			IReadOnlyList<GameGuidebook> results = discovery.Guides;
+			foreach (GameGuidebook guidebook in results.Where(result => !game.Guidebooks.Any(existing =>
+				         existing.PdfLocation.Equals(result.PdfLocation, StringComparison.OrdinalIgnoreCase))))
+			{
+				GuidebookSearchResults.Add(guidebook);
+			}
+
+			OnPropertyChanged(nameof(HasGuidebookSearchResults));
+			GuidebookStatusMessage = GuidebookSearchResults.Count == 0
+				? "No new matching PDFs were found for this title and platform. You can still attach a local scan."
+				: $"Found {GuidebookSearchResults.Count} matching {Pluralize(GuidebookSearchResults.Count, "document", "documents")}. Review the source and edition; attaching downloads and checks the PDF for offline reading.";
+			if (discovery.SourceFailures.Count > 0)
+				GuidebookStatusMessage += " Some sources could not be checked. " + discovery.SourceFailures[0];
+			activity.Complete(GuidebookSearchResults.Count == 0
+				? "No new guide PDFs found for " + game.Title + "."
+				: "Found " + GuidebookSearchResults.Count + " guide " + Pluralize(GuidebookSearchResults.Count, "document", "documents") + " for " + game.Title + ".");
+		}
+		catch (OperationCanceledException) when (activity.CancellationToken.IsCancellationRequested)
+		{
+			GuidebookStatusMessage = "Guide search cancelled.";
+			activity.Cancelled("Guide search cancelled for " + game.Title + ".");
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("guidebook-discovery", ex);
+			GuidebookStatusMessage = "Cirra couldn't reach the guide archive right now.";
+			activity.Fail("Guide search couldn't finish for " + game.Title + ".");
+		}
+		finally
+		{
+			IsGuidebookBusy = false;
+		}
+	}
+
+	public async Task AddSelectedGameGuidebookAsync(GameGuidebook guidebook)
+	{
+		if (IsGuidebookBusy) return;
+		GameEntryViewModel? game = SelectedGame;
+		if (game is null || game.Guidebooks.Any(existing => existing.PdfLocation.Equals(guidebook.PdfLocation, StringComparison.OrdinalIgnoreCase)))
+		{
+			GuidebookStatusMessage = game is null ? "Choose a game first." : "That guide is already attached.";
+			return;
+		}
+
+		IsGuidebookBusy = true;
+		ActivityOperationHandle activity = _activityCenter.Begin(
+			"guide.attach",
+			"Prepare " + guidebook.Title,
+			canCancel: true);
+		try
+		{
+			var progress = new Progress<string>(message =>
+			{
+				if (ReferenceEquals(game, SelectedGame)) GuidebookStatusMessage = message;
+				activity.Report(null, message);
+			});
+			string localPdf = await new GuideDocumentService().PrepareAsync(
+				guidebook.PdfLocation,
+				progress,
+				activity.CancellationToken);
+			using (var document = await PdfSpreadRenderer.OpenAsync(localPdf))
+			{
+				activity.Report(null, "Checking the first page...");
+				await document.RenderPageAsync(1, 600, activity.CancellationToken);
+			}
+			if (!ReferenceEquals(game, SelectedGame) || !game.AddGuidebook(guidebook))
+			{
+				activity.Complete("Guide is ready for offline reading.");
+				return;
+			}
+		GuidebookSearchResults.Remove(guidebook);
+		OnPropertyChanged(nameof(HasGuidebookSearchResults));
+		await PersistWithHistoryAsync(new LibraryHistoryContext(
+			"game.guidebook.add",
+			"Attached a guide to " + game.Title,
+			guidebook.Title));
+		AppendRecentActivity("game.guidebook.add", game, "Attached " + guidebook.Title + ".");
+		GuidebookStatusMessage = "Ready offline: " + guidebook.Title + ".";
+		activity.Complete("Ready offline: " + guidebook.Title + ".");
+		}
+		catch (OperationCanceledException) when (activity.CancellationToken.IsCancellationRequested)
+		{
+			if (ReferenceEquals(game, SelectedGame)) GuidebookStatusMessage = "Guide download cancelled.";
+			activity.Cancelled("Guide download cancelled for " + guidebook.Title + ".");
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("guidebook-download", ex);
+			if (ReferenceEquals(game, SelectedGame)) GuidebookStatusMessage = "Guide not attached. " + ex.Message;
+			activity.Fail("Guide couldn't be prepared: " + guidebook.Title + ".");
+		}
+		finally { IsGuidebookBusy = false; }
+	}
+
+	public async Task RemoveSelectedGameGuidebookAsync(GameGuidebook guidebook)
+	{
+		GameEntryViewModel? game = SelectedGame;
+		if (game is null || !game.RemoveGuidebook(guidebook))
+		{
+			return;
+		}
+
+		await PersistWithHistoryAsync(new LibraryHistoryContext(
+			"game.guidebook.remove",
+			"Removed a guide from " + game.Title,
+			guidebook.Title));
+		GuidebookStatusMessage = "Removed " + guidebook.Title + ".";
 	}
 
 	public async Task SaveMetadataSettingsAsync()
@@ -4615,52 +5465,264 @@ public sealed class MainViewModel : ViewModelBase
 			await PersistAsync();
 			MetadataStatusMessage = $"Saved provider settings for {SelectedMetadataProvider.DisplayName} and {SelectedAchievementProvider.DisplayName}.";
 			AchievementStatusMessage = "Saved achievement settings for " + SelectedAchievementProvider.DisplayName + ".";
-			StatusMessage = "CloudBerry saved your provider settings.";
+			StatusMessage = "Cirra saved your provider settings.";
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("save-settings", ex);
-			MetadataStatusMessage = "CloudBerry couldn't save the provider settings.";
+			MetadataStatusMessage = "Cirra couldn't save the provider settings.";
 			AchievementStatusMessage = MetadataStatusMessage;
 		}
+	}
+
+	public void CreateDeviceProfileFromCurrentSetup()
+	{
+		ApplySettingsFromFields();
+		CirraDeviceProfile profile = _deviceProfileService.Create(
+			_settings,
+			$"Device {DeviceProfiles.Count + 1}",
+			"Desktop");
+		DeviceProfiles.Add(profile);
+		SelectedDeviceProfile = profile;
+		DeviceProfileStatusMessage = $"Created {profile.DisplayName}. Rename it and choose its device type.";
+		SchedulePersist();
+	}
+
+	public void CaptureSelectedDeviceProfile()
+	{
+		if (SelectedDeviceProfile == null)
+		{
+			DeviceProfileStatusMessage = "Choose a device profile first.";
+			return;
+		}
+
+		ApplySettingsFromFields();
+		_deviceProfileService.Capture(_settings, SelectedDeviceProfile);
+		OnPropertyChanged(nameof(SelectedDeviceProfileSummary));
+		DeviceProfileStatusMessage = $"Saved the current theme, density, effects, audio, and startup view to {SelectedDeviceProfile.DisplayName}.";
+		SchedulePersist();
+	}
+
+	public void ActivateSelectedDeviceProfile()
+	{
+		if (SelectedDeviceProfile == null)
+		{
+			DeviceProfileStatusMessage = "Choose a device profile first.";
+			return;
+		}
+
+		CirraDeviceProfile profile = _deviceProfileService.Activate(_settings, SelectedDeviceProfile.Id);
+		AppearanceThemeKey = NormalizeThemeKey(_settings.Appearance.ThemePreset);
+		AppearanceDensityKey = _settings.Appearance.Density;
+		EffectsQuality = _settings.Appearance.EffectsQuality;
+		VisualEffectsEnabled = _settings.Appearance.VisualEffectsEnabled;
+		VisualEffectIntensity = _settings.Appearance.VisualEffectIntensity;
+		AudioEnabled = _settings.Audio.Enabled;
+		AudioProfile = _settings.Audio.Profile;
+		StartupView = _settings.Appearance.StartupView;
+		DeviceProfileStatusMessage = $"{profile.DisplayName} is now active.";
+		SchedulePersist();
+	}
+
+	public async Task DiscoverSelectedGameSavesAsync()
+	{
+		GameEntryViewModel? game = SelectedGame;
+		if (game == null)
+		{
+			SaveContinuityStatusMessage = "Choose a game first.";
+			return;
+		}
+		if (!game.HasSaveLocations)
+		{
+			SaveContinuityStatusMessage = "Add one save file or folder per line before discovery.";
+			return;
+		}
+
+		IsSaveContinuityBusy = true;
+		ActivityOperationHandle activity = _activityCenter.Begin("saves.discover", $"Discover saves for {game.Title}", canCancel: true);
+		try
+		{
+			SaveDiscoveryResult result = await _saveContinuityService.DiscoverAsync(game.ToModel(), activity.CancellationToken);
+			SaveContinuityStatusMessage = result.Artifacts.Count == 0
+				? result.Warnings.FirstOrDefault() ?? "No readable save files were found."
+				: $"Found {result.Artifacts.Count} {Pluralize(result.Artifacts.Count, "save file", "save files")} ({FormatByteCount(result.TotalBytes)}).";
+			activity.Complete(SaveContinuityStatusMessage);
+		}
+		catch (OperationCanceledException)
+		{
+			SaveContinuityStatusMessage = "Save discovery cancelled.";
+			activity.Cancelled(SaveContinuityStatusMessage);
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("save-discovery", ex);
+			SaveContinuityStatusMessage = "Cirra couldn't inspect these save locations.";
+			activity.Fail(SaveContinuityStatusMessage);
+		}
+		finally
+		{
+			IsSaveContinuityBusy = false;
+		}
+	}
+
+	public async Task CreateSelectedGameSaveBackupAsync()
+	{
+		GameEntryViewModel? game = SelectedGame;
+		if (game == null || !game.HasSaveLocations)
+		{
+			SaveContinuityStatusMessage = "Choose a game and add at least one save location first.";
+			return;
+		}
+
+		IsSaveContinuityBusy = true;
+		ActivityOperationHandle activity = _activityCenter.Begin("saves.backup", $"Back up saves for {game.Title}", canCancel: true);
+		try
+		{
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"saves.configure",
+				$"Updated save locations for {game.Title}",
+				"Saved explicit locations before creating a verified backup."));
+			activity.Report(0.25, "Fingerprinting save files...");
+			SaveBackupResult result = await _saveContinuityService.CreateBackupAsync(game.ToModel(), activity.CancellationToken);
+			SaveContinuityStatusMessage = $"Verified backup: {result.FileCount} {Pluralize(result.FileCount, "file", "files")}, {FormatByteCount(result.TotalBytes)}.";
+			activity.Complete(SaveContinuityStatusMessage);
+		}
+		catch (OperationCanceledException)
+		{
+			SaveContinuityStatusMessage = "Save backup cancelled.";
+			activity.Cancelled(SaveContinuityStatusMessage);
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("save-backup", ex);
+			SaveContinuityStatusMessage = ex is InvalidOperationException ? ex.Message : "Cirra couldn't create a verified save backup.";
+			activity.Fail(SaveContinuityStatusMessage);
+		}
+		finally
+		{
+			IsSaveContinuityBusy = false;
+		}
+	}
+
+	public async Task<bool> RestoreLatestSelectedGameSaveBackupAsync()
+	{
+		GameEntryViewModel? game = SelectedGame;
+		if (game == null)
+		{
+			SaveContinuityStatusMessage = "Choose a game first.";
+			return false;
+		}
+
+		IsSaveContinuityBusy = true;
+		ActivityOperationHandle activity = _activityCenter.Begin("saves.restore", $"Restore saves for {game.Title}", canCancel: false);
+		try
+		{
+			IReadOnlyList<SaveBackupSummary> backups = await _saveContinuityService.ListBackupsAsync(game.Id);
+			SaveBackupSummary? latest = backups.FirstOrDefault();
+			if (latest == null)
+			{
+				SaveContinuityStatusMessage = "No save backup exists for this game yet.";
+				activity.Fail(SaveContinuityStatusMessage);
+				return false;
+			}
+
+			SaveRestoreResult result = await _saveContinuityService.RestoreAsync(game.ToModel(), latest.ManifestPath);
+			SaveContinuityStatusMessage = $"Restored {result.RestoredFiles} {Pluralize(result.RestoredFiles, "save file", "save files")}; replaced files were kept in a rollback copy.";
+			activity.Complete(SaveContinuityStatusMessage);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("save-restore", ex);
+			SaveContinuityStatusMessage = ex is InvalidDataException ? ex.Message : "Cirra couldn't restore this save backup.";
+			activity.Fail(SaveContinuityStatusMessage);
+			return false;
+		}
+		finally
+		{
+			IsSaveContinuityBusy = false;
+		}
+	}
+
+	private static string FormatByteCount(long bytes)
+	{
+		if (bytes >= 1024L * 1024L * 1024L) return $"{bytes / (1024d * 1024d * 1024d):0.##} GB";
+		if (bytes >= 1024L * 1024L) return $"{bytes / (1024d * 1024d):0.##} MB";
+		if (bytes >= 1024L) return $"{bytes / 1024d:0.##} KB";
+		return $"{bytes:N0} B";
 	}
 
 	public Task RunProductReadinessCheckAsync()
 	{
 		ProductChecks.Clear();
 		int count = Games.Count;
-		int num = Games.Count(HasMissingLaunchTarget);
-		int num2 = (from @group in Games.Where((GameEntryViewModel game) => !string.IsNullOrWhiteSpace(game.InstallPath)).GroupBy<GameEntryViewModel, string>((GameEntryViewModel game) => NormalizeLaunchTargetKey(game.InstallPath), StringComparer.OrdinalIgnoreCase)
-			where !string.IsNullOrWhiteSpace(@group.Key)
-			where @group.Count() > 1
-			select @group).Sum((IGrouping<string, GameEntryViewModel> group) => group.Count() - 1);
-		int num3 = Games.Count((GameEntryViewModel game) => game.NeedsMetadataRefresh);
-		int num4 = Games.Count((GameEntryViewModel game) => !game.HasCoverImage || !game.HasBackgroundImage);
-		int num5 = Games.Count((GameEntryViewModel game) => !game.HasAchievements);
-		int num6 = Games.Count((GameEntryViewModel game) => game.IsRom && string.IsNullOrWhiteSpace(game.EmulatorPath) && string.IsNullOrWhiteSpace(_settings.Emulators.Resolve(game.Platform)));
-		int value = Games.Count((GameEntryViewModel game) => game.IsInstalled);
+		int missingLaunchTargetCount = 0;
+		int missingMetadataCount = 0;
+		int missingMediaCount = 0;
+		int missingAchievementCount = 0;
+		int missingEmulatorCount = 0;
+		int installedCount = 0;
+		Dictionary<string, int> launchPathCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+		foreach (GameEntryViewModel game in Games)
+		{
+			if (HasMissingLaunchTarget(game)) missingLaunchTargetCount++;
+			if (game.NeedsMetadataRefresh) missingMetadataCount++;
+			if (!game.HasCoverImage || !game.HasBackgroundImage) missingMediaCount++;
+			if (!game.HasAchievements) missingAchievementCount++;
+			if (game.IsRom && string.IsNullOrWhiteSpace(game.EmulatorPath) && string.IsNullOrWhiteSpace(_settings.Emulators.Resolve(game.Platform))) missingEmulatorCount++;
+			if (game.IsInstalled) installedCount++;
+
+			string launchKey = NormalizeLaunchTargetKey(game.InstallPath);
+			if (!string.IsNullOrWhiteSpace(launchKey))
+			{
+				launchPathCounts[launchKey] = launchPathCounts.TryGetValue(launchKey, out int existingCount) ? existingCount + 1 : 1;
+			}
+		}
+		int duplicateLaunchPathCount = launchPathCounts.Values.Where(pathCount => pathCount > 1).Sum(pathCount => pathCount - 1);
 		bool flag = _settings.Igdb.ProxyEnabled && !string.IsNullOrWhiteSpace(_settings.Igdb.ProxyEndpoint);
 		bool flag2 = !string.IsNullOrWhiteSpace(StorageLocation);
-		AddProductCheck("Library foundation", (count == 0) ? "No games are imported yet. Use Scan All or Quick Add before broad testing." : $"{count} title{((count == 1) ? string.Empty : "s")} imported, {value} marked installed.", (count == 0) ? "Action" : "Ready", (count == 0) ? "Needs games" : "Ready");
-		AddProductCheck("Launch targets", (num == 0) ? "Every saved launch path currently resolves." : $"{num} launch target{((num == 1) ? string.Empty : "s")} no longer resolves. Use Clean Missing or edit the entries.", (num == 0) ? "Ready" : "Action", (num == 0) ? "Clean" : "Fix paths");
-		AddProductCheck("Duplicate entries", (num2 == 0) ? "No duplicate launch paths were found." : $"{num2} duplicate launch path{((num2 == 1) ? string.Empty : "s")} should be merged or removed.", (num2 == 0) ? "Ready" : "Warning", (num2 == 0) ? "Clean" : "Review");
-		AddProductCheck("Metadata coverage", (count == 0) ? "Metadata can be checked after importing games." : $"{Math.Max(0, count - num3)}/{count} title{((count == 1) ? string.Empty : "s")} have summary, cover, and background.", (count == 0 || num3 == 0) ? "Ready" : "Warning", (num3 == 0) ? "Ready" : $"{num3} missing");
-		AddProductCheck("Media presentation", (count == 0) ? "Media coverage can be checked after importing games." : $"{Math.Max(0, count - num4)}/{count} title{((count == 1) ? string.Empty : "s")} have cover and background art.", (count == 0 || num4 == 0) ? "Ready" : "Warning", (num4 == 0) ? "Ready" : "Needs art");
-		AddProductCheck("Achievement layer", (num5 == 0) ? "Every imported game has an achievement layer ready for tracking or fallback progress." : $"{num5} title{((num5 == 1) ? string.Empty : "s")} still need achievement priming.", (num5 == 0) ? "Ready" : "Warning", (num5 == 0) ? "Ready" : "Prime");
-		AddProductCheck("Emulator readiness", (num6 == 0) ? "ROM entries have either per-game emulators or platform defaults available." : $"{num6} ROM title{((num6 == 1) ? string.Empty : "s")} need an emulator mapping.", (num6 == 0) ? "Ready" : "Warning", (num6 == 0) ? "Ready" : "Map cores");
-		AddProductCheck("IGDB metadata", flag ? "The IGDB-first proxy metadata pipeline is configured for normal use." : "IGDB proxy metadata is not configured. Search coverage will fall back to public keyless sources.", flag ? "Ready" : "Warning", flag ? "Ready" : "Fallback");
-		AddProductCheck("Storage safety", flag2 ? ("Library storage is ready at " + StorageLocation) : "CloudBerry could not resolve the library storage path.", flag2 ? "Ready" : "Action", flag2 ? "Ready" : "Blocked");
+		AddProductCheck("Library", (count == 0) ? "No games are imported yet. Scan a folder or add one game to begin." : $"{count} {Pluralize(count, "game", "games")} imported, {installedCount} marked installed.", (count == 0) ? "Action" : "Ready", (count == 0) ? "Needs games" : "Ready");
+		AddProductCheck("Game files", (missingLaunchTargetCount == 0) ? "Every saved game file can be found." : $"{missingLaunchTargetCount} {Pluralize(missingLaunchTargetCount, "game file", "game files")} could not be found. Clean missing games or edit their paths.", (missingLaunchTargetCount == 0) ? "Ready" : "Action", (missingLaunchTargetCount == 0) ? "Clean" : "Fix paths");
+		AddProductCheck("Duplicates", (duplicateLaunchPathCount == 0) ? "No duplicate game files were found." : $"{duplicateLaunchPathCount} duplicate {Pluralize(duplicateLaunchPathCount, "game file", "game files")} should be reviewed.", (duplicateLaunchPathCount == 0) ? "Ready" : "Warning", (duplicateLaunchPathCount == 0) ? "Clean" : "Review");
+		AddProductCheck("Game details", (count == 0) ? "Details can be checked after importing games." : $"{Math.Max(0, count - missingMetadataCount)}/{count} {Pluralize(count, "game", "games")} have summaries and store details.", (count == 0 || missingMetadataCount == 0) ? "Ready" : "Warning", (missingMetadataCount == 0) ? "Ready" : $"{missingMetadataCount} missing");
+		AddProductCheck("Artwork", (count == 0) ? "Artwork can be checked after importing games." : $"{Math.Max(0, count - missingMediaCount)}/{count} {Pluralize(count, "game", "games")} have cover and background art.", (count == 0 || missingMediaCount == 0) ? "Ready" : "Warning", (missingMediaCount == 0) ? "Ready" : "Needs art");
+		AddProductCheck("Achievements", (missingAchievementCount == 0) ? "Imported games are ready for achievement tracking or fallback progress." : $"{missingAchievementCount} {Pluralize(missingAchievementCount, "game", "games")} need achievement setup.", (missingAchievementCount == 0) ? "Ready" : "Warning", (missingAchievementCount == 0) ? "Ready" : "Sync");
+		AddProductCheck("Emulators", (missingEmulatorCount == 0) ? "ROMs have an emulator available." : $"{missingEmulatorCount} ROM {Pluralize(missingEmulatorCount, "game", "games")} need an emulator.", (missingEmulatorCount == 0) ? "Ready" : "Warning", (missingEmulatorCount == 0) ? "Ready" : "Map");
+		AddProductCheck("Metadata sources", flag ? "IGDB metadata is configured." : "IGDB is not configured. Public metadata sources will be used.", flag ? "Ready" : "Warning", flag ? "Ready" : "Fallback");
+		AddProductCheck("Storage", flag2 ? ("Library storage is ready at " + StorageLocation) : "Cirra could not resolve the library storage path.", flag2 ? "Ready" : "Action", flag2 ? "Ready" : "Blocked");
 		int num7 = ProductChecks.Count((ProductCheckViewModel check) => check.IsBlocking);
 		int num8 = ProductChecks.Count((ProductCheckViewModel check) => check.IsWarning);
 		int productReadinessScore = Math.Clamp(100 - num7 * 18 - num8 * 7, 0, 100);
+		_productReadinessCheckedAt = DateTime.Now;
 		ProductReadinessScore = productReadinessScore;
 		OnPropertyChanged("ProductReadinessScoreLabel");
+		OnPropertyChanged(nameof(ProductReadinessLastCheckedLabel));
 		OnPropertyChanged("HasProductChecks");
-		ProductReadinessSummary = ((num7 > 0) ? $"CloudBerry needs {num7} fix{((num7 == 1) ? string.Empty : "es")} before a clean test pass." : ((num8 > 0) ? $"CloudBerry is testable with {num8} polish warning{((num8 == 1) ? string.Empty : "s")}." : "CloudBerry is ready for a clean hands-on test pass."));
-		ProductReadinessDetail = $"{ProductChecks.Count} checks completed. Score: {ProductReadinessScoreLabel}.";
+		OnPropertyChanged(nameof(LibraryHealthHeadline));
+		OnPropertyChanged(nameof(LibraryHealthNextStep));
+		OnPropertyChanged(nameof(HasLibraryHealthAction));
+		OnPropertyChanged(nameof(LibraryHealthActionKey));
+		OnPropertyChanged(nameof(LibraryHealthActionLabel));
+		ProductReadinessSummary = ((num7 > 0) ? $"Cirra needs {num7} {Pluralize(num7, "fix", "fixes")} before the library is clean." : ((num8 > 0) ? $"Cirra found {num8} {Pluralize(num8, "polish warning", "polish warnings")}." : "Cirra looks clean and ready."));
+		ProductReadinessDetail = $"{ProductChecks.Count} checks completed. Score: {ProductReadinessScoreLabel}. {ProductReadinessLastCheckedLabel}.";
 		StatusMessage = ProductReadinessSummary;
 		AppendRecentActivity("product.readiness", null, ProductReadinessSummary);
 		return Task.CompletedTask;
+	}
+
+	private static string Pluralize(int count, string singular, string plural)
+	{
+		return count == 1 ? singular : plural;
+	}
+
+	private static string ShortenForStatusBar(string? message, int maxLength)
+	{
+		if (string.IsNullOrWhiteSpace(message) || message.Length <= maxLength)
+		{
+			return message ?? string.Empty;
+		}
+
+		return message[..Math.Max(0, maxLength - 3)].TrimEnd() + "...";
 	}
 
 	public async Task PrepareProductTestPassAsync()
@@ -4679,14 +5741,14 @@ public sealed class MainViewModel : ViewModelBase
 			await PersistAsync();
 			string backupPath = await _libraryStore.CreateBackupAsync(default(CancellationToken));
 			await RunProductReadinessCheckAsync();
-			ProductReadinessDetail = ProductReadinessDetail + " Safe test backup: " + backupPath;
-			StatusMessage = "CloudBerry prepared a test pass and created a safety backup.";
+			ProductReadinessDetail = ProductReadinessDetail + " Backup: " + backupPath;
+			StatusMessage = "Cirra created a safety backup and refreshed library health.";
 			AppendRecentActivity("product.prepare-test", null, StatusMessage);
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("product-prepare-test", ex);
-			StatusMessage = "CloudBerry could not finish preparing the test pass.";
+			StatusMessage = "Cirra could not finish the backup and health refresh.";
 		}
 		finally
 		{
@@ -4702,14 +5764,16 @@ public sealed class MainViewModel : ViewModelBase
 			ApplySettingsFromFields();
 			await PersistAsync();
 			string text = await _libraryStore.CreateBackupAsync(default(CancellationToken));
-			StatusMessage = "Created a CloudBerry library backup.";
+			StatusMessage = "Created a Cirra library backup.";
 			ProductReadinessDetail = "Latest backup: " + text;
+			LibraryBackupStatusMessage = $"Backed up {Games.Count} {Pluralize(Games.Count, "game", "games")} to {text} at {DateTime.Now:h:mm tt}.";
 			AppendRecentActivity("library.backup", null, StatusMessage);
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("library-backup", ex);
-			StatusMessage = "CloudBerry could not create a library backup.";
+			StatusMessage = "Cirra could not create a library backup.";
+			LibraryBackupStatusMessage = "Backup failed: " + ex.Message;
 		}
 	}
 
@@ -4721,14 +5785,56 @@ public sealed class MainViewModel : ViewModelBase
 			ApplySettingsFromFields();
 			await PersistAsync();
 			string text = await _libraryStore.ExportAsync(destinationFilePath, default(CancellationToken));
-			StatusMessage = "Exported the CloudBerry library snapshot.";
+			StatusMessage = "Exported the Cirra library snapshot.";
 			ProductReadinessDetail = "Latest export: " + text;
+			LibraryBackupStatusMessage = $"Exported {Games.Count} {Pluralize(Games.Count, "game", "games")}, your app settings, and dashboard history to {text} at {DateTime.Now:h:mm tt}.";
 			AppendRecentActivity("library.export", null, StatusMessage);
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("library-export", ex);
-			StatusMessage = "CloudBerry could not export the library snapshot.";
+			StatusMessage = "Cirra could not export the library snapshot.";
+			LibraryBackupStatusMessage = "Export failed: " + ex.Message;
+		}
+	}
+
+	/// <summary>
+	/// Reads a backup or export file and hands back the raw snapshot for a preview window to
+	/// summarize, without touching the live library. Throws with a player-readable message on
+	/// a missing, unreadable, or invalid file; the caller (the restore window) is expected to
+	/// catch and display it rather than this method setting StatusMessage itself, since nothing
+	/// has happened to the live library yet at this point.
+	/// </summary>
+	public Task<LibrarySnapshot> PreviewLibraryRestoreAsync(string sourceFilePath)
+	{
+		return _libraryStore.RestorePreviewAsync(sourceFilePath, default(CancellationToken));
+	}
+
+	/// <summary>
+	/// Commits a restore the player has already confirmed via the preview window. Always takes a
+	/// fresh backup of the current live library first (handled inside LibraryStore.RestoreAsync),
+	/// so a restore is never a one-way trip even if the player picked the wrong file. Because a
+	/// restore replaces settings, dashboard state, and every in-memory collection this ViewModel
+	/// hydrated at startup, CloudBerry restarts itself immediately after a successful restore
+	/// rather than trying to re-run that hydration live — that keeps this feature honest instead
+	/// of shipping a restore that "mostly" works until something subtly stale trips a bug later.
+	/// </summary>
+	public async Task<bool> RestoreLibraryFromBackupAsync(string sourceFilePath)
+	{
+		try
+		{
+			LibrarySnapshot librarySnapshot = await _libraryStore.RestoreAsync(sourceFilePath, default(CancellationToken));
+			LibraryBackupStatusMessage = $"Restored {librarySnapshot.Games.Count} {Pluralize(librarySnapshot.Games.Count, "game", "games")} from {Path.GetFileName(sourceFilePath)}. Restart Cirra to load it.";
+			StatusMessage = "Library restored. Restart Cirra to finish loading it.";
+			AppendRecentActivity("library.restore", null, StatusMessage);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("library-restore", ex);
+			StatusMessage = "Cirra couldn't restore that backup.";
+			LibraryBackupStatusMessage = "Restore failed: " + ex.Message;
+			return false;
 		}
 	}
 
@@ -4766,12 +5872,11 @@ public sealed class MainViewModel : ViewModelBase
 		IsCheckingForUpdates = true;
 		try
 		{
-			Version result;
-			Version version = (Version.TryParse(AppVersion, out result) ? result : new Version(1, 0, 0));
+			Version version = Version.TryParse(AppVersion, out Version? result) ? result : new Version(1, 0, 0);
 			CloudBerryUpdateCheckResult val = await _updateService.CheckAsync(UpdateFeedEndpoint, version, default(CancellationToken));
 			_availableUpdateManifest = val.Manifest;
 			AvailableUpdateVersion = val.AvailableVersion?.ToString() ?? string.Empty;
-			if (val.IsUpdateAvailable && val.Manifest != (CloudBerryUpdateManifest)null)
+			if (val.IsUpdateAvailable && val.Manifest is not null)
 			{
 				UpdateStatusMessage = val.StatusMessage;
 				StatusMessage = val.StatusMessage;
@@ -4795,7 +5900,7 @@ public sealed class MainViewModel : ViewModelBase
 			_diagnostics.WriteException("update-check", ex);
 			if (!silent)
 			{
-				UpdateStatusMessage = "CloudBerry couldn't check the update feed right now.";
+				UpdateStatusMessage = "Cirra couldn't check the update feed right now.";
 				StatusMessage = UpdateStatusMessage;
 			}
 		}
@@ -4811,10 +5916,10 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			return;
 		}
-		if (_availableUpdateManifest == (CloudBerryUpdateManifest)null)
+		if (_availableUpdateManifest is null)
 		{
 			await CheckForAppUpdatesAsync(silent);
-			if (_availableUpdateManifest == (CloudBerryUpdateManifest)null)
+			if (_availableUpdateManifest is null)
 			{
 				return;
 			}
@@ -4832,7 +5937,7 @@ public sealed class MainViewModel : ViewModelBase
 			_pendingSilentUpdateOnExit = forceInstallOnExit || InstallUpdatesOnExit;
 			RaiseUpdateInstallQueuedChanged();
 			RefreshLocalUpdatePackageStatus();
-			UpdateStatusMessage = (_pendingSilentUpdateOnExit ? ("CloudBerry " + _availableUpdateManifest.Version + " is staged and will install when you close the app.") : ("CloudBerry " + _availableUpdateManifest.Version + " has been downloaded and is ready to install."));
+			UpdateStatusMessage = (_pendingSilentUpdateOnExit ? ("Cirra " + _availableUpdateManifest.Version + " is staged and will install when you close the app.") : ("Cirra " + _availableUpdateManifest.Version + " has been downloaded and is ready to install."));
 			StatusMessage = UpdateStatusMessage;
 		}
 		catch (Exception ex)
@@ -4840,7 +5945,7 @@ public sealed class MainViewModel : ViewModelBase
 			_diagnostics.WriteException("update-download", ex);
 			if (!silent)
 			{
-				UpdateStatusMessage = "CloudBerry couldn't download the latest update.";
+				UpdateStatusMessage = "Cirra couldn't download the latest update.";
 				StatusMessage = UpdateStatusMessage;
 			}
 		}
@@ -4890,7 +5995,7 @@ public sealed class MainViewModel : ViewModelBase
 		string localUpdatePackagePath = LocalUpdatePackagePath;
 		if (string.IsNullOrWhiteSpace(localUpdatePackagePath) || !File.Exists(localUpdatePackagePath))
 		{
-			UpdateStatusMessage = "CloudBerry couldn't find the staged update package.";
+			UpdateStatusMessage = "Cirra couldn't find the staged update package.";
 			StatusMessage = UpdateStatusMessage;
 			return false;
 		}
@@ -4898,7 +6003,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			LaunchSilentUpdateScript(localUpdatePackagePath);
 			_pendingSilentUpdateOnExit = false;
-			UpdateStatusMessage = "CloudBerry is closing so the update can install.";
+			UpdateStatusMessage = "Cirra is closing so the update can install.";
 			StatusMessage = UpdateStatusMessage;
 			RaiseUpdateInstallQueuedChanged();
 			return true;
@@ -4906,7 +6011,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("update-now-handoff", ex);
-			UpdateStatusMessage = "CloudBerry couldn't start the update installer.";
+			UpdateStatusMessage = "Cirra couldn't start the update installer.";
 			StatusMessage = UpdateStatusMessage;
 			return false;
 		}
@@ -4946,13 +6051,13 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		if (Games.Count == 0)
 		{
-			CompanionToolsStatusMessage = "Import games before running a companion title polish pass.";
+			CompanionToolsStatusMessage = "Import games before polishing library titles.";
 			StatusMessage = CompanionToolsStatusMessage;
 			return;
 		}
 		if (FindCompanionTool("python") == null)
 		{
-			CompanionToolsStatusMessage = "Python was not detected, so CloudBerry kept title polishing on the built-in path.";
+			CompanionToolsStatusMessage = "Python was not detected, so title polishing stayed on the built-in path.";
 			StatusMessage = CompanionToolsStatusMessage;
 			return;
 		}
@@ -4965,7 +6070,7 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				if (Guid.TryParse(item.Id, out var id))
 				{
-					GameEntryViewModel gameEntryViewModel = Games.FirstOrDefault((GameEntryViewModel item) => item.Id == id);
+					GameEntryViewModel? gameEntryViewModel = Games.FirstOrDefault((GameEntryViewModel item) => item.Id == id);
 					if (gameEntryViewModel != null && ShouldApplyCompanionTitle(gameEntryViewModel, item))
 					{
 						gameEntryViewModel.Title = item.Title.Trim();
@@ -4980,18 +6085,21 @@ public sealed class MainViewModel : ViewModelBase
 				ApplySorting();
 				RefreshDerivedState();
 			}
-			CompanionToolsStatusMessage = ((num == 0) ? "Python reviewed the library and found no safe title changes to apply." : $"Python polished {num} library title{((num == 1) ? string.Empty : "s")}.");
+			CompanionToolsStatusMessage = ((num == 0) ? "No safe title changes were found." : $"Polished {num} game {Pluralize(num, "title", "titles")}.");
 			StatusMessage = CompanionToolsStatusMessage;
 			AppendRecentActivity("companion.title-polish", null, CompanionToolsStatusMessage);
 			if (num > 0)
 			{
-				await PersistAsync();
+				await PersistWithHistoryAsync(new LibraryHistoryContext(
+					"library.title-polish",
+					$"Polished {num} {Pluralize(num, "title", "titles")}",
+					"Applied reviewed title cleanup suggestions."));
 			}
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("companion-title-polish", ex);
-			CompanionToolsStatusMessage = "CloudBerry could not finish the companion title polish pass.";
+			CompanionToolsStatusMessage = "Cirra could not finish polishing titles.";
 			StatusMessage = CompanionToolsStatusMessage;
 		}
 		finally
@@ -5006,14 +6114,14 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			CompanionInsights.Clear();
 			OnPropertyChanged("HasCompanionInsights");
-			CompanionToolsStatusMessage = "Import games before asking companion tools for library insights.";
+			CompanionToolsStatusMessage = "Import games before refreshing library insights.";
 			StatusMessage = CompanionToolsStatusMessage;
 			return;
 		}
-		CompanionToolDescriptor val = FindCompanionTool("node");
+		CompanionToolDescriptor? val = FindCompanionTool("node");
 		if (val == null)
 		{
-			CompanionToolsStatusMessage = "Node.js was not detected, so companion library insights are unavailable right now.";
+			CompanionToolsStatusMessage = "Node.js was not detected, so library insights are unavailable right now.";
 			StatusMessage = CompanionToolsStatusMessage;
 			return;
 		}
@@ -5060,7 +6168,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("companion-insights", ex);
-			CompanionToolsStatusMessage = "CloudBerry could not finish the Node.js library insight pass.";
+			CompanionToolsStatusMessage = "Cirra could not refresh library insights.";
 			StatusMessage = CompanionToolsStatusMessage;
 		}
 		finally
@@ -5071,13 +6179,16 @@ public sealed class MainViewModel : ViewModelBase
 
 	private static readonly (string Platform, string Glyph)[] EmulatorPlatformCatalog =
 	[
-		("NES", "\ue7fc"), ("SNES", "\ue7fc"), ("Nintendo 64", "\ue7fc"),
-		("Game Boy", "\ue7fc"), ("Game Boy Color", "\ue7fc"), ("Game Boy Advance", "\ue7fc"),
-		("Nintendo DS", "\ue7fc"), ("Nintendo 3DS", "\ue7fc"), ("GameCube", "\ue7fc"), ("Wii", "\ue7fc"),
-		("Wii U", "\ue7fc"), ("Nintendo Switch", "\ue7fc"),
-		("PlayStation", "\ue7fc"), ("PlayStation 2", "\ue7fc"), ("PlayStation 3", "\ue7fc"), ("PSP", "\ue7fc"),
-		("Mega Drive", "\ue7fc"), ("Dreamcast", "\ue7fc"), ("Sega Saturn", "\ue7fc"),
-		("Xbox", "\ue7fc"), ("Xbox 360", "\ue7fc")
+		// Classic TV-era consoles (cartridge/disc, pre-HD) — \ue7f4 TVMonitor
+		("NES", "\ue7f4"), ("SNES", "\ue7f4"), ("Nintendo 64", "\ue7f4"),
+		("Mega Drive", "\ue7f4"), ("Dreamcast", "\ue7f4"), ("Sega Saturn", "\ue7f4"),
+		("PlayStation", "\ue7f4"), ("PlayStation 2", "\ue7f4"),
+		// Handhelds — \ue8ea CellPhone
+		("Game Boy", "\ue8ea"), ("Game Boy Color", "\ue8ea"), ("Game Boy Advance", "\ue8ea"),
+		("Nintendo DS", "\ue8ea"), ("Nintendo 3DS", "\ue8ea"), ("PSP", "\ue8ea"), ("Nintendo Switch", "\ue8ea"),
+		// Modern controller-based consoles — \ue7fc Game
+		("GameCube", "\ue7fc"), ("Wii", "\ue7fc"), ("Wii U", "\ue7fc"),
+		("PlayStation 3", "\ue7fc"), ("Xbox", "\ue7fc"), ("Xbox 360", "\ue7fc")
 	];
 
 	/// <summary>Rebuilds every platform card from current settings plus the most recent scan results. Safe to call anytime — e.g. when the Emulation Station page opens, and after Scan/Apply.</summary>
@@ -5090,7 +6201,7 @@ public sealed class MainViewModel : ViewModelBase
 		EmulatorPlatformCards.Clear();
 		foreach ((string Platform, string Glyph) entry in EmulatorPlatformCatalog)
 		{
-			detectedByPlatform.TryGetValue(entry.Platform, out DetectedEmulatorMappingViewModel detected);
+			detectedByPlatform.TryGetValue(entry.Platform, out DetectedEmulatorMappingViewModel? detected);
 			int gameCount = Games.Count((GameEntryViewModel g) => string.Equals(g.Platform, entry.Platform, StringComparison.OrdinalIgnoreCase));
 			EmulatorPlatformCards.Add(new EmulatorPlatformCardViewModel(
 				this,
@@ -5211,7 +6322,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("retroarch-detect", ex);
-			RetroArchDetectionSummary = "CloudBerry could not inspect RetroArch cores. Check the RetroArch path and try again.";
+			RetroArchDetectionSummary = "Cirra could not inspect RetroArch cores. Check the RetroArch path and try again.";
 			OnPropertyChanged("HasRetroArchSuggestions");
 			OnPropertyChanged("RetroArchInstalledCores");
 			OnPropertyChanged("RetroArchSuggestions");
@@ -5220,11 +6331,11 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task ApplyRetroArchSuggestionsAsync()
 	{
-		if (_retroArchDetectionResult == (RetroArchDetectionResult)null || _retroArchDetectionResult.Suggestions.Count == 0)
+		if (_retroArchDetectionResult is null || _retroArchDetectionResult.Suggestions.Count == 0)
 		{
 			DetectRetroArchCores();
 		}
-		if (_retroArchDetectionResult == (RetroArchDetectionResult)null || _retroArchDetectionResult.Suggestions.Count == 0)
+		if (_retroArchDetectionResult is null || _retroArchDetectionResult.Suggestions.Count == 0)
 		{
 			RetroArchDetectionSummary = "No RetroArch core suggestions are ready to apply yet.";
 			return;
@@ -5235,7 +6346,7 @@ public sealed class MainViewModel : ViewModelBase
 			appliedCount += (ApplyRetroArchSuggestion(suggestion) ? 1 : 0);
 		}
 		await SaveSettingsAsync();
-		RetroArchDetectionSummary = $"Applied {appliedCount} RetroArch core mapping(s). Existing custom paths were left untouched.";
+		RetroArchDetectionSummary = $"Applied {appliedCount} RetroArch {Pluralize(appliedCount, "core mapping", "core mappings")}. Existing custom paths were left untouched.";
 	}
 
 	public void ScanInstalledEmulators()
@@ -5273,7 +6384,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("emulator-discovery", ex);
-			EmulatorDetectionSummary = "CloudBerry couldn't finish the emulator scan.";
+			EmulatorDetectionSummary = "Cirra couldn't finish the emulator scan.";
 			OnPropertyChanged("HasDetectedEmulatorMappings");
 			OnPropertyChanged("EmulatorMappingOverview");
 			RefreshEmulatorPlatformCards();
@@ -5296,7 +6407,7 @@ public sealed class MainViewModel : ViewModelBase
 			}
 		}
 		await SaveSettingsAsync();
-		EmulatorDetectionSummary = ((appliedCount == 0) ? "No new emulator mappings were applied." : $"Applied {appliedCount} emulator mapping(s).");
+		EmulatorDetectionSummary = ((appliedCount == 0) ? "No new emulator mappings were applied." : $"Applied {appliedCount} emulator {Pluralize(appliedCount, "mapping", "mappings")}.");
 		OnPropertyChanged("HasDetectedEmulatorMappings");
 		OnPropertyChanged("EmulatorMappingOverview");
 		RefreshEmulatorPlatformCards();
@@ -5311,6 +6422,109 @@ public sealed class MainViewModel : ViewModelBase
 		SelectedInstallFilterKey = "all";
 		SelectedAchievementFilterKey = "all";
 		StatusMessage = "Cleared the current library filters.";
+	}
+
+	/// <summary>Snapshots every current Library filter control into a named, reusable preset.</summary>
+	public void SaveCurrentFiltersAsPreset(string name)
+	{
+		string trimmed = (name ?? string.Empty).Trim();
+		if (string.IsNullOrWhiteSpace(trimmed))
+		{
+			StatusMessage = "Give the preset a name before saving.";
+			return;
+		}
+
+		string summary = BuildFilterPresetSummary();
+		if (summary.Length == 0)
+		{
+			StatusMessage = "No filters are active — pick a filter before saving a preset.";
+			return;
+		}
+
+		// Re-saving an existing preset name updates it in place instead of creating a duplicate
+		// chip, so a user tweaking and re-saving "PS3 Backlog" doesn't end up with two of them.
+		LibraryFilterPresetViewModel? existing = LibraryFilterPresets.FirstOrDefault(
+			(LibraryFilterPresetViewModel p) => p.Name.Equals(trimmed, StringComparison.OrdinalIgnoreCase));
+
+		LibraryFilterPreset preset = new LibraryFilterPreset
+		{
+			Id = existing?.Preset.Id ?? Guid.NewGuid().ToString("N"),
+			Name = trimmed,
+			SearchText = SearchText,
+			CollectionKey = SelectedCollection?.Key ?? "all",
+			StatusFilterKey = SelectedStatusFilterKey,
+			PlatformFilterKey = SelectedPlatformFilterKey,
+			InstallFilterKey = SelectedInstallFilterKey,
+			AchievementFilterKey = SelectedAchievementFilterKey,
+			Summary = summary
+		};
+
+		// Not INotifyPropertyChanged, so an in-place mutation wouldn't refresh the chip's bound
+		// text/tooltip — replace the wrapper in the collection instead, at the same slot when updating.
+		if (existing != null)
+		{
+			int index = LibraryFilterPresets.IndexOf(existing);
+			LibraryFilterPresets[index] = new LibraryFilterPresetViewModel(preset);
+		}
+		else
+		{
+			LibraryFilterPresets.Add(new LibraryFilterPresetViewModel(preset));
+		}
+
+		OnPropertyChanged("HasLibraryFilterPresets");
+		SchedulePersist();
+		StatusMessage = existing == null
+			? $"Saved filter preset \"{trimmed}\" ({summary})."
+			: $"Updated filter preset \"{trimmed}\" ({summary}).";
+	}
+
+	/// <summary>
+	/// Builds the same kind of human-readable filter description as <see cref="BuildActiveFilterSummary"/>,
+	/// but without the live game-count prefix, since this version is persisted onto a saved preset rather
+	/// than shown for the current live view. Returns an empty string when no filters are active at all.
+	/// </summary>
+	private string BuildFilterPresetSummary()
+	{
+		List<string> list = new List<string>();
+		if (!string.IsNullOrWhiteSpace(SearchText))
+		{
+			list.Add("search: " + SearchText.Trim());
+		}
+		if (SelectedCollection != null && !SelectedCollection.Key.Equals("all", StringComparison.OrdinalIgnoreCase))
+		{
+			list.Add(SelectedCollection.Title);
+		}
+		AppendFilterTitle(list, StatusFilters, SelectedStatusFilterKey, "all");
+		AppendFilterTitle(list, PlatformFilters, SelectedPlatformFilterKey, "all");
+		AppendFilterTitle(list, InstallFilters, SelectedInstallFilterKey, "all");
+		AppendFilterTitle(list, AchievementFilters, SelectedAchievementFilterKey, "all");
+		return string.Join(", ", list);
+	}
+
+	/// <summary>Restores every Library filter control from a saved preset in one shot.</summary>
+	public void ApplyFilterPreset(LibraryFilterPresetViewModel? presetViewModel)
+	{
+		if (presetViewModel == null) return;
+		LibraryFilterPreset preset = presetViewModel.Preset;
+
+		SearchText = preset.SearchText;
+		SelectedCollection = Collections.FirstOrDefault((CollectionOption option) => option.Key == preset.CollectionKey)
+			?? Collections.FirstOrDefault((CollectionOption option) => option.Key == "all")
+			?? Collections.FirstOrDefault();
+		SelectedStatusFilterKey = StatusFilters.Any((FilterOption option) => option.Key == preset.StatusFilterKey) ? preset.StatusFilterKey : "all";
+		SelectedPlatformFilterKey = PlatformFilters.Any((FilterOption option) => option.Key == preset.PlatformFilterKey) ? preset.PlatformFilterKey : "all";
+		SelectedInstallFilterKey = preset.InstallFilterKey;
+		SelectedAchievementFilterKey = AchievementFilters.Any((FilterOption option) => option.Key == preset.AchievementFilterKey) ? preset.AchievementFilterKey : "all";
+		StatusMessage = $"Applied filter preset \"{preset.Name}\".";
+	}
+
+	public void DeleteFilterPreset(LibraryFilterPresetViewModel? presetViewModel)
+	{
+		if (presetViewModel == null) return;
+		LibraryFilterPresets.Remove(presetViewModel);
+		OnPropertyChanged("HasLibraryFilterPresets");
+		SchedulePersist();
+		StatusMessage = $"Deleted filter preset \"{presetViewModel.Name}\".";
 	}
 
 	public void RevealGameInLibrary(GameEntryViewModel? game)
@@ -5355,7 +6569,7 @@ public sealed class MainViewModel : ViewModelBase
 		RefreshHomeDeck(refreshRandomPick: true);
 		if (updateStatus)
 		{
-			StatusMessage = ((RandomBacklogGame == null) ? "CloudBerry couldn't find a ready title to shuffle right now." : ("Shuffled a new rotating pick: " + RandomBacklogGame.Title + "."));
+			StatusMessage = ((RandomBacklogGame == null) ? "Cirra couldn't find a ready title to shuffle right now." : ("Shuffled a new rotating pick: " + RandomBacklogGame.Title + "."));
 		}
 	}
 
@@ -5380,9 +6594,18 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			List<GameMetadataRecord> obj = await SearchMetadataCandidatesAsync(query, SelectedGame?.Platform ?? string.Empty, 12);
 			MetadataResults.Clear();
-			foreach (GameMetadataRecord item in obj)
+			// Score and order best-first so the strongest match leads the list instead of trusting
+			// whatever order the provider's raw search response happened to return, and label each
+			// result's confidence so the user isn't left guessing which one CloudBerry actually trusts.
+			var scoredResults = _metadataMatchSelector.ScoreCandidates(query, SelectedGame?.Platform ?? string.Empty, obj);
+			foreach (var (record, score) in scoredResults)
 			{
-				MetadataResults.Add(new MetadataSearchResultViewModel(item));
+				var resultViewModel = new MetadataSearchResultViewModel(record)
+				{
+					MatchScore = score,
+					MatchConfidenceLabel = GameMetadataMatchSelector.GetConfidenceLabel(score)
+				};
+				MetadataResults.Add(resultViewModel);
 			}
 			SelectedMetadataResult = MetadataResults.FirstOrDefault();
 			MetadataStatusMessage = ((MetadataResults.Count == 0) ? ("No metadata matches found for '" + query + "'.") : $"Loaded {MetadataResults.Count} metadata matches from {SelectedMetadataProvider.DisplayName}.");
@@ -5392,7 +6615,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("metadata-search", ex);
-			MetadataStatusMessage = ex.Message;
+			MetadataStatusMessage = BuildMetadataErrorMessage(ex);
 		}
 		finally
 		{
@@ -5447,7 +6670,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("media-search", ex);
-			MediaSearchStatusMessage = "CloudBerry couldn't search the web for media right now.";
+			MediaSearchStatusMessage = "Cirra couldn't search the web for media right now.";
 		}
 		finally
 		{
@@ -5458,8 +6681,8 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task ApplySelectedMediaSearchResultAsync()
 	{
-		GameEntryViewModel selectedGame = SelectedGame;
-		MediaSearchResultViewModel selectedMediaSearchResult = SelectedMediaSearchResult;
+		GameEntryViewModel? selectedGame = SelectedGame;
+		MediaSearchResultViewModel? selectedMediaSearchResult = SelectedMediaSearchResult;
 		string mediaKind = SelectedMediaSearchKind;
 		if (selectedGame == null)
 		{
@@ -5484,7 +6707,10 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				ApplyManualMediaSelection(SelectedMetadataResult, mediaKind, imageUrl);
 			}
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"artwork.apply",
+				$"Changed {mediaKind} art for {selectedGame.Title}",
+				"Applied a manually selected media result."));
 			RefreshDerivedState();
 			MediaSearchStatusMessage = $"Applied {mediaKind} art to {selectedGame.Title}.";
 			MetadataStatusMessage = MediaSearchStatusMessage;
@@ -5493,7 +6719,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("media-apply", ex);
-			MediaSearchStatusMessage = "CloudBerry couldn't apply that media image.";
+			MediaSearchStatusMessage = "Cirra couldn't apply that media image.";
 		}
 		finally
 		{
@@ -5503,8 +6729,8 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task ApplySelectedMetadataAsync()
 	{
-		GameEntryViewModel selectedGame = SelectedGame;
-		MetadataSearchResultViewModel selectedMetadataResult = SelectedMetadataResult;
+		GameEntryViewModel? selectedGame = SelectedGame;
+		MetadataSearchResultViewModel? selectedMetadataResult = SelectedMetadataResult;
 		if (selectedGame == null)
 		{
 			MetadataStatusMessage = "Pick a library game before applying metadata.";
@@ -5519,16 +6745,19 @@ public sealed class MainViewModel : ViewModelBase
 		IsMetadataBusy = true;
 		try
 		{
-			GameMetadataRecord details = await _metadataProviderRegistry.GetProvider(SelectedMetadataProviderId).GetDetailsAsync(selectedMetadataResult.ToModel(), _settings, default(CancellationToken));
+			GameMetadataRecord? details = await _metadataProviderRegistry.GetProvider(SelectedMetadataProviderId).GetDetailsAsync(selectedMetadataResult.ToModel(), _settings, default(CancellationToken));
 			if (details == null)
 			{
-				MetadataStatusMessage = "CloudBerry couldn't load full details for that metadata match.";
+				MetadataStatusMessage = "Cirra couldn't load full details for that metadata match.";
 				return;
 			}
 			selectedMetadataResult.ApplyDetails(details);
 			selectedGame.ApplyMetadata(details, GameEntryViewModel.MetadataMergeMode.PreferIncoming);
 			bool artworkCached = await CacheMetadataAssetsAsync(selectedGame, details);
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"metadata.apply",
+				"Updated metadata for " + selectedGame.Title,
+				"Applied metadata from " + details.ProviderName + "."));
 			RefreshDerivedState();
 			MetadataStatusMessage = (artworkCached ? $"Applied metadata from {details.ProviderName} to {selectedGame.Title}." : $"Applied metadata from {details.ProviderName} to {selectedGame.Title}, but artwork caching fell back to the remote image.");
 			AppendRecentActivity("metadata.apply", selectedGame, MetadataStatusMessage);
@@ -5538,7 +6767,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("metadata-apply", ex);
-			MetadataStatusMessage = ex.Message;
+			MetadataStatusMessage = BuildMetadataErrorMessage(ex);
 		}
 		finally
 		{
@@ -5559,7 +6788,50 @@ public sealed class MainViewModel : ViewModelBase
 			StatusMessage = MetadataStatusMessage;
 			return;
 		}
+		await RunMetadataFillBatchAsync(targets, isRetryRun: false);
+	}
+
+	/// <summary>Cancels the in-progress "Fill Missing"/"Retry Failed" batch, if one is running. No-op otherwise.</summary>
+	public void CancelMetadataBatch()
+	{
+		_metadataBatchCts?.Cancel();
+	}
+
+	/// <summary>Re-runs the batch metadata fetch against just the games that failed on the last "Fill Missing"/retry pass.</summary>
+	public async Task RetryFailedMetadataAsync()
+	{
+		if (_lastFailedMetadataTargets.Count == 0)
+		{
+			MetadataStatusMessage = "No failed games to retry.";
+			StatusMessage = MetadataStatusMessage;
+			return;
+		}
+		ApplySettingsFromFields();
+		List<GameEntryViewModel> targets = _lastFailedMetadataTargets.ToList();
+		await RunMetadataFillBatchAsync(targets, isRetryRun: true);
+	}
+
+	/// <summary>
+	/// Shared runner behind "Fill Missing" and "Retry Failed": cancellable via <see cref="CancelMetadataBatch"/>,
+	/// honors <see cref="ReplaceExistingMetadata"/> for the merge mode, and remembers exactly which
+	/// games failed so a subsequent Retry Failed only has to touch those, not the whole library again.
+	/// </summary>
+	private async Task RunMetadataFillBatchAsync(List<GameEntryViewModel> targets, bool isRetryRun)
+	{
 		IsMetadataBusy = true;
+		_metadataBatchCts = new CancellationTokenSource();
+		CancellationToken token = _metadataBatchCts.Token;
+		ActivityOperationHandle activity = _activityCenter.Begin(
+			"metadata.batch",
+			isRetryRun ? $"Retry metadata for {targets.Count} games" : $"Fill metadata for {targets.Count} games",
+			canCancel: true,
+			retryKey: "metadata.fill");
+		using CancellationTokenRegistration activityCancellation = activity.CancellationToken.Register(CancelMetadataBatch);
+		GameEntryViewModel.MetadataMergeMode mergeMode = ReplaceExistingMetadata
+			? GameEntryViewModel.MetadataMergeMode.PreferIncoming
+			: GameEntryViewModel.MetadataMergeMode.PreserveExisting;
+		List<GameEntryViewModel> failedTargets = new List<GameEntryViewModel>();
+		bool wasCancelled = false;
 		try
 		{
 			IGameMetadataProvider provider = _metadataProviderRegistry.GetProvider(SelectedMetadataProviderId);
@@ -5568,22 +6840,30 @@ public sealed class MainViewModel : ViewModelBase
 			int fallbackArtworkCount = 0;
 			int skippedCount = 0;
 			int failedCount = 0;
+			int processedCount = 0;
 			for (int index = 0; index < targets.Count; index++)
 			{
+				if (token.IsCancellationRequested)
+				{
+					wasCancelled = true;
+					break;
+				}
 				GameEntryViewModel game = targets[index];
 				MetadataStatusMessage = $"[{index + 1}/{targets.Count}] Searching {SelectedMetadataProvider.DisplayName} for {game.Title}...";
+				activity.Report((double)index / targets.Count, MetadataStatusMessage);
 				try
 				{
 					List<GameMetadataRecord> list = await SearchMetadataCandidatesAsync(game.Title, game.Platform, 10);
-					GameMetadataRecord bestMatch = _metadataMatchSelector.SelectBestMatch(game.Title, game.Platform, (IEnumerable<GameMetadataRecord>)list);
+					GameMetadataRecord? bestMatch = _metadataMatchSelector.SelectBestMatch(game.Title, game.Platform, (IEnumerable<GameMetadataRecord>)list);
 					if (bestMatch == null)
 					{
 						skippedCount++;
+						processedCount++;
 						continue;
 					}
-					GameMetadataRecord metadata = (await provider.GetDetailsAsync(bestMatch, _settings, default(CancellationToken))) ?? bestMatch;
+					GameMetadataRecord metadata = (await provider.GetDetailsAsync(bestMatch, _settings, token)) ?? bestMatch;
 					MetadataCoverageSnapshot coverageBefore = CaptureMetadataCoverage(game);
-					game.ApplyMetadata(metadata);
+					game.ApplyMetadata(metadata, mergeMode);
 					MetadataCoverageSnapshot coverageAfter = CaptureMetadataCoverage(game);
 					if (!(await CacheMetadataAssetsAsync(game, metadata)))
 					{
@@ -5594,28 +6874,60 @@ public sealed class MainViewModel : ViewModelBase
 						enrichedCount++;
 					}
 					appliedCount++;
+					processedCount++;
+				}
+				catch (OperationCanceledException)
+				{
+					wasCancelled = true;
+					break;
 				}
 				catch (Exception ex)
 				{
 					failedCount++;
+					processedCount++;
+					failedTargets.Add(game);
 					_diagnostics.WriteException("metadata-batch", ex);
 				}
 			}
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"metadata.batch",
+				$"Updated metadata for {appliedCount} {Pluralize(appliedCount, "game", "games")}",
+				isRetryRun ? "Retried a metadata sweep." : "Completed a metadata sweep."));
 			RefreshDerivedState();
-			MetadataStatusMessage = BuildBatchMetadataSummary(appliedCount, enrichedCount, fallbackArtworkCount, skippedCount, failedCount, targets.Count);
+			_lastFailedMetadataTargets = failedTargets;
+			OnPropertyChanged(nameof(HasFailedMetadataTargets));
+			OnPropertyChanged(nameof(FailedMetadataTargetCount));
+			string runLabel = isRetryRun ? "Retry" : "Metadata sweep";
+			MetadataStatusMessage = wasCancelled
+				? $"{runLabel} cancelled after {processedCount} of {targets.Count} games \u2014 {appliedCount} updated, {failedCount} failed."
+				: BuildBatchMetadataSummary(appliedCount, enrichedCount, fallbackArtworkCount, skippedCount, failedCount, targets.Count);
 			AppendRecentActivity("metadata.batch", null, MetadataStatusMessage);
 			StatusMessage = MetadataStatusMessage;
+			if (wasCancelled)
+			{
+				activity.Cancelled(MetadataStatusMessage);
+			}
+			else if (failedCount == targets.Count)
+			{
+				activity.Fail(MetadataStatusMessage);
+			}
+			else
+			{
+				activity.Complete(MetadataStatusMessage);
+			}
 		}
 		catch (Exception ex2)
 		{
 			_diagnostics.WriteException("metadata-batch-setup", ex2);
-			MetadataStatusMessage = ex2.Message;
+			MetadataStatusMessage = BuildMetadataErrorMessage(ex2);
 			StatusMessage = MetadataStatusMessage;
+			activity.Fail(MetadataStatusMessage);
 		}
 		finally
 		{
 			IsMetadataBusy = false;
+			_metadataBatchCts?.Dispose();
+			_metadataBatchCts = null;
 		}
 	}
 
@@ -5623,14 +6935,26 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task RefreshSelectedGameMetadataAsync()
 	{
-		if (SelectedGame == null)
-		{
-			MetadataStatusMessage = "Pick a game before refreshing its metadata.";
-			StatusMessage = MetadataStatusMessage;
-			return;
-		}
-		await RefreshMetadataForGamesAsync(Array.AsReadOnly(new GameEntryViewModel[1] { SelectedGame }));
+	if (SelectedGame == null)
+	{
+	MetadataStatusMessage = "Pick a game before refreshing its metadata.";
+	StatusMessage = MetadataStatusMessage;
+	return;
 	}
+	await RefreshMetadataForGamesAsync(Array.AsReadOnly(new GameEntryViewModel[1] { SelectedGame }));
+	}
+
+    /// <summary>
+    /// Public wrapper around the same confidence-scored matcher used by the batch "Fill Missing
+    /// Metadata" and per-game "Refresh Metadata" flows, so the scan-import preview's "Prepare
+    /// Selected" can pick the best-fitting result instead of blindly taking whatever the search
+    /// API returned first (which is often the wrong regional re-release, a bundle/DLC entry, or
+    /// an unrelated same-named title).
+    /// </summary>
+    public GameMetadataRecord? SelectBestMetadataMatch(string title, string platform, IEnumerable<GameMetadataRecord> candidates)
+    {
+        return _metadataMatchSelector.SelectBestMatch(title, platform, candidates);
+    }
 
 	private async Task RefreshMetadataForGamesAsync(IReadOnlyList<GameEntryViewModel> targets)
 	{
@@ -5654,7 +6978,7 @@ public sealed class MainViewModel : ViewModelBase
 				try
 				{
 					List<GameMetadataRecord> list = await SearchMetadataCandidatesAsync(game.Title, game.Platform, 10);
-					GameMetadataRecord bestMatch = _metadataMatchSelector.SelectBestMatch(game.Title, game.Platform, (IEnumerable<GameMetadataRecord>)list);
+					GameMetadataRecord? bestMatch = _metadataMatchSelector.SelectBestMatch(game.Title, game.Platform, (IEnumerable<GameMetadataRecord>)list);
 					if (bestMatch == null)
 					{
 						skippedCount++;
@@ -5682,7 +7006,10 @@ public sealed class MainViewModel : ViewModelBase
 					_diagnostics.WriteException("metadata-refresh", ex);
 				}
 			}
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"metadata.refresh",
+				targets.Count == 1 ? "Refreshed " + targets[0].Title : $"Refreshed metadata for {targets.Count} games",
+				$"{appliedCount} updated, {failedCount} failed."));
 			RefreshDerivedState();
 			if (targets.Count == 1)
 			{
@@ -5703,7 +7030,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex2)
 		{
 			_diagnostics.WriteException("metadata-refresh-setup", ex2);
-			MetadataStatusMessage = ex2.Message;
+			MetadataStatusMessage = BuildMetadataErrorMessage(ex2);
 			StatusMessage = MetadataStatusMessage;
 		}
 		finally
@@ -5739,7 +7066,7 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		else
 		{
-			await SyncAchievementsForGamesAsync(list, $"{list.Count} game(s)");
+			await SyncAchievementsForGamesAsync(list, $"{list.Count} {Pluralize(list.Count, "game", "games")}");
 		}
 	}
 
@@ -5753,7 +7080,7 @@ public sealed class MainViewModel : ViewModelBase
 			return Task.CompletedTask;
 		}
 		string normalizedQuery = NormalizeAchievementSearchText(text);
-		GameEntryViewModel gameEntryViewModel = (from item in Games.Where((GameEntryViewModel game) => !string.IsNullOrWhiteSpace(game.Title)).Select(delegate(GameEntryViewModel game)
+		GameEntryViewModel? gameEntryViewModel = (from item in Games.Where((GameEntryViewModel game) => !string.IsNullOrWhiteSpace(game.Title)).Select(delegate(GameEntryViewModel game)
 			{
 				string text2 = NormalizeAchievementSearchText(game.Title);
 				int num;
@@ -5851,6 +7178,20 @@ public sealed class MainViewModel : ViewModelBase
 		await LaunchGameAsync(SelectedGame);
 	}
 
+	private void RefreshSelectedLaunchPreflight()
+	{
+		if (SelectedGame == null)
+		{
+			SelectedLaunchPreflight = null;
+			return;
+		}
+
+		var configuredEmulator = string.IsNullOrWhiteSpace(SelectedGame.EmulatorPath)
+			? _settings.Emulators.Resolve(SelectedGame.Platform)
+			: SelectedGame.EmulatorPath;
+		SelectedLaunchPreflight = _launchPreflightService.Check(SelectedGame.ToModel(), configuredEmulator);
+	}
+
 	public Task LaunchGameAsync(GameEntryViewModel? game)
 	{
 		if (game == null)
@@ -5865,11 +7206,35 @@ public sealed class MainViewModel : ViewModelBase
 				StatusMessage = game.Title + " is already being tracked as running.";
 				return Task.CompletedTask;
 			}
+			var configuredEmulator = string.IsNullOrWhiteSpace(game.EmulatorPath)
+				? _settings.Emulators.Resolve(game.Platform)
+				: game.EmulatorPath;
+			var preflight = _launchPreflightService.Check(game.ToModel(), configuredEmulator);
+			if (ReferenceEquals(game, SelectedGame))
+			{
+				SelectedLaunchPreflight = preflight;
+			}
+			if (!preflight.CanLaunch)
+			{
+				var blocker = preflight.Checks.First(check => check.Readiness == LaunchReadiness.Blocked);
+				StatusMessage = $"{game.Title} is not ready: {blocker.Detail} {blocker.ActionLabel}.".Trim();
+				AppendRecentActivity("launch.preflight-blocked", game, blocker.Detail);
+				return Task.CompletedTask;
+			}
 			GameLaunchSession val;
 			if (GameLauncher.IsRomFile(game.InstallPath))
 			{
 				string text = ((!string.IsNullOrWhiteSpace(game.EmulatorPath)) ? game.EmulatorPath : _settings.Emulators.Resolve(game.Platform));
-				val = _gameLauncher.LaunchWithEmulator(text, game.InstallPath);
+				EmbeddedLaunchResult embeddedResult = _gameLauncher.LaunchWithEmulatorEmbedded(text, game.InstallPath);
+				val = embeddedResult.Session;
+				if (embeddedResult.IsEmbeddingCandidate && _settings.Emulators.EnableEmbeddedPlayForRetroArch && val.IsTrackingAvailable)
+				{
+					AttemptEmbeddedPlay(game, val, embeddedResult.TempConfigPath);
+				}
+				else
+				{
+					TryDeleteEmbeddedTempConfig(embeddedResult.TempConfigPath);
+				}
 			}
 			else
 			{
@@ -5900,14 +7265,213 @@ public sealed class MainViewModel : ViewModelBase
 			SchedulePersist();
 			RefreshDerivedState();
 			AppendRecentActivity("launch", game, val.IsTrackingAvailable ? "Launched with active session tracking." : "Launched without process tracking.");
-			StatusMessage = (val.IsTrackingAvailable ? ("Launched " + game.Title + ". CloudBerry will track this session when the process exits.") : ("Launched " + game.Title + ". This target opened successfully, but session tracking is unavailable for it."));
+			StatusMessage = (val.IsTrackingAvailable ? ("Launched " + game.Title + ". Cirra will track this session when the process exits.") : ("Launched " + game.Title + ". This target opened successfully, but session tracking is unavailable for it."));
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("launch", ex);
-			StatusMessage = ex.Message;
+			StatusMessage = BuildLaunchErrorMessage(game, ex);
 		}
 		return Task.CompletedTask;
+	}
+
+	/// <summary>
+	/// Raised once an embedded-play window-attach attempt actually finds a live window to reparent.
+	/// MainWindow.xaml.cs owns the WPF side (routing into Cloudscape and calling
+	/// BigPictureWindow.ShowEmbeddedPlay) so MainViewModel never
+	/// needs to reference WPF Window types directly — same separation used everywhere else in this
+	/// app (this ViewModel never constructs a Window itself).
+	/// </summary>
+	public event EventHandler<EmbeddedPlayRequestedEventArgs>? EmbeddedPlayRequested;
+
+	/// <summary>
+	/// Fire-and-forget: polls for the RetroArch window in the background without blocking the launch
+	/// flow that's already returned to the caller. If a window shows up in time, raises
+	/// <see cref="EmbeddedPlayRequested"/> so MainWindow.xaml.cs can open the embedded player; if it
+	/// doesn't (or anything goes wrong), this quietly does nothing more than clean up the temp config
+	/// file — the game is already running normally in its own window either way, since it was launched
+	/// before this method was ever called.
+	/// </summary>
+	private async void AttemptEmbeddedPlay(GameEntryViewModel game, GameLaunchSession session, string? tempConfigPath)
+	{
+		try
+		{
+			IntPtr handle = await session.WaitForMainWindowHandleAsync(TimeSpan.FromSeconds(8));
+			if (handle == IntPtr.Zero)
+			{
+				TryDeleteEmbeddedTempConfig(tempConfigPath);
+				return;
+			}
+
+			EmbeddedPlayRequested?.Invoke(this, new EmbeddedPlayRequestedEventArgs(game, session, handle, tempConfigPath));
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("embedded-play-attach", ex);
+			TryDeleteEmbeddedTempConfig(tempConfigPath);
+		}
+	}
+
+	private static void TryDeleteEmbeddedTempConfig(string? tempConfigPath)
+	{
+		if (string.IsNullOrWhiteSpace(tempConfigPath))
+		{
+			return;
+		}
+
+		try
+		{
+			if (File.Exists(tempConfigPath))
+			{
+				File.Delete(tempConfigPath);
+			}
+		}
+		catch (IOException)
+		{
+		}
+		catch (UnauthorizedAccessException)
+		{
+		}
+	}
+
+	/// <summary>
+	/// Turns a launch failure into a single-line, action-oriented status message. GameLauncher
+	/// already writes helpful, multi-line guidance for the "known" failure cases (missing emulator,
+	/// missing ROM), but a status bar can't show line breaks, and unhandled OS-level failures
+	/// (Win32Exception "access denied", "not a valid Win32 application", etc.) surface as raw,
+	/// cryptic text that doesn't tell the player what to do next. This collapses both cases into
+	/// one readable line that always ends with a concrete next step.
+	/// </summary>
+	private static string BuildLaunchErrorMessage(GameEntryViewModel game, Exception ex)
+	{
+		string flattened = ex.Message.Replace("\r\n", " ").Replace("\n", " ").Trim();
+		while (flattened.Contains("  "))
+		{
+			flattened = flattened.Replace("  ", " ");
+		}
+		if (ex is FileNotFoundException fileNotFound)
+		{
+			// GameLauncher throws this for two very different reasons — the ROM/game file itself is
+			// missing, or the configured emulator executable is missing — and collapsing both into one
+			// "its files weren't found" message points the player at the wrong thing to fix. FileName is
+			// set at both throw sites, so compare it against the game's own install path to tell them apart.
+			bool isGameFileMissing = !string.IsNullOrWhiteSpace(fileNotFound.FileName) &&
+				string.Equals(fileNotFound.FileName, game.InstallPath, StringComparison.OrdinalIgnoreCase);
+
+			return isGameFileMissing
+				? $"Couldn't launch {game.Title} \u2014 its files weren't found. It may have moved, been uninstalled, or be on a drive that isn't connected. Try Repair Library or update its path from the detail panel."
+				: $"Couldn't launch {game.Title} \u2014 its emulator couldn't be found. It may have moved or been uninstalled. Update the emulator path in Settings -> Emulators or the RetroArch Core Center.";
+		}
+		if (ex is InvalidOperationException)
+		{
+			// These already carry actionable guidance from GameLauncher (e.g. "Open Settings -> Emulators").
+			return flattened;
+		}
+		return $"Couldn't launch {game.Title}: {flattened}. Check that its install path is still correct in the detail panel.";
+	}
+
+	/// <summary>
+	/// Turns a metadata/provider failure into a single-line, action-oriented status message.
+	/// Individual providers inside AggregatedMetadataProvider already swallow their own
+	/// exceptions (see SafeSearch/SafeDetails), so anything that reaches this point is a setup-
+	/// or infrastructure-level failure -- a dropped connection, a timeout, a disk/cache write
+	/// failure, or a malformed response -- not a single provider being briefly unavailable.
+	/// Raw exception text here tends to be either cryptic (HttpRequestException's inner socket
+	/// text) or misleadingly technical (JsonException field names), so this maps the common
+	/// cases to plain language with a concrete next step, and only falls back to the flattened
+	/// raw message for truly unexpected exception types.
+	/// </summary>
+	private static string BuildMetadataErrorMessage(Exception ex)
+	{
+		if (ex is HttpRequestException httpEx)
+		{
+			if (httpEx.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+			{
+				return "The metadata service is rate-limiting Cirra right now. Wait a minute and try again \u2014 your library isn't affected.";
+			}
+			if (httpEx.StatusCode is System.Net.HttpStatusCode.ServiceUnavailable or System.Net.HttpStatusCode.BadGateway or System.Net.HttpStatusCode.GatewayTimeout)
+			{
+				return "The metadata service looks temporarily down on its end. Try again in a few minutes.";
+			}
+			return "Cirra couldn't reach the metadata service. Check your internet connection and try again.";
+		}
+		if (ex is TaskCanceledException || ex is TimeoutException)
+		{
+			return "Cirra couldn't reach the metadata service. Check your internet connection and try again.";
+		}
+		if (ex is JsonException)
+		{
+			return "Cirra received an unexpected response from the metadata service. Try again in a moment.";
+		}
+		if (ex is IOException || ex is UnauthorizedAccessException)
+		{
+			return "Cirra couldn't save the downloaded metadata or artwork. Check that Cirra can write to its data folder.";
+		}
+		if (ex is InvalidOperationException)
+		{
+			// These already carry actionable guidance from the provider layer.
+			string flattenedInner = ex.Message.Replace("\r\n", " ").Replace("\n", " ").Trim();
+			while (flattenedInner.Contains("  "))
+			{
+				flattenedInner = flattenedInner.Replace("  ", " ");
+			}
+			return flattenedInner;
+		}
+		string flattened = ex.Message.Replace("\r\n", " ").Replace("\n", " ").Trim();
+		while (flattened.Contains("  "))
+		{
+			flattened = flattened.Replace("  ", " ");
+		}
+		return $"Cirra couldn't finish that metadata request: {flattened}.";
+	}
+
+	/// <summary>
+	/// (Re)builds <see cref="MetadataProviderToggles"/> from <see cref="CirraSettings.DisabledMetadataProviderIds"/>.
+	/// Called once on load; each row writes straight back through <see cref="SetMetadataProviderEnabled"/>
+	/// on toggle, so there's never a second copy of this list to keep in sync.
+	/// </summary>
+	private void RefreshMetadataProviderToggles()
+	{
+		var disabled = _settings.DisabledMetadataProviderIds ?? [];
+		(string Id, string Name, string Description)[] sources =
+		[
+			("igdb-proxy", "IGDB", "Cirra's primary source \u2014 the richest general-purpose game database. Routed through Cirra's free proxy, no account needed."),
+			("igdb-direct", "IGDB (direct)", "Same IGDB data, used as a backup path if the proxy is briefly unavailable."),
+			("steam-store", "Steam Store", "Pulls cover art, screenshots, and trailers from the public Steam Store API. Best for PC games."),
+			("pcgamingwiki", "PCGamingWiki", "Community-maintained PC-specific details and compatibility notes."),
+			("opencritic", "OpenCritic", "Aggregated critic review scores."),
+			("wikipedia", "Wikipedia", "General-purpose fallback summaries for obscure or older titles the other sources miss.")
+		];
+
+		MetadataProviderToggles.Clear();
+		foreach (var source in sources)
+		{
+			MetadataProviderToggles.Add(new MetadataProviderToggleViewModel(
+				source.Id,
+				source.Name,
+				source.Description,
+				isEnabled: !disabled.Contains(source.Id, StringComparer.OrdinalIgnoreCase),
+				onChanged: SetMetadataProviderEnabled));
+		}
+	}
+
+	private async void SetMetadataProviderEnabled(string providerId, bool isEnabled)
+	{
+		_settings.DisabledMetadataProviderIds ??= [];
+		var wasDisabled = _settings.DisabledMetadataProviderIds.Contains(providerId, StringComparer.OrdinalIgnoreCase);
+		if (isEnabled && wasDisabled)
+		{
+			_settings.DisabledMetadataProviderIds.RemoveAll(id => string.Equals(id, providerId, StringComparison.OrdinalIgnoreCase));
+		}
+		else if (!isEnabled && !wasDisabled)
+		{
+			_settings.DisabledMetadataProviderIds.Add(providerId);
+		}
+		else
+		{
+			return;
+		}
+		await SaveSettingsAsync();
 	}
 
 	public async Task SetUserRatingAsync(double? stars)
@@ -5915,7 +7479,10 @@ public sealed class MainViewModel : ViewModelBase
 		if (SelectedGame != null)
 		{
 			SelectedGame.UserRating = stars;
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"game.rating",
+				stars.HasValue ? "Rated " + SelectedGame.Title : "Cleared rating for " + SelectedGame.Title,
+				stars.HasValue ? $"Set the personal rating to {stars:0.#} / 5." : "Removed the personal rating."));
 			RefreshDerivedState();
 			StatusMessage = ((!stars.HasValue) ? ("Cleared your rating for " + SelectedGame.Title + ".") : $"Rated {SelectedGame.Title} {stars:0.#} / 5 stars.");
 		}
@@ -5937,14 +7504,16 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			SelectedGame.IsFavorite = !SelectedGame.IsFavorite;
 			AppendRecentActivity(SelectedGame.IsFavorite ? "favorite.add" : "favorite.remove", SelectedGame, SelectedGame.IsFavorite ? "Pinned as favorite." : "Removed from favorites.");
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				SelectedGame.IsFavorite ? "favorite.add" : "favorite.remove",
+				SelectedGame.IsFavorite ? "Favorited " + SelectedGame.Title : "Unfavorited " + SelectedGame.Title));
 			RefreshDerivedState();
 			StatusMessage = (SelectedGame.IsFavorite ? (SelectedGame.Title + " was pinned as a favorite.") : (SelectedGame.Title + " was removed from favorites."));
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("favorite", ex);
-			StatusMessage = "CloudBerry couldn't update favorites.";
+			StatusMessage = "Cirra couldn't update favorites.";
 		}
 	}
 
@@ -6009,14 +7578,16 @@ public sealed class MainViewModel : ViewModelBase
 				game.IsFavorite = isFavorite;
 				AppendRecentActivity(isFavorite ? "favorite.add" : "favorite.remove", game, isFavorite ? "Pinned as favorite." : "Removed from favorites.");
 			}
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				isFavorite ? "favorite.bulk-add" : "favorite.bulk-remove",
+				$"{(isFavorite ? "Favorited" : "Unfavorited")} {games.Count} {Pluralize(games.Count, "game", "games")}"));
 			RefreshDerivedState();
 			StatusMessage = (isFavorite ? $"Pinned {games.Count} game{((games.Count == 1) ? string.Empty : "s")} as favorite." : $"Removed {games.Count} game{((games.Count == 1) ? string.Empty : "s")} from favorites.");
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("favorite-bulk", ex);
-			StatusMessage = "CloudBerry couldn't update those favorites.";
+			StatusMessage = "Cirra couldn't update those favorites.";
 		}
 	}
 
@@ -6034,14 +7605,16 @@ public sealed class MainViewModel : ViewModelBase
 				game.IsInstalled = isInstalled;
 				AppendRecentActivity("library.install-state", game, isInstalled ? "Marked installed." : "Marked not installed.");
 			}
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"library.install-state",
+				$"Marked {games.Count} {Pluralize(games.Count, "game", "games")} {(isInstalled ? "installed" : "not installed")}"));
 			RefreshDerivedState();
 			StatusMessage = (isInstalled ? $"Marked {games.Count} game{((games.Count == 1) ? string.Empty : "s")} installed." : $"Marked {games.Count} game{((games.Count == 1) ? string.Empty : "s")} not installed.");
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("installed-bulk", ex);
-			StatusMessage = "CloudBerry couldn't update those games.";
+			StatusMessage = "Cirra couldn't update those games.";
 		}
 	}
 
@@ -6121,33 +7694,6 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
-	public async Task RemoveSelectedGameAsync()
-	{
-		if (SelectedGame == null)
-		{
-			return;
-		}
-		try
-		{
-			string title = SelectedGame.Title;
-			GameEntryViewModel selectedGame = SelectedGame;
-			StopAchievementPollingIfRunning(SelectedGame.Id);
-			_achievementTrackingFiles.Remove(SelectedGame.Id);
-			SelectedGame.PropertyChanged -= OnGamePropertyChanged;
-			Games.Remove(SelectedGame);
-			SelectedGame = Games.FirstOrDefault();
-			AppendRecentActivity("library.remove", selectedGame, "Removed from library.");
-			await PersistAsync();
-			RefreshDerivedState();
-			StatusMessage = title + " was removed from the CloudBerry library.";
-		}
-		catch (Exception ex)
-		{
-			_diagnostics.WriteException("remove-game", ex);
-			StatusMessage = "CloudBerry couldn't remove that game.";
-		}
-	}
-
 	public void SelectSuggestedCandidates()
 	{
 		foreach (ImportCandidateViewModel importCandidate in ImportCandidates)
@@ -6203,7 +7749,7 @@ public sealed class MainViewModel : ViewModelBase
 			select key).ToHashSet<string>(StringComparer.OrdinalIgnoreCase);
 	}
 
-	private static bool IsKnownLaunchTarget(string installPath, ISet<string> existingLaunchKeys)
+	internal static bool IsKnownLaunchTarget(string installPath, ISet<string> existingLaunchKeys)
 	{
 		string text = NormalizeLaunchTargetKey(installPath);
 		if (!string.IsNullOrWhiteSpace(text))
@@ -6223,7 +7769,7 @@ public sealed class MainViewModel : ViewModelBase
 		return ShouldAutoSelectDesktopCandidate(candidate.Confidence, candidate.InstallPath, candidate.SignalsText, candidate.AlreadyExists);
 	}
 
-	private static bool ShouldAutoSelectDesktopCandidate(double confidence, string installPath, string signalsText, bool alreadyExists)
+	internal static bool ShouldAutoSelectDesktopCandidate(double confidence, string installPath, string signalsText, bool alreadyExists)
 	{
 		if (alreadyExists || GameLauncher.IsRomFile(installPath))
 		{
@@ -6310,7 +7856,8 @@ public sealed class MainViewModel : ViewModelBase
 		ProfileCardViewModel profileCardViewModel = Profiles.First((ProfileCardViewModel profile) => string.Equals(profile.Id, _settings.Profiles.ActiveProfileId, StringComparison.Ordinal));
 		profileCardViewModel.LastUsedAtUtc = DateTime.UtcNow;
 		SelectedProfile = profileCardViewModel;
-		if (!string.IsNullOrWhiteSpace(profileCardViewModel.PreferredTheme) && AppearanceThemeOptions.Contains(profileCardViewModel.PreferredTheme))
+		profileCardViewModel.PreferredTheme = NormalizeThemeKey(profileCardViewModel.PreferredTheme);
+		if (AppearanceThemeOptions.Contains(profileCardViewModel.PreferredTheme))
 		{
 			_appearanceThemeKey = profileCardViewModel.PreferredTheme;
 		}
@@ -6334,7 +7881,7 @@ public sealed class MainViewModel : ViewModelBase
 		//IL_00a2: Unknown result type (might be due to invalid IL or missing references)
 		//IL_00ad: Unknown result type (might be due to invalid IL or missing references)
 		//IL_00b9: Expected O, but got Unknown
-		string text = Environment.UserName?.Trim();
+		string text = Environment.UserName.Trim();
 		if (string.IsNullOrWhiteSpace(text))
 		{
 			text = "Player One";
@@ -6348,7 +7895,7 @@ public sealed class MainViewModel : ViewModelBase
 			PresenceLine = "Signed in locally",
 			HighlightTone = InferHighlightTone(AppearanceThemeKey),
 			ShellStyle = InferShellStyle(AppearanceThemeKey),
-			PreferredTheme = (string.IsNullOrWhiteSpace(AppearanceThemeKey) ? "Mint Cloud" : AppearanceThemeKey),
+			PreferredTheme = (string.IsNullOrWhiteSpace(AppearanceThemeKey) ? "Cirra Core" : AppearanceThemeKey),
 			BroadcastPresence = true,
 			CreatedAtUtc = DateTime.UtcNow,
 			LastUsedAtUtc = DateTime.UtcNow
@@ -6471,7 +8018,8 @@ public sealed class MainViewModel : ViewModelBase
 
 	private void ApplyProfileTheme(ProfileCardViewModel profile)
 	{
-		if (!string.IsNullOrWhiteSpace(profile.PreferredTheme) && AppearanceThemeOptions.Contains(profile.PreferredTheme))
+		profile.PreferredTheme = NormalizeThemeKey(profile.PreferredTheme);
+		if (AppearanceThemeOptions.Contains(profile.PreferredTheme))
 		{
 			AppearanceThemeKey = profile.PreferredTheme;
 		}
@@ -6530,14 +8078,31 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		return themeKey switch
 		{
-			"Neon Matrix" => "Neo Mint", 
-			"Retro Glitch" => "Voltage Rose", 
-			"Wuthering Waves" => "Sky Cyan", 
-			"Blueberry Midnight" => "Slate Ice", 
-			"Mint Cloud" => "Neo Mint", 
-			"Black Flash" => "Black Flash Red", 
-			"NieR Automata" => "Arcade Gold", 
-			_ => "Arcade Gold", 
+			"Signal Rain" => "Neo Mint",
+			"Arcade Static" => "Voltage Rose",
+			"Tidal Glass" => "Sky Cyan",
+			"Midnight Observatory" => "Slate Ice",
+			"Verdant Glass" => "Neo Mint",
+			"Impact Noir" => "Ember Red",
+			"Archive Ivory" => "Arcade Gold",
+			_ => "Arcade Gold",
+		};
+	}
+
+	private static string NormalizeThemeKey(string? themeKey)
+	{
+		return themeKey?.Trim() switch
+		{
+			"CloudBerry Dark" => "Cirra Core",
+			"Neon Matrix" => "Signal Rain",
+			"Retro Glitch" => "Arcade Static",
+			"NieR Automata" => "Archive Ivory",
+			"Wuthering Waves" => "Tidal Glass",
+			"Blueberry Midnight" => "Midnight Observatory",
+			"Mint Cloud" => "Verdant Glass",
+			"Black Flash" => "Impact Noir",
+			null or "" => "Cirra Core",
+			var current => current
 		};
 	}
 
@@ -6545,18 +8110,18 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		return themeKey switch
 		{
-			"Neon Matrix" => "Broadcast", 
-			"Retro Glitch" => "Arc", 
-			"Black Flash" => "Blade", 
-			"NieR Automata" => "Archive", 
-			"Wuthering Waves" => "Blade", 
-			_ => "Blade", 
+			"Signal Rain" => "Broadcast",
+			"Arcade Static" => "Arc",
+			"Impact Noir" => "Blade",
+			"Archive Ivory" => "Archive",
+			"Tidal Glass" => "Blade",
+			_ => "Blade",
 		};
 	}
 
 	private string BuildFriendCode()
 	{
-		ProfileCardViewModel activeProfile = ActiveProfile;
+		ProfileCardViewModel? activeProfile = ActiveProfile;
 		if (activeProfile == null)
 		{
 			return string.Empty;
@@ -6581,7 +8146,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task PublishActiveProfilePresenceAsync()
 	{
-		ProfileCardViewModel profile = ActiveProfile;
+		ProfileCardViewModel? profile = ActiveProfile;
 		if (profile == null)
 		{
 			return;
@@ -6621,7 +8186,7 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		try
 		{
-			CloudBerryFriendPresenceResult val = await _socialService.LookupAsync(_settings.Profiles.PresenceEndpoint, code, default(CancellationToken));
+			CloudBerryFriendPresenceResult? val = await _socialService.LookupAsync(_settings.Profiles.PresenceEndpoint, code, default(CancellationToken));
 			if (val == null || string.IsNullOrWhiteSpace(val.CloudCode))
 			{
 				SocialStatusMessage = "No profile found for " + code + ".";
@@ -6642,12 +8207,12 @@ public sealed class MainViewModel : ViewModelBase
 		string text = FriendImportCode?.Trim() ?? string.Empty;
 		if (string.IsNullOrWhiteSpace(text))
 		{
-			SocialStatusMessage = "Paste a CloudBerry friend card first.";
+			SocialStatusMessage = "Paste a Cirra friend card first.";
 			return;
 		}
 		try
 		{
-			CloudBerryFriendCodePayload cloudBerryFriendCodePayload = ParseFriendCode(text);
+			CloudBerryFriendCodePayload? cloudBerryFriendCodePayload = ParseFriendCode(text);
 			if (cloudBerryFriendCodePayload == null)
 			{
 				SocialStatusMessage = "That friend card could not be read.";
@@ -6684,22 +8249,23 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task RefreshSelectedFriendAsync()
 	{
-		if (SelectedFriend == null)
+		FriendCardViewModel? selectedFriend = SelectedFriend;
+		if (selectedFriend == null)
 		{
 			SocialStatusMessage = "Pick a friend card first.";
 			return;
 		}
-		if (string.IsNullOrWhiteSpace(SelectedFriend.CloudCode))
+		if (string.IsNullOrWhiteSpace(selectedFriend.CloudCode))
 		{
 			SocialStatusMessage = "That friend does not have a Cloud Code.";
 			return;
 		}
 		try
 		{
-			CloudBerryFriendPresenceResult val = await _socialService.LookupAsync(_settings.Profiles.PresenceEndpoint, SelectedFriend.CloudCode, default(CancellationToken));
+			CloudBerryFriendPresenceResult? val = await _socialService.LookupAsync(_settings.Profiles.PresenceEndpoint, selectedFriend.CloudCode, default(CancellationToken));
 			if (val == null)
 			{
-				SocialStatusMessage = "No profile is live for " + SelectedFriend.CloudCode + ".";
+				SocialStatusMessage = "No profile is live for " + selectedFriend.CloudCode + ".";
 				return;
 			}
 			UpsertFriend(FriendCardViewModel.FromPresence(val));
@@ -6708,7 +8274,7 @@ public sealed class MainViewModel : ViewModelBase
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("friend-refresh", ex);
-			SocialStatusMessage = "CloudBerry couldn't refresh that friend right now.";
+			SocialStatusMessage = "Cirra couldn't refresh that friend right now.";
 		}
 	}
 
@@ -6730,7 +8296,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private void UpsertFriend(FriendCardViewModel friend)
 	{
-		FriendCardViewModel friendCardViewModel = Friends.FirstOrDefault((FriendCardViewModel item) => string.Equals(item.CloudCode, friend.CloudCode, StringComparison.OrdinalIgnoreCase));
+			FriendCardViewModel? friendCardViewModel = Friends.FirstOrDefault((FriendCardViewModel item) => string.Equals(item.CloudCode, friend.CloudCode, StringComparison.OrdinalIgnoreCase));
 		if (friendCardViewModel == null)
 		{
 			Friends.Add(friend);
@@ -6857,6 +8423,45 @@ public sealed class MainViewModel : ViewModelBase
 		SelectedCloudscapePage = 5;
 	}
 
+	// ── Window state persistence (v0.3 polish) ──────────────────────────────────
+
+	/// <summary>A5: saved main window bounds, applied once by MainWindow after startup load completes.</summary>
+	public WindowSettings SavedWindowState => _settings.Window;
+
+	/// <summary>
+	/// A5: called by MainWindow when its size/position/maximized state changes and is worth remembering.
+	/// Bounds are only recorded while not maximized — restoring always maximized-or-not is handled
+	/// separately by the IsMaximized flag so a maximize/restore cycle doesn't clobber the saved rectangle.
+	/// </summary>
+	public void UpdateWindowState(double left, double top, double width, double height, bool isMaximized)
+	{
+		_settings.Window.IsMaximized = isMaximized;
+		if (!isMaximized)
+		{
+			if (!double.IsNaN(left) && !double.IsNaN(top))
+			{
+				_settings.Window.Left = left;
+				_settings.Window.Top = top;
+			}
+			if (width > 0 && height > 0)
+			{
+				_settings.Window.Width = width;
+				_settings.Window.Height = height;
+			}
+		}
+		SchedulePersist();
+	}
+
+	/// <summary>
+	/// A5: forces any pending debounced settings/library changes to disk immediately, bypassing the
+	/// normal 2s SchedulePersist debounce. Used on app exit so window bounds and any other last-second
+	/// change aren't lost to a debounce timer that never got the chance to fire.
+	/// </summary>
+	public async Task FlushPendingChangesAsync()
+	{
+		await PersistAsync();
+	}
+
 	public void EnterTheatreWatchMode()
 	{
 		if (!string.Equals(TheatreBrowserUrl, "about:blank", StringComparison.OrdinalIgnoreCase))
@@ -6939,7 +8544,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private static bool IsDirectVideoUrl(string url)
 	{
-		if (!Uri.TryCreate(url, UriKind.Absolute, out Uri result))
+		if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? result))
 		{
 			return false;
 		}
@@ -6980,8 +8585,7 @@ public sealed class MainViewModel : ViewModelBase
 		string url = NormalizeTheatreUrl(TheatreBrowserUrl);
 		if (!string.IsNullOrWhiteSpace(url) && !string.Equals(url, "about:blank", StringComparison.OrdinalIgnoreCase) && !SavedTheatreSites.Any((TheatreSavedSiteViewModel s) => string.Equals(s.Url, url, StringComparison.OrdinalIgnoreCase)))
 		{
-			Uri result;
-			string displayName = (Uri.TryCreate(url, UriKind.Absolute, out result) ? result.Host : url);
+			string displayName = Uri.TryCreate(url, UriKind.Absolute, out Uri? result) ? result.Host : url;
 			TheatreSavedSiteViewModel item = new TheatreSavedSiteViewModel
 			{
 				DisplayName = displayName,
@@ -7030,6 +8634,9 @@ public sealed class MainViewModel : ViewModelBase
 
 	private void ApplySettingsFromFields()
 	{
+		_settings.Appearance ??= new AppearanceSettings();
+		_settings.Audio ??= new AudioSettings();
+		_settings.Devices ??= new DeviceProfileSettings();
 		_settings.SelectedMetadataProviderId = "aggregated";
 		_settings.SelectedAchievementProviderId = SelectedAchievementProviderId;
 		_settings.Steam.PollingIntervalSeconds = AchievementPollingSeconds;
@@ -7041,6 +8648,7 @@ public sealed class MainViewModel : ViewModelBase
 		_settings.Appearance.HomeRotationSeconds = HomeRotationSeconds;
 		_settings.Appearance.VisualEffectsEnabled = VisualEffectsEnabled;
 		_settings.Appearance.VisualEffectIntensity = Math.Clamp(VisualEffectIntensity, 0.35, 1.6);
+		_settings.Appearance.EffectsQuality = EffectsQuality;
 		_settings.Appearance.HomeWidgets ??= new HomeWidgetSettings();
 		_settings.Appearance.HomeWidgets.ShowLibrary = ShowLibraryStat;
 		_settings.Appearance.HomeWidgets.ShowMetadata = ShowMetadataStat;
@@ -7051,15 +8659,28 @@ public sealed class MainViewModel : ViewModelBase
 		_settings.Appearance.LibraryViewMode = _libraryViewMode;
 		_settings.Appearance.LibraryGridTileSize = _libraryGridTileSize;
 		_settings.Appearance.SidebarMaintenanceExpanded = _sidebarMaintenanceExpanded;
+		_settings.Appearance.LibraryToolsExpanded = _libraryToolsExpanded;
 		_settings.Appearance.AttractModeEnabled = _attractModeEnabled;
+		_settings.Appearance.HorizonSpotlightPaused = _horizonSpotlightPaused;
+		_settings.Appearance.EnableExternalPlaytimeTracking = _enableExternalPlaytimeTracking;
 		_settings.Appearance.AttractModeIdleSeconds = _attractModeIdleSeconds;
 		_settings.Collections.Items = UserCollections.ToList();
+		_settings.LibraryFilterPresets = LibraryFilterPresets.Select((LibraryFilterPresetViewModel p) => p.Preset).ToList();
 		_settings.Audio.Enabled = AudioEnabled;
 		_settings.Audio.Profile = (string.IsNullOrWhiteSpace(AudioProfile) ? "Subtle" : AudioProfile.Trim());
+		CirraDeviceProfile? activeDevice = _settings.Devices.Items.FirstOrDefault(profile => string.Equals(
+			profile.Id,
+			_settings.Devices.ActiveDeviceId,
+			StringComparison.Ordinal));
+		if (activeDevice != null)
+		{
+			_deviceProfileService.Capture(_settings, activeDevice);
+		}
 		_settings.Updates.FeedEndpoint = (string.IsNullOrWhiteSpace(UpdateFeedEndpoint) ? "https://cloudberry-updates.pages.dev/latest.json" : UpdateFeedEndpoint.Trim());
 		_settings.Updates.AutoCheckEnabled = AutoCheckForUpdates;
 		_settings.Updates.AutoDownloadEnabled = AutoDownloadUpdates;
 		_settings.Updates.InstallOnExit = InstallUpdatesOnExit;
+		_settings.Emulators.EnableEmbeddedPlayForRetroArch = EnableEmbeddedPlayForRetroArch;
 		_settings.Igdb.ProxyEndpoint = "https://cloudberry-igdb-proxy.cloudberryxo.workers.dev";
 		_settings.Igdb.ProxyEnabled = true;
 		_settings.Igdb.ClientId = string.Empty;
@@ -7115,7 +8736,7 @@ public sealed class MainViewModel : ViewModelBase
 			CompanionTools.Add(item);
 		}
 		List<CompanionToolDescriptor> list = CompanionTools.Where((CompanionToolDescriptor tool) => tool.IsAvailable).ToList();
-		CompanionToolsStatusMessage = ((list.Count == 0) ? "No companion runtimes were detected. CloudBerry will keep using its built-in pipeline." : ("Companion tools ready: " + string.Join(", ", list.Select((CompanionToolDescriptor tool) => tool.DisplayName)) + "."));
+		CompanionToolsStatusMessage = ((list.Count == 0) ? "No optional tools were detected. Cirra will use its built-in pipeline." : ("Optional tools ready: " + string.Join(", ", list.Select((CompanionToolDescriptor tool) => tool.DisplayName)) + "."));
 		OnPropertyChanged("HasCompanionTools");
 		OnPropertyChanged("CompanionToolsSummary");
 	}
@@ -7131,7 +8752,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private async Task<IReadOnlyList<CompanionTitleCleanResult>> RunTitleCleanerAsync(IEnumerable<GameEntryViewModel> games)
 	{
-		CompanionToolDescriptor val = FindCompanionTool("python");
+		CompanionToolDescriptor? val = FindCompanionTool("python");
 		if (val == null)
 		{
 			return Array.Empty<CompanionTitleCleanResult>();
@@ -7154,7 +8775,7 @@ public sealed class MainViewModel : ViewModelBase
 			return fallback;
 		}
 		string cacheKey = platform + "|" + title;
-		if (_companionQueryCache.TryGetValue(cacheKey, out IReadOnlyList<string> value))
+		if (_companionQueryCache.TryGetValue(cacheKey, out IReadOnlyList<string>? value))
 		{
 			return value;
 		}
@@ -7171,7 +8792,7 @@ public sealed class MainViewModel : ViewModelBase
 				Title = title,
 				Platform = (platform ?? string.Empty)
 			};
-			CompanionTitleCleanResult companionTitleCleanResult = (await RunTitleCleanerAsync(new GameEntryViewModel[] { item })).FirstOrDefault();
+			CompanionTitleCleanResult? companionTitleCleanResult = (await RunTitleCleanerAsync(new GameEntryViewModel[] { item })).FirstOrDefault();
 			if (companionTitleCleanResult == null)
 			{
 				_companionQueryCache[cacheKey] = fallback;
@@ -7513,15 +9134,140 @@ public sealed class MainViewModel : ViewModelBase
 
 	private async Task ExecutePersistAsync()
 	{
-		ApplySettingsFromFields();
-		_dashboardState = BuildDashboardSnapshotState();
-		LibrarySnapshot val = new LibrarySnapshot
+		try
 		{
-			Games = Games.Select((GameEntryViewModel game) => game.ToModel()).ToList(),
+			ApplySettingsFromFields();
+			_dashboardState = BuildDashboardSnapshotState();
+			await _libraryStore.SaveAsync(BuildCurrentLibrarySnapshot(), default(CancellationToken));
+		}
+		catch (Exception ex)
+		{
+			// A background auto-save failing should never be able to take the whole app down —
+			// the write is atomic (temp file + rename), so a failed save leaves the last-good
+			// library.json untouched on disk; the only cost is this one debounce tick's changes
+			// not landing yet, and the next edit will simply retry. Logged so it's still visible
+			// in cloudberry.log rather than silently vanishing.
+			_diagnostics.WriteException("persist", ex);
+		}
+	}
+
+	private LibrarySnapshot BuildCurrentLibrarySnapshot()
+	{
+		return new LibrarySnapshot
+		{
+			Games = Games.Select(game => game.ToModel()).ToList(),
 			Settings = _settings,
 			Dashboard = _dashboardState
 		};
-		await _libraryStore.SaveAsync(val, default(CancellationToken));
+	}
+
+	private async Task PersistWithHistoryAsync(LibraryHistoryContext context)
+	{
+		_persistDebounce.Stop();
+		ApplySettingsFromFields();
+		_dashboardState = BuildDashboardSnapshotState();
+		await _libraryStore.SaveWithHistoryAsync(BuildCurrentLibrarySnapshot(), context, default(CancellationToken));
+		await RefreshLibraryHistoryAsync();
+	}
+
+	private void OnActivityOperationChanged(ActivityOperation operation)
+	{
+		var dispatcher = Application.Current?.Dispatcher;
+		if (dispatcher != null && !dispatcher.CheckAccess())
+		{
+			dispatcher.BeginInvoke((Action)(() => RefreshActivityOperations()));
+			return;
+		}
+
+		RefreshActivityOperations();
+	}
+
+	private void RefreshActivityOperations()
+	{
+		ActivityOperations.Clear();
+		foreach (var operation in _activityCenter.Snapshot())
+		{
+			ActivityOperations.Add(operation);
+		}
+		OnPropertyChanged(nameof(HasActivityOperations));
+		OnPropertyChanged(nameof(RunningActivityCount));
+		OnPropertyChanged(nameof(ActivityCenterSummary));
+	}
+
+	public void CancelActivityOperation(Guid operationId)
+	{
+		if (!_activityCenter.Cancel(operationId))
+		{
+			StatusMessage = "That operation has already finished or cannot be cancelled.";
+			return;
+		}
+
+		StatusMessage = "Cancelling the selected operation...";
+	}
+
+	public async Task RefreshLibraryHistoryAsync()
+	{
+		var selectedId = SelectedLibraryHistoryEntry?.Id;
+		var entries = await _libraryStore.History.ListAsync(default(CancellationToken));
+		LibraryHistory.Clear();
+		foreach (var entry in entries)
+		{
+			LibraryHistory.Add(entry);
+		}
+		SelectedLibraryHistoryEntry = selectedId.HasValue
+			? LibraryHistory.FirstOrDefault(entry => entry.Id == selectedId.Value)
+			: LibraryHistory.FirstOrDefault();
+		OnPropertyChanged(nameof(HasLibraryHistory));
+		OnPropertyChanged(nameof(LibraryHistorySummary));
+		OnPropertyChanged(nameof(LatestLibraryHistoryLabel));
+	}
+
+	public async Task UndoLatestLibraryChangeAsync()
+	{
+		var latest = LibraryHistory.FirstOrDefault();
+		if (latest == null)
+		{
+			StatusMessage = "There is no library change to undo yet.";
+			return;
+		}
+
+		await RestoreLibraryHistoryEntryAsync(latest);
+	}
+
+	public async Task RestoreSelectedLibraryHistoryEntryAsync()
+	{
+		if (SelectedLibraryHistoryEntry == null)
+		{
+			StatusMessage = "Choose a Time Machine entry first.";
+			return;
+		}
+
+		await RestoreLibraryHistoryEntryAsync(SelectedLibraryHistoryEntry);
+	}
+
+	private async Task RestoreLibraryHistoryEntryAsync(LibraryHistoryEntry entry)
+	{
+		try
+		{
+			var restored = await _libraryStore.UndoHistoryEntryAsync(entry.Id, default(CancellationToken));
+			ClearGames();
+			foreach (var record in restored.Games)
+			{
+				AddGameInternal(new GameEntryViewModel(record), select: false);
+			}
+			SelectedGame = Games.FirstOrDefault();
+			RefreshCollections();
+			ApplySorting();
+			RefreshDerivedState();
+			await RefreshLibraryHistoryAsync();
+			StatusMessage = $"Restored the library to before '{entry.Title}'. {Games.Count} {Pluralize(Games.Count, "game", "games")} are now in the library.";
+			AppendRecentActivity("history.undo", SelectedGame, StatusMessage);
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("history-undo", ex);
+			StatusMessage = "Cirra couldn't restore that library change.";
+		}
 	}
 
 	private DashboardSnapshotState BuildDashboardSnapshotState()
@@ -7697,8 +9443,8 @@ public sealed class MainViewModel : ViewModelBase
 				return false;
 			}
 		}
-		CollectionOption selectedCollection = SelectedCollection;
-		string text = selectedCollection?.Key;
+		CollectionOption? selectedCollection = SelectedCollection;
+		string? text = selectedCollection?.Key;
 		int num;
 		switch (text)
 		{
@@ -7803,6 +9549,17 @@ public sealed class MainViewModel : ViewModelBase
 			case "Title A-Z":
 				((Collection<SortDescription>)(object)LibraryView.SortDescriptions).Add(new SortDescription("Title", ListSortDirection.Ascending));
 				break;
+			case "Title Z-A":
+				((Collection<SortDescription>)(object)LibraryView.SortDescriptions).Add(new SortDescription("Title", ListSortDirection.Descending));
+				break;
+			case "Release date":
+				((Collection<SortDescription>)(object)LibraryView.SortDescriptions).Add(new SortDescription("ReleaseDate", ListSortDirection.Descending));
+				((Collection<SortDescription>)(object)LibraryView.SortDescriptions).Add(new SortDescription("Title", ListSortDirection.Ascending));
+				break;
+			case "Platform":
+				((Collection<SortDescription>)(object)LibraryView.SortDescriptions).Add(new SortDescription("Platform", ListSortDirection.Ascending));
+				((Collection<SortDescription>)(object)LibraryView.SortDescriptions).Add(new SortDescription("Title", ListSortDirection.Ascending));
+				break;
 			case "Last played":
 				((Collection<SortDescription>)(object)LibraryView.SortDescriptions).Add(new SortDescription("LastPlayedOn", ListSortDirection.Descending));
 				((Collection<SortDescription>)(object)LibraryView.SortDescriptions).Add(new SortDescription("Title", ListSortDirection.Ascending));
@@ -7837,7 +9594,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private void RefreshCollections()
 	{
-		string previousSelectionKey = SelectedCollection?.Key;
+		string? previousSelectionKey = SelectedCollection?.Key;
 		Collections.Clear();
 		foreach (CollectionOption item in BuildCollections())
 		{
@@ -7865,7 +9622,7 @@ public sealed class MainViewModel : ViewModelBase
 	/// <summary>Renames an existing collection and replaces its full game membership list (used by the edit flow).</summary>
 	public void UpdateCollection(string collectionId, string name, IEnumerable<string> gameIds)
 	{
-		CloudBerryCollection collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
+		CloudBerryCollection? collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
 		if (collection == null)
 		{
 			return;
@@ -7879,7 +9636,7 @@ public sealed class MainViewModel : ViewModelBase
 	/// <summary>Deletes a manual collection outright. Games themselves are untouched.</summary>
 	public void DeleteCollection(string collectionId)
 	{
-		CloudBerryCollection collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
+		CloudBerryCollection? collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
 		if (collection == null)
 		{
 			return;
@@ -7898,7 +9655,7 @@ public sealed class MainViewModel : ViewModelBase
 	/// <summary>Adds every given game to a collection (no-op for games already in it), then persists.</summary>
 	public void AddGamesToCollection(string collectionId, IEnumerable<GameEntryViewModel> games)
 	{
-		CloudBerryCollection collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
+		CloudBerryCollection? collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
 		if (collection == null)
 		{
 			return;
@@ -7917,7 +9674,7 @@ public sealed class MainViewModel : ViewModelBase
 	/// <summary>Removes every given game from a collection (no-op for games not in it), then persists.</summary>
 	public void RemoveGamesFromCollection(string collectionId, IEnumerable<GameEntryViewModel> games)
 	{
-		CloudBerryCollection collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
+		CloudBerryCollection? collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
 		if (collection == null)
 		{
 			return;
@@ -8094,7 +9851,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			return false;
 		}
-		CloudBerryCollection collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
+		CloudBerryCollection? collection = UserCollections.FirstOrDefault((CloudBerryCollection item) => item.Id == collectionId);
 		return collection != null && collection.GameIds.Contains(game.Id.ToString());
 	}
 
@@ -8220,11 +9977,15 @@ public sealed class MainViewModel : ViewModelBase
 		RefreshPlatformFilters();
 		RefreshCollections();
 		RefreshHomeDeck();
+		RefreshAlmostThereGames();
+		RefreshRecentlyImprovedGames();
+		RefreshPotentialDuplicateGroups();
 		RefreshLibraryView();
 		RefreshBigPictureContent();
 		OnPropertyChanged("HasGames");
 		OnPropertyChanged("HasPendingImports");
 		OnPropertyChanged("HasMetadataResults");
+		OnPropertyChanged(nameof(MetadataResultsCountLabel));
 		OnPropertyChanged("HasSelectedGame");
 		OnPropertyChanged("HasSelectedMetadataResult");
 		OnPropertyChanged("TotalGames");
@@ -8279,6 +10040,8 @@ public sealed class MainViewModel : ViewModelBase
 		OnPropertyChanged("HasRecentAchievementUnlocks");
 		OnPropertyChanged("HasRecentActivity");
 		OnPropertyChanged("RecentActivitySummary");
+		OnPropertyChanged(nameof(HomeActivityFeed));
+		OnPropertyChanged(nameof(HasHomeActivityFeed));
 		OnPropertyChanged("LastActivitySummary");
 		OnPropertyChanged("HasPlatformSummaries");
 		OnPropertyChanged("CanSyncSelectedGameAchievements");
@@ -8287,6 +10050,7 @@ public sealed class MainViewModel : ViewModelBase
 		OnPropertyChanged("ContinuePlayingSummary");
 		OnPropertyChanged("RecommendedGame");
 		OnPropertyChanged("RecommendedGameReason");
+		OnPropertyChanged(nameof(HasAlmostThereGames));
 		OnPropertyChanged("RandomBacklogGame");
 		OnPropertyChanged("RandomBacklogSummary");
 	}
@@ -8309,7 +10073,7 @@ public sealed class MainViewModel : ViewModelBase
 			where game.IsInstalled || game.IsRunning || game.LastPlayedOn.HasValue
 			orderby game.IsRunning descending, game.LastPlayedOn ?? DateTime.MinValue descending, game.PlaytimeMinutes descending
 			select game).FirstOrDefault();
-		ContinuePlayingSummary = ((ContinuePlayingGame == null) ? "Launch a game through CloudBerry and it will show up here as your continue-playing lane." : (ContinuePlayingGame.IsRunning ? (ContinuePlayingGame.Title + " is live right now. CloudBerry is tracking the current session.") : (ContinuePlayingGame.LastPlayedLabel + ". " + ContinuePlayingGame.PlaytimeLabel)));
+		ContinuePlayingSummary = ((ContinuePlayingGame == null) ? "Launch a game through Cirra and it will show up here as your continue-playing lane." : (ContinuePlayingGame.IsRunning ? (ContinuePlayingGame.Title + " is live right now. Cirra is tracking the current session.") : (ContinuePlayingGame.LastPlayedLabel + ". " + ContinuePlayingGame.PlaytimeLabel)));
 		RebuildJumpBackInGames();
 		List<GameEntryViewModel> list = GetDiscoveryCandidates().ToList();
 		Dictionary<string, int> recentGenres = GetRecentGenreWeights();
@@ -8322,6 +10086,123 @@ public sealed class MainViewModel : ViewModelBase
 			RandomBacklogGame = PickWeightedRandom(list);
 		}
 		RandomBacklogSummary = ((RandomBacklogGame == null) ? "Pick a ready game from the library." : BuildRandomPickSummary(RandomBacklogGame));
+		RefreshPlayWindowRecommendations();
+	}
+
+	private void RefreshPlayWindowRecommendations()
+	{
+		var recommendations = Games
+			.Where(game => (game.IsInstalled || game.IsRunning) &&
+				!game.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase) &&
+				!game.Status.Equals("Dropped", StringComparison.OrdinalIgnoreCase))
+			.Select(game => CreatePlayWindowRecommendation(game, SelectedPlayWindowMinutes))
+			.OrderByDescending(item => item.Score)
+			.ThenByDescending(item => item.Game.IsFavorite)
+			.ThenBy(item => item.Game.Title, StringComparer.CurrentCultureIgnoreCase)
+			.Take(8)
+			.Select(item => item.Recommendation)
+			.ToList();
+
+		PlayWindowRecommendations.Clear();
+		foreach (var recommendation in recommendations)
+		{
+			PlayWindowRecommendations.Add(recommendation);
+		}
+
+		OnPropertyChanged(nameof(HasPlayWindowRecommendations));
+		OnPropertyChanged(nameof(PlayWindowPrimaryRecommendation));
+		OnPropertyChanged(nameof(PlayWindowSummary));
+	}
+
+	internal static (GameEntryViewModel Game, double Score, PlayWindowRecommendationViewModel Recommendation) CreatePlayWindowRecommendation(
+		GameEntryViewModel game,
+		int budgetMinutes)
+	{
+		int expectedMinutes = EstimateSessionMinutes(game);
+		double score = 0;
+
+		if (budgetMinutes > 0)
+		{
+			double distance = Math.Abs(expectedMinutes - budgetMinutes) / (double)Math.Max(15, budgetMinutes);
+			score += Math.Max(-4, 12 - distance * 10);
+			if (expectedMinutes > budgetMinutes * 1.5)
+			{
+				score -= 5;
+			}
+		}
+		else
+		{
+			score += Math.Min(8, expectedMinutes / 15d);
+		}
+
+		if (game.IsRunning) score += 10;
+		if (game.HasNextTimeNote) score += 6;
+		if (game.Status.Equals("Playing", StringComparison.OrdinalIgnoreCase)) score += 5;
+		if (game.Status.Equals("Paused", StringComparison.OrdinalIgnoreCase)) score += 4;
+		if (game.IsFavorite) score += 3;
+		if (!game.LastPlayedOn.HasValue) score += budgetMinutes is > 0 and <= 30 ? 1 : 3;
+		if (game.HasAchievements && game.AchievementCompletionPercent is >= 65 and < 100) score += 4;
+
+		string fitLabel = budgetMinutes == 0
+			? $"Usually {FormatMinutes(expectedMinutes)}"
+			: expectedMinutes <= budgetMinutes
+				? $"Fits in about {FormatMinutes(expectedMinutes)}"
+				: $"Usually {FormatMinutes(expectedMinutes)}";
+
+		string reason = BuildPlayWindowReason(game, budgetMinutes, expectedMinutes);
+		return (game, score, new PlayWindowRecommendationViewModel
+		{
+			Game = game,
+			ExpectedMinutes = expectedMinutes,
+			FitLabel = fitLabel,
+			Reason = reason
+		});
+	}
+
+	internal static int EstimateSessionMinutes(GameEntryViewModel game)
+	{
+		var recentDurations = game.Sessions
+			.Where(session => session.DurationMinutes > 0)
+			.OrderByDescending(session => session.StartedAtLocal)
+			.Take(8)
+			.Select(session => session.DurationMinutes)
+			.OrderBy(minutes => minutes)
+			.ToList();
+
+		if (recentDurations.Count > 0)
+		{
+			return Math.Clamp(recentDurations[recentDurations.Count / 2], 10, 180);
+		}
+
+		string genres = game.GenresText.ToLowerInvariant();
+		if (genres.Contains("puzzle") || genres.Contains("fighting") || genres.Contains("racing") || genres.Contains("sports")) return 25;
+		if (genres.Contains("strategy") || genres.Contains("rpg") || genres.Contains("role-playing")) return 75;
+		return 45;
+	}
+
+	private static string BuildPlayWindowReason(GameEntryViewModel game, int budgetMinutes, int expectedMinutes)
+	{
+		string timing = budgetMinutes == 0
+			? $"Your recent sessions average around {FormatMinutes(expectedMinutes)}."
+			: expectedMinutes <= budgetMinutes
+				? $"Your recent sessions fit comfortably inside {FormatMinutes(budgetMinutes)}."
+				: $"Your usual session is about {FormatMinutes(expectedMinutes)}, but it is still one of the closest matches ready now.";
+
+		if (game.IsRunning) return timing + " It is already running, so there is no setup friction.";
+		if (game.HasNextTimeNote) return timing + " You also left a Next Time marker, so you can resume with context.";
+		if (game.HasAchievements && game.AchievementCompletionPercent is >= 65 and < 100)
+			return timing + $" You are already {game.AchievementCompletionPercent:0}% through its achievements.";
+		if (game.Status.Equals("Playing", StringComparison.OrdinalIgnoreCase) || game.Status.Equals("Paused", StringComparison.OrdinalIgnoreCase))
+			return timing + " It is already in progress, which makes this a low-friction return.";
+		if (!game.LastPlayedOn.HasValue) return timing + " It is installed and still waiting for a first session.";
+		return timing + " It is installed and ready to launch.";
+	}
+
+	private static string FormatMinutes(int minutes)
+	{
+		if (minutes < 60) return $"{minutes} min";
+		if (minutes % 60 == 0) return $"{minutes / 60} hr";
+		return $"{minutes / 60} hr {minutes % 60} min";
 	}
 
 	private void RebuildJumpBackInGames()
@@ -8342,6 +10223,214 @@ public sealed class MainViewModel : ViewModelBase
 				JumpBackInGames.Add(game2);
 			}
 			OnPropertyChanged("HasJumpBackInGames");
+		}
+	}
+
+	private void RefreshAlmostThereGames()
+	{
+		// Same criteria as the "finishit" library filter: 70%+ complete, not 100%, and
+		// either never-played-tracked or gone cold for 30+ days. See DIFFERENTIATORS.md #6.
+		List<GameEntryViewModel> list3 = (from game in Games
+			where game.HasAchievements
+				&& game.AchievementCompletionPercent >= 70
+				&& game.AchievementsUnlockedCount < game.AchievementCount
+				&& (!game.LastPlayedOn.HasValue || (DateTime.Now - game.LastPlayedOn.Value).TotalDays >= 30)
+			orderby game.AchievementCompletionPercent descending, game.Title
+			select game).Take(5).ToList();
+		if (!AlmostThereGames.SequenceEqual(list3))
+		{
+			AlmostThereGames.Clear();
+			foreach (GameEntryViewModel game3 in list3)
+			{
+				AlmostThereGames.Add(game3);
+			}
+			OnPropertyChanged(nameof(HasAlmostThereGames));
+		}
+	}
+
+	/// <summary>
+	/// "Recently Improved" shelf: games whose metadata/artwork was filled in or refreshed
+	/// recently, derived from RecentActivity rather than a separate tracked timestamp.
+	/// Only single-game metadata actions (metadata.apply, and single-target metadata.refresh)
+	/// carry a GameId — batch operations (metadata.batch, multi-target refresh) intentionally
+	/// don't attribute to one game here, since this shelf renders actual game cards.
+	/// </summary>
+	private static readonly HashSet<string> RecentlyImprovedKinds = new(StringComparer.OrdinalIgnoreCase)
+	{
+		"metadata.apply", "metadata.refresh"
+	};
+
+	private void RefreshRecentlyImprovedGames()
+	{
+		List<GameEntryViewModel> list4 = RecentActivity
+			.Where(entry => RecentlyImprovedKinds.Contains(entry.Kind) && entry.GameId.HasValue)
+			.GroupBy(entry => entry.GameId!.Value)
+			.Select(group => group.OrderByDescending(entry => entry.TimestampUtc).First())
+			.OrderByDescending(entry => entry.TimestampUtc)
+			.Take(5)
+			.Select(entry => Games.FirstOrDefault(game => game.Id == entry.GameId!.Value))
+			.Where(game => game is not null)
+			.Select(game => game!)
+			.ToList();
+		if (!RecentlyImprovedGames.SequenceEqual(list4))
+		{
+			RecentlyImprovedGames.Clear();
+			foreach (GameEntryViewModel game4 in list4)
+			{
+				RecentlyImprovedGames.Add(game4);
+			}
+			OnPropertyChanged(nameof(HasRecentlyImprovedGames));
+		}
+	}
+
+	// ── Duplicate Ownership Detector (Aurora Phase 2 flagship) ──────────────────────────────
+	// Distinct from RemoveDuplicateLibraryEntriesAsync/GetLibraryRecordQualityScore, which clean
+	// up exact-same-launch-path duplicates automatically. This is about the same *game* showing up
+	// under different sources with different install paths — a Steam copy and a ROM copy of the
+	// same title, for example — which can never be safely auto-merged, only surfaced for the user
+	// to confirm or dismiss.
+
+	private void RefreshPotentialDuplicateGroups()
+	{
+		PotentialDuplicateGroupCount = BuildPotentialDuplicateGroups().Count;
+	}
+
+	/// <summary>
+	/// Groups library entries by normalized title (reusing the same edition/punctuation-stripping
+	/// key already trusted for Repair Library matching), keeping only clusters of 2+ games that
+	/// aren't already fully linked to each other and haven't been explicitly dismissed as "not the
+	/// same game." Recomputed on demand rather than cached, since it's cheap (one pass over the
+	/// in-memory Games collection) and always reflects the current library/settings state.
+	/// </summary>
+	internal List<List<GameEntryViewModel>> BuildPotentialDuplicateGroups()
+	{
+		HashSet<string> dismissedKeys = new HashSet<string>(_settings.DismissedDuplicateGroupKeys, StringComparer.Ordinal);
+		List<List<GameEntryViewModel>> result = new List<List<GameEntryViewModel>>();
+
+		foreach (IGrouping<string, GameEntryViewModel> cluster in Games
+			.Where(game => !string.IsNullOrWhiteSpace(game.Title))
+			.GroupBy(game => NormalizeRepairMatchKey(game.Title)))
+		{
+			if (string.IsNullOrEmpty(cluster.Key))
+			{
+				continue;
+			}
+
+			List<GameEntryViewModel> members = cluster.ToList();
+			if (members.Count < 2)
+			{
+				continue;
+			}
+
+			if (IsDuplicateGroupFullyLinked(members) || dismissedKeys.Contains(BuildDuplicateGroupKey(members)))
+			{
+				continue;
+			}
+
+			result.Add(members);
+		}
+
+		return result;
+	}
+
+	/// <summary>A group is "resolved" once every member already lists every other member as linked — nothing left to ask the user.</summary>
+	private static bool IsDuplicateGroupFullyLinked(List<GameEntryViewModel> members)
+	{
+		foreach (GameEntryViewModel member in members)
+		{
+			foreach (GameEntryViewModel other in members)
+			{
+				if (ReferenceEquals(member, other))
+				{
+					continue;
+				}
+				if (!member.LinkedGameIds.Contains(other.Id.ToString()))
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/// <summary>Stable, order-independent signature for a duplicate group, used both to persist dismissals and to look them up.</summary>
+	private static string BuildDuplicateGroupKey(IReadOnlyList<GameEntryViewModel> members)
+	{
+		return string.Join('|', members.Select(game => game.Id.ToString()).OrderBy(id => id, StringComparer.Ordinal));
+	}
+
+	/// <summary>
+	/// Confirms a group of games are the same title owned through different sources: every member's
+	/// LinkedGameIds is set to reference every other member, symmetrically. Persists immediately and
+	/// refreshes derived state so the group drops out of PotentialDuplicateGroupCount right away.
+	/// </summary>
+	public async Task LinkGamesAsSameOwnership(IReadOnlyList<GameEntryViewModel> group)
+	{
+		if (group.Count < 2)
+		{
+			return;
+		}
+
+		try
+		{
+			foreach (GameEntryViewModel game in group)
+			{
+				HashSet<string> linked = new HashSet<string>(game.LinkedGameIds, StringComparer.Ordinal);
+				foreach (GameEntryViewModel other in group)
+				{
+					if (!ReferenceEquals(game, other))
+					{
+						linked.Add(other.Id.ToString());
+					}
+				}
+				game.LinkedGameIds = linked.ToList();
+			}
+
+			string titles = string.Join(", ", group.Select(game => game.Title).Distinct());
+			StatusMessage = $"Linked {group.Count} entries as the same game: {titles}.";
+			AppendRecentActivity("library.link-duplicate", group[0], StatusMessage);
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"library.link-duplicate",
+				$"Linked {group.Count} ownership entries",
+				titles));
+			RefreshDerivedState();
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("link-duplicate-ownership", ex);
+			StatusMessage = "Cirra couldn't link those games together.";
+		}
+	}
+
+	/// <summary>
+	/// Records that a title cluster is not actually the same game, so the Duplicate Ownership
+	/// Detector stops surfacing it. Persisted by group signature rather than removed from the
+	/// library in any way — this only affects future detection, never the games themselves.
+	/// </summary>
+	public async Task DismissDuplicateGroup(IReadOnlyList<GameEntryViewModel> group)
+	{
+		if (group.Count == 0)
+		{
+			return;
+		}
+
+		try
+		{
+			string key = BuildDuplicateGroupKey(group);
+			_settings.DismissedDuplicateGroupKeys ??= new List<string>();
+			if (!_settings.DismissedDuplicateGroupKeys.Contains(key))
+			{
+				_settings.DismissedDuplicateGroupKeys.Add(key);
+			}
+
+			StatusMessage = "Got it — Cirra won't flag that group again.";
+			await PersistAsync();
+			RefreshDerivedState();
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("dismiss-duplicate-ownership", ex);
+			StatusMessage = "Cirra couldn't save that choice.";
 		}
 	}
 
@@ -8410,7 +10499,7 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		if (game == null)
 		{
-			return "CloudBerry will suggest a next game once it has enough metadata and play history to work with.";
+			return "Cirra will suggest a next game once it has enough metadata and play history to work with.";
 		}
 
 		// DIFFERENTIATORS.md #1 ("why this recommendation" engine): lead with the single most
@@ -8581,7 +10670,7 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		if (!selectedKey.Equals(defaultKey, StringComparison.OrdinalIgnoreCase))
 		{
-			string text = options.FirstOrDefault((FilterOption option) => option.Key.Equals(selectedKey, StringComparison.OrdinalIgnoreCase))?.Title;
+			string? text = options.FirstOrDefault((FilterOption option) => option.Key.Equals(selectedKey, StringComparison.OrdinalIgnoreCase))?.Title;
 			if (!string.IsNullOrWhiteSpace(text))
 			{
 				parts.Add(text);
@@ -8634,6 +10723,8 @@ public sealed class MainViewModel : ViewModelBase
 		switch (e.PropertyName)
 		{
 		case "Platform":
+		case "InstallPath":
+		case "EmulatorPath":
 		case "TagsText":
 		case "SteamAppId":
 		case "UserRating":
@@ -8663,12 +10754,16 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			RefreshDerivedState();
 			RebuildRecentAchievementUnlocks();
+			if (ReferenceEquals(sender, SelectedGame))
+			{
+				RefreshSelectedLaunchPreflight();
+			}
 		}
 	}
 
 	private void OnCandidatePropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
-		string propertyName = e.PropertyName;
+		string? propertyName = e.PropertyName;
 		if (propertyName == "IsSelected" || propertyName == "AlreadyExists")
 		{
 			RefreshDerivedState();
@@ -8703,14 +10798,14 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task LoadMetadataDetailsForSelectedResultAsync()
 	{
-		MetadataSearchResultViewModel selectedMetadataResult = SelectedMetadataResult;
+		MetadataSearchResultViewModel? selectedMetadataResult = SelectedMetadataResult;
 		if (selectedMetadataResult == null)
 		{
 			return;
 		}
 		try
 		{
-			GameMetadataRecord val = await _metadataProviderRegistry.GetProvider(SelectedMetadataProviderId).GetDetailsAsync(selectedMetadataResult.ToModel(), _settings, default(CancellationToken));
+			GameMetadataRecord? val = await _metadataProviderRegistry.GetProvider(SelectedMetadataProviderId).GetDetailsAsync(selectedMetadataResult.ToModel(), _settings, default(CancellationToken));
 			if (val != null)
 			{
 				selectedMetadataResult.ApplyDetails(val);
@@ -8818,11 +10913,108 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
+	// ── Library bulk actions ────────────────────────────────────────────────
+	// Backed by the Library page's native Extended-selection ListBoxes (ctrl/shift-click);
+	// the code-behind's SelectionChanged handlers push the live selection in here so the
+	// bulk-action bar and its preview text stay in sync without CloudBerry inventing its
+	// own separate per-card checkbox selection model.
+	private List<GameEntryViewModel> _libraryBulkSelection = new List<GameEntryViewModel>();
+
+	public int LibraryBulkSelectionCount => _libraryBulkSelection.Count;
+
+	public bool HasLibraryBulkSelection => _libraryBulkSelection.Count > 0;
+
+	/// <summary>Called from MainWindow's SelectionChanged handlers on the list/grid ListBoxes whenever the multi-selection changes.</summary>
+	public void UpdateLibraryBulkSelection(IReadOnlyList<GameEntryViewModel> selectedGames)
+	{
+		_libraryBulkSelection = (selectedGames ?? Array.Empty<GameEntryViewModel>()).ToList();
+		OnPropertyChanged("LibraryBulkSelectionCount");
+		OnPropertyChanged("HasLibraryBulkSelection");
+		OnPropertyChanged("LibraryBulkSelectionSummary");
+	}
+
+	public IReadOnlyList<GameEntryViewModel> LibraryBulkSelection => _libraryBulkSelection;
+
+	/// <summary>Short "N selected" label for the bulk-action bar.</summary>
+	public string LibraryBulkSelectionSummary => LibraryBulkSelectionCount == 1
+		? "1 game selected"
+		: $"{LibraryBulkSelectionCount} games selected";
+
+	/// <summary>
+	/// Builds the confirmation/preview text shown before a bulk action runs — the action's
+	/// description plus up to 5 affected titles, so the player sees exactly what they're
+	/// about to change instead of committing blind. e.g. "This will remove 7 games from your
+	/// library: Dark Souls, Celeste, Hades, Hollow Knight, Katana Zero and 2 more."
+	/// </summary>
+	public string BuildBulkActionPreview(string actionDescription)
+	{
+		var titles = _libraryBulkSelection.Select(g => g.Title).ToList();
+		if (titles.Count == 0)
+		{
+			return $"{actionDescription} — no games are currently selected.";
+		}
+
+		const int sampleCount = 5;
+		var sample = titles.Take(sampleCount).ToList();
+		var remaining = titles.Count - sample.Count;
+		var sampleText = remaining > 0
+			? $"{string.Join(", ", sample)} and {remaining} more"
+			: string.Join(", ", sample);
+
+		return $"{actionDescription} for {titles.Count} {Pluralize(titles.Count, "game", "games")}:\n{sampleText}";
+	}
+
+	/// <summary>Sets IsFavorite for every currently bulk-selected game.</summary>
+	public async Task ApplyBulkFavoriteAsync(bool favorite)
+	{
+		var games = _libraryBulkSelection.ToList();
+		if (games.Count == 0) return;
+
+		foreach (var game in games)
+		{
+			game.IsFavorite = favorite;
+		}
+		AppendRecentActivity("library.bulk-favorite", null, $"{(favorite ? "Favorited" : "Unfavorited")} {games.Count} {Pluralize(games.Count, "game", "games")}.");
+		await PersistWithHistoryAsync(new LibraryHistoryContext(
+			"library.bulk-favorite",
+			$"{(favorite ? "Favorited" : "Unfavorited")} {games.Count} {Pluralize(games.Count, "game", "games")}"));
+		RefreshDerivedState();
+		StatusMessage = $"{(favorite ? "Favorited" : "Removed favorite from")} {games.Count} {Pluralize(games.Count, "game", "games")}.";
+	}
+
+	/// <summary>Sets Status for every currently bulk-selected game (e.g. "Backlog", "Completed").</summary>
+	public async Task ApplyBulkStatusAsync(string status)
+	{
+		var games = _libraryBulkSelection.ToList();
+		if (games.Count == 0 || string.IsNullOrWhiteSpace(status)) return;
+
+		foreach (var game in games)
+		{
+			game.Status = status;
+		}
+		AppendRecentActivity("library.bulk-status", null, $"Set {games.Count} {Pluralize(games.Count, "game", "games")} to {status}.");
+		await PersistWithHistoryAsync(new LibraryHistoryContext(
+			"library.bulk-status",
+			$"Set {games.Count} {Pluralize(games.Count, "game", "games")} to {status}"));
+		RefreshDerivedState();
+		StatusMessage = $"Set {games.Count} {Pluralize(games.Count, "game", "games")} to {status}.";
+	}
+
+	/// <summary>Removes every currently bulk-selected game from the library (same underlying path as single-game remove, so it gets the same safety/backup behavior).</summary>
+	public async Task RemoveBulkSelectedGamesAsync()
+	{
+		var games = _libraryBulkSelection.ToList();
+		if (games.Count == 0) return;
+
+		await RemoveGamesAsync(games);
+		UpdateLibraryBulkSelection(Array.Empty<GameEntryViewModel>());
+	}
+
 	private async Task SyncAchievementsForGamesAsync(IReadOnlyList<GameEntryViewModel> games, string batchLabel)
 	{
 		if (games.Count == 0)
 		{
-			AchievementStatusMessage = "CloudBerry could not find any games to sync.";
+			AchievementStatusMessage = "Cirra could not find any games to sync.";
 			SelectedPrimaryPage = 3;
 			return;
 		}
@@ -8838,35 +11030,39 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				GameEntryViewModel game = games[index];
 				AchievementStatusMessage = $"[{index + 1}/{games.Count}] Syncing achievements for {game.Title}...";
-				try
+
+				if (!game.CanSyncAchievements)
 				{
-					GameAchievementSyncResult val = await LoadAchievementSyncResultAsync(game);
-					if (val == null || val.Snapshot.Achievements.Count == 0)
-					{
-						skippedCount++;
-						continue;
-					}
-					IReadOnlyList<AchievementEntryViewModel> readOnlyList = game.ApplyAchievementSnapshot(val.Snapshot);
-					RegisterAchievementTrackingFiles(game, val.TrackingFilePaths);
-					if (val.SupportsLiveTracking)
-					{
-						liveTrackingReadyCount++;
-					}
-					else
-					{
-						fallbackCount++;
-					}
-					if (readOnlyList.Count > 0)
-					{
-						AppendRecentUnlocks(game, readOnlyList);
-					}
-					syncedCount++;
+					game.AchievementHealthState = "needs-setup";
+					game.AchievementHealthReason = "No install path or Steam App ID is set for this game yet.";
+					skippedCount++;
+					continue;
 				}
-				catch (Exception ex)
+
+				var (result, healthState, healthReason) = await TrySyncGameAchievementsWithRetryAsync(game);
+				game.AchievementHealthState = healthState;
+				game.AchievementHealthReason = healthReason;
+
+				if (result == null || result.Snapshot.Achievements.Count == 0)
 				{
 					skippedCount++;
-					_diagnostics.WriteException("achievement-sync", ex);
+					continue;
 				}
+				IReadOnlyList<AchievementEntryViewModel> readOnlyList = game.ApplyAchievementSnapshot(result.Snapshot);
+				RegisterAchievementTrackingFiles(game, result.TrackingFilePaths);
+				if (result.SupportsLiveTracking)
+				{
+					liveTrackingReadyCount++;
+				}
+				else
+				{
+					fallbackCount++;
+				}
+				if (readOnlyList.Count > 0)
+				{
+					AppendRecentUnlocks(game, readOnlyList);
+				}
+				syncedCount++;
 			}
 			await PersistAsync();
 			RefreshDerivedState();
@@ -8880,6 +11076,52 @@ public sealed class MainViewModel : ViewModelBase
 			IsAchievementBusy = false;
 		}
 	}
+
+	/// <summary>
+	/// Runs a single game's achievement sync, classifying the outcome into a health state
+	/// the UI can show (Ready / No achievements found / Offline / Provider error), and
+	/// retrying once on a transient network failure before giving up. Never throws.
+	/// </summary>
+	private async Task<(GameAchievementSyncResult? Result, string HealthState, string HealthReason)> TrySyncGameAchievementsWithRetryAsync(GameEntryViewModel game)
+	{
+		const int maxAttempts = 2;
+		Exception? lastException = null;
+
+		for (int attempt = 1; attempt <= maxAttempts; attempt++)
+		{
+			try
+			{
+				GameAchievementSyncResult? syncResult = await LoadAchievementSyncResultAsync(game);
+				if (syncResult == null || syncResult.Snapshot.Achievements.Count == 0)
+				{
+					return (syncResult, "no-achievements", "No achievement data was found for this game yet.");
+				}
+				return (syncResult, "ready", string.Empty);
+			}
+			catch (Exception ex) when (IsTransientNetworkFailure(ex))
+			{
+				lastException = ex;
+				_diagnostics.WriteException("achievement-sync", ex);
+				if (attempt < maxAttempts)
+				{
+					await Task.Delay(TimeSpan.FromSeconds(2));
+				}
+			}
+			catch (Exception ex)
+			{
+				_diagnostics.WriteException("achievement-sync", ex);
+				return (null, "provider-error", ex.Message);
+			}
+		}
+
+		return (null, "offline", lastException?.Message ?? "Cirra couldn't reach the achievement provider.");
+	}
+
+	private static bool IsTransientNetworkFailure(Exception ex) =>
+		ex is HttpRequestException
+		or TaskCanceledException
+		or TimeoutException
+		or System.Net.Sockets.SocketException;
 
 	private async Task<GameAchievementSyncResult?> LoadAchievementSyncResultAsync(GameEntryViewModel game, CancellationToken cancellationToken = default(CancellationToken))
 	{
@@ -8895,7 +11137,7 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		if (game.Platform.Equals("PlayStation 3", StringComparison.OrdinalIgnoreCase) || game.Platform.Equals("PS3", StringComparison.OrdinalIgnoreCase))
 		{
-			GameAchievementSyncResult val2 = _rpcs3AchievementScanner.TryLoadForGame(game.Title, (string)null);
+			GameAchievementSyncResult? val2 = _rpcs3AchievementScanner.TryLoadForGame(game.Title, null);
 			if (val2 != null && val2.Snapshot.Achievements.Count > 0)
 			{
 				return val2;
@@ -8991,7 +11233,7 @@ public sealed class MainViewModel : ViewModelBase
 		GameAchievementSnapshot val = new GameAchievementSnapshot
 		{
 			ProviderId = "cloudberry-runtime",
-			ProviderName = "CloudBerry Runtime",
+			ProviderName = "Cirra Runtime",
 			ProviderGameId = game.SteamAppId,
 			SyncedAtUtc = now
 		};
@@ -8999,14 +11241,14 @@ public sealed class MainViewModel : ViewModelBase
 		List<AchievementRecord> list = new List<AchievementRecord>(num2);
 		CollectionsMarshal.SetCount(list, num2);
 		Span<AchievementRecord> span = CollectionsMarshal.AsSpan(list);
-		span[0] = Runtime("cb_runtime_ready", "Ready for Tracking", "CloudBerry prepared a lightweight runtime achievement layer for this game.", 0, 5, true, 98.0);
-		span[1] = Runtime("cb_runtime_first_launch", "First Launch", "Launch this game through CloudBerry.", 1, 10, condition, 72.0);
+		span[0] = Runtime("cb_runtime_ready", "Ready for Tracking", "Cirra prepared a lightweight runtime achievement layer for this game.", 0, 5, true, 98.0);
+		span[1] = Runtime("cb_runtime_first_launch", "First Launch", "Launch this game through Cirra.", 1, 10, condition, 72.0);
 		span[2] = Runtime("cb_runtime_clean_session", "Clean Session", "Finish a tracked session that lasts at least 30 seconds.", 2, 10, condition2, 64.0);
-		span[3] = Runtime("cb_runtime_half_hour", "Settled In", "Accumulate 30 minutes of CloudBerry-tracked playtime.", 3, 20, num >= 30, 45.0);
+		span[3] = Runtime("cb_runtime_half_hour", "Settled In", "Accumulate 30 minutes of Cirra-tracked playtime.", 3, 20, num >= 30, 45.0);
 		span[4] = Runtime("cb_runtime_marathon", "Marathon Session", "Play for at least 60 minutes in one tracked session.", 4, 35, sessionDuration.HasValue && sessionDuration.GetValueOrDefault().TotalMinutes >= 60.0, 22.0);
-		span[5] = Runtime("cb_runtime_two_hours", "Dedicated Save Slot", "Accumulate 2 hours of CloudBerry-tracked playtime.", 5, 50, num >= 120, 18.0);
+		span[5] = Runtime("cb_runtime_two_hours", "Dedicated Save Slot", "Accumulate 2 hours of Cirra-tracked playtime.", 5, 50, num >= 120, 18.0);
 		span[6] = Runtime("cb_runtime_metadata_ready", "Catalogued", "Complete this game's summary and artwork metadata.", 6, 15, !game.NeedsMetadataRefresh, 58.0);
-		span[7] = Runtime("cb_runtime_favorite", "Pinned to the Deck", "Mark this game as a CloudBerry favorite.", 7, 10, game.IsFavorite, 35.0);
+		span[7] = Runtime("cb_runtime_favorite", "Pinned to the Deck", "Mark this game as a Cirra favorite.", 7, 10, game.IsFavorite, 35.0);
 		val.Achievements = list;
 		return val;
 		AchievementRecord Runtime(string id, string title, string description, int order, int score, bool flag2, double? rarity = null)
@@ -9044,7 +11286,7 @@ public sealed class MainViewModel : ViewModelBase
 		//IL_005e: Unknown result type (might be due to invalid IL or missing references)
 		//IL_0064: Expected O, but got Unknown
 		StopAchievementPollingIfRunning(game.Id);
-		if (!_achievementTrackingFiles.TryGetValue(game.Id, out IReadOnlyList<string> trackingFiles) || trackingFiles.Count == 0)
+		if (!_achievementTrackingFiles.TryGetValue(game.Id, out IReadOnlyList<string>? trackingFiles) || trackingFiles.Count == 0)
 		{
 			return;
 		}
@@ -9055,7 +11297,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			if (e.Result.Snapshot.Achievements.Count != 0)
 			{
-				IReadOnlyList<AchievementEntryViewModel> newUnlocks = null;
+				IReadOnlyList<AchievementEntryViewModel> newUnlocks = Array.Empty<AchievementEntryViewModel>();
 				await ((DispatcherObject)Application.Current).Dispatcher.InvokeAsync((Action)delegate
 				{
 					newUnlocks = game.ApplyAchievementSnapshot(e.Result.Snapshot);
@@ -9138,12 +11380,12 @@ public sealed class MainViewModel : ViewModelBase
 
 	private void StopAchievementPollingIfRunning(Guid gameId)
 	{
-		if (_achievementPollingSessions.TryGetValue(gameId, out CancellationTokenSource value))
+		if (_achievementPollingSessions.TryGetValue(gameId, out CancellationTokenSource? value))
 		{
 			value.Cancel();
 			_achievementPollingSessions.Remove(gameId);
 		}
-		if (_fsWatchers.TryGetValue(gameId, out FileSystemAchievementWatcher value2))
+		if (_fsWatchers.TryGetValue(gameId, out FileSystemAchievementWatcher? value2))
 		{
 			value2.Dispose();
 			_fsWatchers.Remove(gameId);
@@ -9298,14 +11540,17 @@ public sealed class MainViewModel : ViewModelBase
 				AppendRecentActivity("library.remove", item, "Removed from library.");
 			}
 			SelectedGame = Games.FirstOrDefault();
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"library.remove",
+				gamesToRemove.Count == 1 ? "Removed " + firstTitle : $"Removed {gamesToRemove.Count} games",
+				"Removed library entries without deleting game files."));
 			RefreshDerivedState();
-			StatusMessage = ((gamesToRemove.Count == 1) ? (firstTitle + " was removed from the CloudBerry library.") : $"Removed {gamesToRemove.Count} games from the CloudBerry library.");
+			StatusMessage = ((gamesToRemove.Count == 1) ? (firstTitle + " was removed from the Cirra library.") : $"Removed {gamesToRemove.Count} games from the Cirra library.");
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("remove-games", ex);
-			StatusMessage = "CloudBerry couldn't remove those games.";
+			StatusMessage = "Cirra couldn't remove those games.";
 		}
 	}
 
@@ -9324,7 +11569,7 @@ public sealed class MainViewModel : ViewModelBase
 		List<GameEntryViewModel> missingGames = GetMissingLibraryEntries();
 		if (missingGames.Count == 0)
 		{
-			StatusMessage = "Library cleanup finished. No missing launch targets were found.";
+			StatusMessage = "Library cleanup finished. No missing games were found.";
 			return 0;
 		}
 		await RemoveGamesAsync(missingGames);
@@ -9369,13 +11614,13 @@ public sealed class MainViewModel : ViewModelBase
 			RefreshDerivedState();
 			await PersistAsync();
 			await RunProductReadinessCheckAsync();
-			StatusMessage = $"Library repair complete: {recoveredCount} launch target{((recoveredCount == 1) ? string.Empty : "s")} recovered, {duplicateCount} duplicate{((duplicateCount == 1) ? string.Empty : "s")} removed, {missingCount} missing entr{((missingCount == 1) ? "y" : "ies")} removed, achievements primed.";
+			StatusMessage = $"Repair complete: {recoveredCount} recovered, {duplicateCount} duplicate{((duplicateCount == 1) ? string.Empty : "s")} removed, {missingCount} missing removed.";
 			AppendRecentActivity("library.repair", SelectedGame, StatusMessage);
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("library-repair", ex);
-			StatusMessage = "CloudBerry couldn't finish the library repair pass.";
+			StatusMessage = "Cirra couldn't finish the library repair pass.";
 		}
 		finally
 		{
@@ -9383,11 +11628,9 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
-	private static bool HasMissingLaunchTarget(GameEntryViewModel game)
+	internal static bool HasMissingLaunchTarget(GameEntryViewModel game)
 	{
-		string text = default(string);
-		string text2 = default(string);
-		if (GameLauncher.TryResolveLaunchTarget(game.InstallPath, out text, out text2))
+		if (GameLauncher.TryResolveLaunchTarget(game.InstallPath, out _, out _))
 		{
 			return false;
 		}
@@ -9396,7 +11639,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			return false;
 		}
-		if (Uri.TryCreate(text3, UriKind.Absolute, out Uri result) && !result.IsFile)
+		if (Uri.TryCreate(text3, UriKind.Absolute, out Uri? result) && !result.IsFile)
 		{
 			return false;
 		}
@@ -9450,7 +11693,7 @@ public sealed class MainViewModel : ViewModelBase
 				string text2 = NormalizeRepairMatchKey(candidate.Title);
 				if (!string.IsNullOrWhiteSpace(text2))
 				{
-					if (!candidateBuckets.TryGetValue(text2, out List<ImportCandidate> value))
+					if (!candidateBuckets.TryGetValue(text2, out List<ImportCandidate>? value))
 					{
 						value = (candidateBuckets[text2] = new List<ImportCandidate>());
 					}
@@ -9462,11 +11705,11 @@ public sealed class MainViewModel : ViewModelBase
 		foreach (GameEntryViewModel game in missingGames)
 		{
 			string text3 = NormalizeRepairMatchKey(game.Title);
-			if (string.IsNullOrWhiteSpace(text3) || !candidateBuckets.TryGetValue(text3, out List<ImportCandidate> value2))
+			if (string.IsNullOrWhiteSpace(text3) || !candidateBuckets.TryGetValue(text3, out List<ImportCandidate>? value2))
 			{
 				continue;
 			}
-			ImportCandidate val2 = (from candidate in value2
+			ImportCandidate? val2 = (from candidate in value2
 				where IsReasonableRepairCandidate(game, candidate)
 				orderby ScoreRepairCandidate(game, candidate) descending
 				select candidate).FirstOrDefault();
@@ -9488,14 +11731,17 @@ public sealed class MainViewModel : ViewModelBase
 				game.IsInstalled = true;
 				TryAutoConfigureSteamAppId(game);
 				EnsureRuntimeAchievementsPrimed(game);
-				AppendRecentActivity("library.recover", game, "Recovered a moved launch target.");
+				AppendRecentActivity("library.recover", game, "Recovered a moved game path.");
 				existingLaunchKeys.Add(text4);
 				recovered++;
 			}
 		}
 		if (recovered > 0)
 		{
-			await PersistAsync();
+			await PersistWithHistoryAsync(new LibraryHistoryContext(
+				"library.recover-paths",
+				$"Recovered {recovered} moved {Pluralize(recovered, "game", "games")}",
+				"Updated launch paths after locating moved files."));
 			RefreshDerivedState();
 		}
 		return recovered;
@@ -9525,9 +11771,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			num += 0.2;
 		}
-		string text = default(string);
-		string text2 = default(string);
-		if (GameLauncher.TryResolveLaunchTarget(candidate.InstallPath, out text, out text2))
+		if (GameLauncher.TryResolveLaunchTarget(candidate.InstallPath, out _, out _))
 		{
 			num += 0.2;
 		}
@@ -9560,21 +11804,13 @@ public sealed class MainViewModel : ViewModelBase
 		return Regex.Replace(Regex.Replace(Regex.Replace(Regex.Replace(value.Trim().ToLowerInvariant(), "['’`]", string.Empty), "\\b(remastered|remaster|definitive|deluxe|ultimate|complete|goty|game of the year|edition|hd|collection)\\b", " "), "[^a-z0-9]+", " "), "\\s+", " ").Trim();
 	}
 
-	private static string ResolveLocalLaunchTargetForCleanup(string? launchTarget)
+	internal static string ResolveLocalLaunchTargetForCleanup(string? launchTarget)
 	{
 		if (string.IsNullOrWhiteSpace(launchTarget))
 		{
 			return string.Empty;
 		}
 		string text = launchTarget.Trim();
-		if (Uri.TryCreate(text, UriKind.Absolute, out Uri result))
-		{
-			if (!result.IsFile)
-			{
-				return text;
-			}
-			return result.LocalPath;
-		}
 		if (text.Length > 2 && text[0] == '"')
 		{
 			int num = text.IndexOf('"', 1);
@@ -9584,6 +11820,21 @@ public sealed class MainViewModel : ViewModelBase
 			}
 		}
 		int num2 = text.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+		if (num2 > -1 && num2 + 4 < text.Length)
+		{
+			// Trailing launch arguments (e.g. "C:\Game\Game.exe -windowed") must be stripped
+			// before Uri.TryCreate below, which otherwise treats an unquoted Windows drive path
+			// as an "implicit file" URI and preserves it verbatim — arguments and all.
+			return text.Substring(0, num2 + 4).Trim().Trim('"');
+		}
+		if (Uri.TryCreate(text, UriKind.Absolute, out Uri? result))
+		{
+			if (!result.IsFile)
+			{
+				return text;
+			}
+			return result.LocalPath;
+		}
 		if (num2 > -1)
 		{
 			return text.Substring(0, num2 + 4).Trim().Trim('"');
@@ -9591,20 +11842,18 @@ public sealed class MainViewModel : ViewModelBase
 		return text.Trim('"');
 	}
 
-	private static string NormalizeLaunchTargetKey(string path)
+	internal static string NormalizeLaunchTargetKey(string path)
 	{
 		if (string.IsNullOrWhiteSpace(path))
 		{
 			return string.Empty;
 		}
 		string text = path.Trim();
-		string text2 = default(string);
-		string text3 = default(string);
-		if (GameLauncher.TryResolveLaunchTarget(text, out text2, out text3))
+		if (GameLauncher.TryResolveLaunchTarget(text, out string text2, out _))
 		{
 			text = text2;
 		}
-		if (Uri.TryCreate(text, UriKind.Absolute, out Uri result) && result.IsFile)
+		if (Uri.TryCreate(text, UriKind.Absolute, out Uri? result) && result.IsFile)
 		{
 			text = result.LocalPath;
 		}
@@ -9622,7 +11871,7 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
-	private static int GetLibraryRecordQualityScore(GameEntryViewModel game)
+	internal static int GetLibraryRecordQualityScore(GameEntryViewModel game)
 	{
 		int num = 0;
 		if (!HasMissingLaunchTarget(game))
@@ -9816,7 +12065,7 @@ public sealed class MainViewModel : ViewModelBase
 		//IL_0127: Unknown result type (might be due to invalid IL or missing references)
 		//IL_0142: Unknown result type (might be due to invalid IL or missing references)
 		//IL_014a: Expected O, but got Unknown
-		DashboardActivityEntry val = RecentActivity.FirstOrDefault();
+		DashboardActivityEntry? val = RecentActivity.FirstOrDefault();
 		if (val != null && val.Kind.Equals(kind, StringComparison.OrdinalIgnoreCase))
 		{
 			Guid? gameId = val.GameId;
@@ -9866,11 +12115,136 @@ public sealed class MainViewModel : ViewModelBase
 			{
 				AppendRecentUnlocks(game, readOnlyList);
 			}
-			AppendRecentActivity("session.end", game, (duration.TotalSeconds >= 30.0) ? $"Session ended after {Math.Max(1, (int)Math.Round(duration.TotalMinutes, MidpointRounding.AwayFromZero))} minute(s)." : "Session ended (too short for tracked playtime).");
+			var roundedMinutes = Math.Max(1, (int)Math.Round(duration.TotalMinutes, MidpointRounding.AwayFromZero));
+			var sessionLength = $"{roundedMinutes} {Pluralize(roundedMinutes, "minute", "minutes")}";
+			AppendRecentActivity("session.end", game, (duration.TotalSeconds >= 30.0) ? $"Session ended after {sessionLength}." : "Session ended (too short for tracked playtime).");
 			RefreshDerivedState();
-			StatusMessage = ((duration.TotalSeconds >= 30.0) ? $"{game.Title} session ended after {Math.Max(1, (int)Math.Round(duration.TotalMinutes, MidpointRounding.AwayFromZero))} minute(s)." : (game.Title + " closed. Session was too short to add tracked playtime."));
+			StatusMessage = ((duration.TotalSeconds >= 30.0) ? $"{game.Title} session ended after {sessionLength}." : (game.Title + " closed. Session was too short to add tracked playtime."));
 		});
 		await PersistAsync();
+	}
+
+	// ── External playtime tracking ────────────────────────────────────────────
+	// Games launched outside CloudBerry (Steam's own UI, a desktop shortcut, a manual double-click)
+	// get picked up here instead of through LaunchGameAsync, but flow into the exact same
+	// _activeSessions/HandleTrackedSessionEndedAsync pipeline once detected — see
+	// ExternalGameProcessMonitor's own doc comment for the matching approach and its limits.
+
+	private void StartExternalProcessMonitoringIfEnabled()
+	{
+		if (!_enableExternalPlaytimeTracking || _externalProcessMonitor is not null)
+		{
+			return;
+		}
+
+		_externalProcessMonitor = new ExternalGameProcessMonitor(BuildExternalWatchTargetsThreadSafe, TimeSpan.FromSeconds(15));
+		_externalProcessMonitor.GameDetected += OnExternalGameDetected;
+	}
+
+	private void StopExternalProcessMonitoring()
+	{
+		if (_externalProcessMonitor is null)
+		{
+			return;
+		}
+
+		_externalProcessMonitor.GameDetected -= OnExternalGameDetected;
+		_externalProcessMonitor.Dispose();
+		_externalProcessMonitor = null;
+	}
+
+	/// <summary>
+	/// ExternalGameProcessMonitor polls on a background thread pool timer, but Games is a WPF-bound
+	/// ObservableCollection — reading it off the UI thread while it could be mutated (an import
+	/// finishing, a game being removed) risks a collection-modified exception at best. Dispatcher.Invoke
+	/// (blocking, not InvokeAsync) keeps the actual enumeration on the UI thread and gives the monitor
+	/// back a plain snapshot list it can safely use off-thread afterward.
+	/// </summary>
+	private IReadOnlyList<(Guid GameId, string ResolvedExecutablePath)> BuildExternalWatchTargetsThreadSafe()
+	{
+		return Application.Current.Dispatcher.Invoke(BuildExternalWatchTargets);
+	}
+
+	private List<(Guid GameId, string ResolvedExecutablePath)> BuildExternalWatchTargets()
+	{
+		var results = new List<(Guid, string)>();
+		foreach (GameEntryViewModel game in Games)
+		{
+			if (game.IsRunning || _activeSessions.ContainsKey(game.Id))
+			{
+				continue;
+			}
+			if (string.IsNullOrWhiteSpace(game.InstallPath) || GameLauncher.IsRomFile(game.InstallPath))
+			{
+				// v1 scope: native/EXE games only — see ExternalGameProcessMonitor's doc comment for why
+				// ROM/emulator games can't be reliably attributed this way.
+				continue;
+			}
+			if (!GameLauncher.TryResolveLaunchTarget(game.InstallPath, out var target, out _))
+			{
+				continue;
+			}
+			if (string.IsNullOrWhiteSpace(target) || !File.Exists(target))
+			{
+				// Excludes protocol launches like steam://rungameid/... — TryResolveLaunchTarget returns
+				// the raw URI string for those (not a real file path), which File.Exists correctly rejects.
+				continue;
+			}
+			results.Add((game.Id, target));
+		}
+		return results;
+	}
+
+	/// <summary>
+	/// Fires on the monitor's background timer thread — everything here must get onto the UI thread
+	/// before touching Games, _activeSessions, or any bound property.
+	/// </summary>
+	private void OnExternalGameDetected(object? sender, ExternalGameDetectedEventArgs e)
+	{
+		Application.Current.Dispatcher.InvokeAsync(delegate
+		{
+			GameEntryViewModel? game = Games.FirstOrDefault(g => g.Id == e.GameId);
+			if (game is null || game.IsRunning || _activeSessions.ContainsKey(game.Id))
+			{
+				// Already claimed by the time this reached the UI thread (e.g. the player launched it
+				// through CloudBerry in the gap between detection and this callback running) — the
+				// process object was never wrapped in a GameLaunchSession, so it's still our
+				// responsibility to dispose it here.
+				e.Process.Dispose();
+				return;
+			}
+
+			DateTime startedAt;
+			try
+			{
+				startedAt = e.Process.StartTime;
+			}
+			catch
+			{
+				// StartTime throws for some protected/elevated processes even when MainModule access
+				// succeeded — fall back to "now"; the session is still tracked, just not back-dated.
+				startedAt = DateTime.Now;
+			}
+
+			GameLaunchSession session = GameLauncher.WrapExternalProcess(e.Process, startedAt);
+			if (!session.IsTrackingAvailable)
+			{
+				return;
+			}
+
+			SetGamePerformanceMode(isActive: true);
+			game.MarkSessionStarted(startedAt);
+			_activeSessions[game.Id] = session;
+			GameEntryViewModel detectedGame = game;
+			session.Ended += async delegate(object? _, GameLaunchEndedEventArgs args)
+			{
+				await HandleTrackedSessionEndedAsync(detectedGame, args.Duration);
+			};
+			StartAchievementPollingIfAvailable(detectedGame, session);
+			RefreshDerivedState();
+			StatusMessage = $"Cirra noticed {game.Title} is already running — tracking this session.";
+			AppendRecentActivity("session.external-detect", game, StatusMessage);
+		});
 	}
 
 	private static void ReportStartup(IProgress<StartupProgressUpdate>? progress, double progressRatio, string statusText, string detailText)
@@ -10000,15 +12374,15 @@ public sealed class MainViewModel : ViewModelBase
 		string text = Path.Combine(Path.GetTempPath(), $"cloudberry-update-{Guid.NewGuid():N}.cmd");
 		string value = Path.Combine(LocalUpdatePackageDirectory, "install.log");
 		Directory.CreateDirectory(LocalUpdatePackageDirectory);
-		string text2 = Environment.ProcessPath ?? Path.Combine(InstallLocation, "CloudBerry.exe");
-		string text3 = Path.Combine(InstallLocation, "CloudBerry.exe");
+		string text2 = Environment.ProcessPath ?? Path.Combine(InstallLocation, "Cirra.exe");
+		string text3 = Path.Combine(InstallLocation, "Cirra.exe");
 		string value2 = (File.Exists(text3) ? text3 : text2);
-		string contents = $"@echo off\nsetlocal\nset \"PID={Environment.ProcessId}\"\nset \"PACKAGE={packagePath}\"\nset \"RELAUNCH={value2}\"\nset \"LOG={value}\"\necho [%DATE% %TIME%] CloudBerry update handoff started.>>\"%LOG%\"\necho [%DATE% %TIME%] Waiting for PID %PID%.>>\"%LOG%\"\n:wait\ntasklist /FI \"PID eq %PID%\" 2>NUL | find \"%PID%\" >NUL\nif not errorlevel 1 (\n  timeout /t 1 /nobreak >NUL\n  goto wait\n)\nif not exist \"%PACKAGE%\" (\n  echo [%DATE% %TIME%] Missing update package: %PACKAGE%>>\"%LOG%\"\n  exit /b 2\n)\necho [%DATE% %TIME%] Running installer: %PACKAGE%>>\"%LOG%\"\nstart \"\" /wait \"%PACKAGE%\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /LOG=\"%LOG%\"\nset \"INSTALL_RESULT=%ERRORLEVEL%\"\necho [%DATE% %TIME%] Installer finished with code %INSTALL_RESULT%.>>\"%LOG%\"\ntimeout /t 1 /nobreak >NUL\nif exist \"%RELAUNCH%\" (\n  echo [%DATE% %TIME%] Relaunching CloudBerry: %RELAUNCH%>>\"%LOG%\"\n  start \"\" \"%RELAUNCH%\"\n) else (\n  echo [%DATE% %TIME%] Relaunch target missing: %RELAUNCH%>>\"%LOG%\"\n)\nendlocal\ndel \"%~f0\"";
+		string contents = $"@echo off\nsetlocal\nset \"PID={Environment.ProcessId}\"\nset \"PACKAGE={packagePath}\"\nset \"RELAUNCH={value2}\"\nset \"LOG={value}\"\necho [%DATE% %TIME%] Cirra update handoff started.>>\"%LOG%\"\necho [%DATE% %TIME%] Waiting for PID %PID%.>>\"%LOG%\"\n:wait\ntasklist /FI \"PID eq %PID%\" 2>NUL | find \"%PID%\" >NUL\nif not errorlevel 1 (\n  timeout /t 1 /nobreak >NUL\n  goto wait\n)\nif not exist \"%PACKAGE%\" (\n  echo [%DATE% %TIME%] Missing update package: %PACKAGE%>>\"%LOG%\"\n  exit /b 2\n)\necho [%DATE% %TIME%] Running installer: %PACKAGE%>>\"%LOG%\"\nstart \"\" /wait \"%PACKAGE%\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /LOG=\"%LOG%\"\nset \"INSTALL_RESULT=%ERRORLEVEL%\"\necho [%DATE% %TIME%] Installer finished with code %INSTALL_RESULT%.>>\"%LOG%\"\ntimeout /t 1 /nobreak >NUL\nif exist \"%RELAUNCH%\" (\n  echo [%DATE% %TIME%] Relaunching Cirra: %RELAUNCH%>>\"%LOG%\"\n  start \"\" \"%RELAUNCH%\"\n) else (\n  echo [%DATE% %TIME%] Relaunch target missing: %RELAUNCH%>>\"%LOG%\"\n)\nendlocal\ndel \"%~f0\"";
 		File.WriteAllText(text, contents);
 		Process.Start(new ProcessStartInfo
 		{
 			FileName = "cmd.exe",
-			Arguments = "/d /c start \"CloudBerry Update\" /min cmd.exe /d /c \"\"" + text + "\"\"",
+			Arguments = "/d /c start \"Cirra Update\" /min cmd.exe /d /c \"\"" + text + "\"\"",
 			CreateNoWindow = false,
 			UseShellExecute = true,
 			WindowStyle = ProcessWindowStyle.Hidden
@@ -10047,4 +12421,18 @@ public sealed class WrappedInsights
 	// 5 buckets: <15m, 15-30m, 30-60m, 1-2h, 2h+ — count of sessions falling in each bucket.
 	public IReadOnlyList<int> SessionLengthCounts { get; init; } = Array.Empty<int>();
 	public string PeakHourLabel           { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Carries what MainWindow.xaml.cs needs to route into Cloudscape and show the embedded player once
+/// <see cref="MainViewModel.AttemptEmbeddedPlay"/> actually finds a live RetroArch window — the
+/// game, the launch session (for exit/ended tracking), the found window handle, and the temp
+/// windowed-mode config file to delete once the embedded window closes.
+/// </summary>
+public sealed class EmbeddedPlayRequestedEventArgs(GameEntryViewModel game, GameLaunchSession session, IntPtr windowHandle, string? tempConfigPath) : EventArgs
+{
+	public GameEntryViewModel Game { get; } = game;
+	public GameLaunchSession Session { get; } = session;
+	public IntPtr WindowHandle { get; } = windowHandle;
+	public string? TempConfigPath { get; } = tempConfigPath;
 }

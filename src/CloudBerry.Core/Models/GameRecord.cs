@@ -26,6 +26,14 @@ public sealed class GameRecord
 
     public string Notes { get; set; } = string.Empty;
 
+    /// <summary>
+    /// A short, player-authored reminder shown when returning to this game. Kept separate from
+    /// general notes so resume surfaces can present it without exposing the full notes field.
+    /// </summary>
+    public string NextTimeNote { get; set; } = string.Empty;
+
+    public DateTime? NextTimeUpdatedOn { get; set; }
+
     public List<string> Tags { get; set; } = [];
 
     public string Summary { get; set; } = string.Empty;
@@ -88,6 +96,9 @@ public sealed class GameRecord
     /// <summary>Direct MP4 URL for the primary game trailer, if available.</summary>
     public string TrailerUrl { get; set; } = string.Empty;
 
+    /// <summary>Original-format PDF manuals and guides attached to this game.</summary>
+    public List<GameGuidebook> Guidebooks { get; set; } = [];
+
     /// <summary>
     /// 0–5 star rating set by the user for this game.
     /// Stored as a double so half-stars are supported (e.g. 4.5).
@@ -116,8 +127,24 @@ public sealed class GameRecord
     /// </summary>
     public string EmulatorPath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Explicit save files or folders selected by the user or a future provider. Environment
+    /// variables are expanded at discovery time; Cirra never guesses and writes to a location.
+    /// </summary>
+    public List<string> SaveLocations { get; set; } = [];
+
     /// <summary>Play session history.</summary>
     public List<PlaySession> Sessions { get; set; } = [];
+
+    /// <summary>
+    /// Ids of other <see cref="GameRecord"/> entries the user has confirmed represent the same
+    /// game owned through a different source (e.g. a Steam copy and a ROM copy of the same title).
+    /// Populated symmetrically — every game in a confirmed group lists every other member. Powers
+    /// the Duplicate Ownership Detector's "linked as same game" state, distinct from exact-path
+    /// duplicate cleanup (RemoveDuplicateLibraryEntriesAsync), which is about identical launch
+    /// paths, not the same game across different sources.
+    /// </summary>
+    public List<string> LinkedGameIds { get; set; } = [];
 
     public class PlaySession
     {

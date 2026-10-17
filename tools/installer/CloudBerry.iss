@@ -1,12 +1,12 @@
-#define MyAppName "CloudBerry"
+#define MyAppName "Cirra"
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
 #endif
 #ifndef MyAppOutputBase
-  #define MyAppOutputBase "setupCB"
+  #define MyAppOutputBase "setupCirra"
 #endif
-#define MyAppPublisher "CloudBerry"
-#define MyAppExeName "CloudBerry.exe"
+#define MyAppPublisher "Cirra"
+#define MyAppExeName "Cirra.exe"
 #ifndef MyAppSourceDir
   #define MyAppSourceDir "..\..\publish\win-x64"
 #endif
@@ -17,7 +17,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\Programs\CloudBerry
+DefaultDirName={localappdata}\Programs\Cirra
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -28,7 +28,7 @@ WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
-SetupIconFile=..\..\src\CloudBerry.App\Resources\Icons\cloudberry_app_icon.ico
+SetupIconFile=..\..\src\CloudBerry.App\Resources\Icons\cirra_app_icon.ico
 OutputDir=..\..\publish\installer
 OutputBaseFilename={#MyAppOutputBase}
 

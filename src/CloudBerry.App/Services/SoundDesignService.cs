@@ -2,7 +2,7 @@ namespace CloudBerry.App.Services;
 
 public sealed class SoundDesignService
 {
-    private static readonly SoundDesignService StartupInstance = new(() => true, () => "Cinematic", () => "CloudBerry Dark");
+    private static readonly SoundDesignService StartupInstance = new(() => true, () => "Cinematic", () => "Cirra Core");
     private readonly Func<bool> _isEnabled;
     private readonly Func<string> _profile;
     private readonly Func<string>? _theme;

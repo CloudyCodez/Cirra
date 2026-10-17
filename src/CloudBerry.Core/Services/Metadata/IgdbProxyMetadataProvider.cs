@@ -19,10 +19,10 @@ public sealed class IgdbProxyMetadataProvider : IGameMetadataProvider
     {
         Id = "igdb-proxy",
         DisplayName = "IGDB Proxy",
-        Description = "Queries a CloudBerry-compatible IGDB proxy so users do not manage Twitch tokens locally.",
+        Description = "Queries a Cirra-compatible IGDB proxy so users do not manage Twitch tokens locally.",
         RequiresApiKey = false,
         ApiKeyLabel = string.Empty,
-        ApiKeyHelpText = "Point CloudBerry at a trusted proxy that holds IGDB credentials server-side."
+        ApiKeyHelpText = "Point Cirra at a trusted proxy that holds IGDB credentials server-side."
     };
 
     public async Task<IReadOnlyList<GameMetadataRecord>> SearchAsync(
@@ -113,7 +113,8 @@ public sealed class IgdbProxyMetadataProvider : IGameMetadataProvider
             Publishers = game.Publishers ?? [],
             Tags = game.Tags ?? [],
             Screenshots = (game.Screenshots ?? []).Select(NormalizeImage).Where(value => !string.IsNullOrWhiteSpace(value)).Take(8).ToList(),
-            TrailerUrl = game.TrailerUrl ?? string.Empty
+            TrailerUrl = game.TrailerUrl ?? string.Empty,
+            Guidebooks = (game.Guidebooks ?? []).Where(guide => !string.IsNullOrWhiteSpace(guide.PdfLocation)).Select(guide => guide.Clone()).ToList()
         };
     }
 
@@ -176,5 +177,6 @@ public sealed class IgdbProxyMetadataProvider : IGameMetadataProvider
         public List<string> Tags { get; set; } = [];
         public List<string> Screenshots { get; set; } = [];
         public string? TrailerUrl { get; set; }
+        public List<GameGuidebook> Guidebooks { get; set; } = [];
     }
 }

@@ -7,8 +7,8 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="CloudBerry Cloudscape"
-        Icon="pack://application:,,,/Resources/Icons/cloudberry_app_icon_256.png"
+        Title="Cirra Horizon"
+        Icon="pack://application:,,,/Resources/Icons/cirra_app_icon_256.png"
         Width="1600"
         Height="960"
         MinWidth="1280"
@@ -44,6 +44,115 @@
         </LinearGradientBrush>
         <SolidColorBrush x:Key="BigPictureCardTextPlateBorderBrush" Color="#46F8EED8"/>
 
+        <Style x:Key="HorizonScrollViewerStyle"
+               TargetType="ScrollViewer"
+               BasedOn="{StaticResource {x:Type ScrollViewer}}">
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Padding" Value="0,0,6,0"/>
+            <Setter Property="PanningMode" Value="VerticalOnly"/>
+            <Setter Property="PanningDeceleration" Value="0.0014"/>
+            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="VerticalPointerDragStart"/>
+            <EventSetter Event="PreviewMouseMove" Handler="VerticalPointerDragMove"/>
+            <EventSetter Event="PreviewMouseLeftButtonUp" Handler="VerticalPointerDragEnd"/>
+            <EventSetter Event="LostMouseCapture" Handler="VerticalPointerDragLost"/>
+        </Style>
+
+        <Style x:Key="HorizonGlassSurfaceStyle"
+               TargetType="Border"
+               BasedOn="{StaticResource PanelBorderStyle}">
+            <Setter Property="Background" Value="{DynamicResource ThemePanelFillSoftBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GlassPanelBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="20,16"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="{DynamicResource ThemePanelShadowColor}"
+                                      BlurRadius="20"
+                                      ShadowDepth="2"
+                                      Opacity="0.18"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="HorizonCommandSurfaceStyle"
+               TargetType="Border"
+               BasedOn="{StaticResource HorizonGlassSurfaceStyle}">
+            <Setter Property="Background" Value="{DynamicResource BladeGlassBrush}"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="{DynamicResource ThemePanelShadowColor}"
+                                      BlurRadius="14"
+                                      ShadowDepth="1"
+                                      Opacity="0.14"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="HorizonInsetSurfaceStyle"
+               TargetType="Border"
+               BasedOn="{StaticResource InsetCardStyle}">
+            <Setter Property="Background" Value="{DynamicResource GlassChipFillBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GlassPanelBorderBrush}"/>
+            <Setter Property="Padding" Value="14,12"/>
+        </Style>
+
+        <Style x:Key="HorizonLiquidButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource SecondaryButtonStyle}">
+            <Setter Property="Background" Value="{DynamicResource BladeGlassBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GlassPanelBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="15,9"/>
+            <Setter Property="MinHeight" Value="40"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="{DynamicResource ThemePanelShadowColor}"
+                                      BlurRadius="12" ShadowDepth="1" Opacity="0.18"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="HorizonLiquidIconButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource HorizonLiquidButtonStyle}">
+            <Setter Property="Width" Value="42"/>
+            <Setter Property="Height" Value="42"/>
+            <Setter Property="MinHeight" Value="42"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets, Segoe Fluent Icons"/>
+            <Setter Property="FontSize" Value="16"/>
+        </Style>
+
+        <Style x:Key="HorizonGridListStyle" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="2,6,8,12"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="False"/>
+        </Style>
+
+        <Style x:Key="HorizonGridItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <ContentPresenter/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="BigPictureNavListStyle" TargetType="ListBox">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -63,8 +172,8 @@
                                 Background="Transparent"
                                 BorderBrush="{DynamicResource BorderSubtleBrush}"
                                 BorderThickness="1"
-                                CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
-                                Padding="18,11"
+                                CornerRadius="8"
+                                Padding="16,10"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
                                 <ScaleTransform x:Name="NavItemScale" ScaleX="1" ScaleY="1"/>
@@ -133,13 +242,13 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
                         <Border x:Name="Bg"
-                                MinWidth="178"
-                                Height="88"
+                                MinWidth="148"
+                                Height="60"
                                 Background="Transparent"
                                 BorderBrush="{DynamicResource BorderSubtleBrush}"
                                 BorderThickness="1"
-                                CornerRadius="{DynamicResource ThemeCornerRadiusPanel}"
-                                Padding="16,13"
+                                CornerRadius="8"
+                                Padding="14,9"
                                 ClipToBounds="True"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
@@ -250,10 +359,10 @@
                 <Grid.Triggers>
                     <EventTrigger RoutedEvent="Grid.MouseEnter">
                         <BeginStoryboard><Storyboard>
-                            <DoubleAnimation Storyboard.TargetName="CardScale" Storyboard.TargetProperty="ScaleX" To="1.022" Duration="0:0:0.11"><DoubleAnimation.EasingFunction><QuarticEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
-                            <DoubleAnimation Storyboard.TargetName="CardScale" Storyboard.TargetProperty="ScaleY" To="1.022" Duration="0:0:0.11"><DoubleAnimation.EasingFunction><QuarticEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
-                            <DoubleAnimation Storyboard.TargetName="CardGlow" Storyboard.TargetProperty="Opacity" To="0.32" Duration="0:0:0.11"/>
-                            <DoubleAnimation Storyboard.TargetName="CardGlow" Storyboard.TargetProperty="BlurRadius" To="14" Duration="0:0:0.11"/>
+                            <DoubleAnimation Storyboard.TargetName="CardScale" Storyboard.TargetProperty="ScaleX" To="1.012" Duration="0:0:0.14"><DoubleAnimation.EasingFunction><QuarticEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
+                            <DoubleAnimation Storyboard.TargetName="CardScale" Storyboard.TargetProperty="ScaleY" To="1.012" Duration="0:0:0.14"><DoubleAnimation.EasingFunction><QuarticEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
+                            <DoubleAnimation Storyboard.TargetName="CardGlow" Storyboard.TargetProperty="Opacity" To="0.22" Duration="0:0:0.14"/>
+                            <DoubleAnimation Storyboard.TargetName="CardGlow" Storyboard.TargetProperty="BlurRadius" To="10" Duration="0:0:0.14"/>
                         </Storyboard></BeginStoryboard>
                     </EventTrigger>
                     <EventTrigger RoutedEvent="Grid.MouseLeave">
@@ -278,12 +387,12 @@
                         <Border x:Name="NowPlayingRing"
                                 Margin="-2"
                                 CornerRadius="{DynamicResource ThemeCornerRadiusLarge}"
-                                BorderBrush="#FF44FFAA"
+                                BorderBrush="{DynamicResource MintBrush}"
                                 BorderThickness="2.5"
                                 Visibility="Collapsed"
                                 IsHitTestVisible="False">
                             <Border.Effect>
-                                <DropShadowEffect Color="#44FFAA" BlurRadius="18" ShadowDepth="0" Opacity="0.85"/>
+                                <DropShadowEffect Color="{DynamicResource ThemePrimaryButtonGlowColor}" BlurRadius="18" ShadowDepth="0" Opacity="0.72"/>
                             </Border.Effect>
                             <Border.Triggers>
                                 <EventTrigger RoutedEvent="Border.Loaded">
@@ -320,7 +429,8 @@
                         <Border x:Name="InnerFocusRim" Margin="6" CornerRadius="{DynamicResource ThemeCornerRadiusPanel}"
                                 BorderBrush="{DynamicResource CloudBrush}" BorderThickness="1" Opacity="0" IsHitTestVisible="False"/>
                         <Border x:Name="TrailerHoverPlate" HorizontalAlignment="Right" VerticalAlignment="Top"
-                                Margin="10" Padding="9,5" CornerRadius="6" Background="#D50B121D"
+                                Margin="10" Padding="9,5" CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
+                                Background="{DynamicResource ThemePanelFillBrush}"
                                 BorderBrush="{DynamicResource CloudBrush}" BorderThickness="1" Opacity="0"
                                 Visibility="{Binding HasTrailer, Converter={StaticResource BooleanToVisibilityConverter}}"
                                 IsHitTestVisible="False">
@@ -337,7 +447,7 @@
                                        Foreground="{StaticResource BigPictureCardTitleBrush}"/>
                         </Grid>
                         <StackPanel VerticalAlignment="Top" Margin="14">
-                            <Border Padding="9,4" Background="#BF1A1410"
+                            <Border Padding="9,4" Background="{DynamicResource ThemePanelFillBrush}"
                                     BorderBrush="{DynamicResource GoldBrush}" BorderThickness="1"
                                     CornerRadius="{DynamicResource ThemeCornerRadiusControl}" HorizontalAlignment="Left"
                                     Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -366,8 +476,8 @@
                         <Border x:Name="CompactPlayBtn"
                                 HorizontalAlignment="Center" VerticalAlignment="Bottom"
                                 Margin="0,0,0,8" Padding="14,7"
-                                CornerRadius="20"
-                                Background="#CC050B12"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusPill}"
+                                Background="{DynamicResource ThemePanelFillBrush}"
                                 BorderBrush="{DynamicResource CloudBrush}" BorderThickness="1"
                                 Cursor="Hand"
                                 MouseLeftButtonUp="CompactPlayBtnClick"
@@ -424,6 +534,38 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
+        <DataTemplate x:Key="Horizon3DGameCaseTemplate">
+            <Grid Width="214" Height="326" Margin="4,4,4,12"
+                  RenderTransformOrigin="0.5,0.5">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="270"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <controls:HorizonGameCase3D x:Name="CaseModel" Width="205" Height="266"
+                                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                                             Profile="{Binding CaseProfile}"
+                                             CoverImagePath="{Binding DisplayCoverImagePath}"/>
+
+                <StackPanel Grid.Row="1" Margin="10,4,10,0">
+                    <TextBlock Text="{Binding Title}" FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                               FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"
+                               TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
+                    <TextBlock Margin="0,4,0,0" Text="{Binding Platform}" FontSize="10.5"
+                               Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                               TextAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True">
+                    <Setter TargetName="CaseModel" Property="IsCaseFocused" Value="True"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                    <Setter TargetName="CaseModel" Property="IsCaseFocused" Value="True"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
         <DataTemplate x:Key="BigPictureShelfTemplate">
             <StackPanel Margin="0,0,0,28">
                 <DockPanel Margin="0,0,0,8">
@@ -464,8 +606,7 @@
                          PreviewMouseMove="ShelfPointerDragMove"
                          PreviewMouseLeftButtonUp="ShelfPointerDragEnd"
                          LostMouseCapture="ShelfPointerDragLost"
-                         MouseDoubleClick="ShelfMouseDoubleClick"
-                         PreviewMouseWheel="ShelfPreviewMouseWheel">
+                         MouseDoubleClick="ShelfMouseDoubleClick">
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
                             <VirtualizingStackPanel Orientation="Horizontal"/>
@@ -559,58 +700,17 @@
         </Grid>
         <Rectangle Fill="{DynamicResource HeroOverlayBrush}"/>
         <Rectangle Fill="{DynamicResource HeroOverlayBrush}" Opacity="{DynamicResource ThemeShellOverlayOpacity}"/>
-        <Rectangle Fill="{DynamicResource NostalgiaScanlineBrush}" Opacity="0.025" IsHitTestVisible="False"/>
+        <Rectangle Fill="{DynamicResource ThemeGrainBrush}" Opacity="{DynamicResource ThemeGrainOpacity}" IsHitTestVisible="False"/>
+        <Rectangle Fill="{DynamicResource NostalgiaScanlineBrush}" Opacity="0.018" IsHitTestVisible="False"/>
         <Rectangle Fill="{DynamicResource MatrixRainBrush}" Opacity="{DynamicResource ThemeRainOverlayOpacity}" IsHitTestVisible="False"/>
         <Rectangle Fill="{DynamicResource NierDeletionBrush}" Opacity="{DynamicResource NierDeletionEffectOpacity}" IsHitTestVisible="False"/>
-        <effects:ThemeEffectLayer ThemeKey="{Binding AppearanceThemeKey}" EffectRole="Cloudscape"
-                                  IsEffectActive="{Binding VisualEffectsEnabled}"
+<effects:ThemeEffectLayer ThemeKey="{Binding AppearanceThemeKey}" EffectRole="Cloudscape"
+                                  Quality="{Binding EffectsQuality}"
+                                      IsEffectActive="{Binding VisualEffectsEnabled}"
                                   Intensity="{Binding EffectiveVisualEffectIntensity}"
-                                  Opacity="0.86" IsHitTestVisible="False"/>
-        <Rectangle x:Name="CloudscapePulseOverlay" Fill="{DynamicResource NostalgiaAtmosphereBrush}" Opacity="0.12" IsHitTestVisible="False">
-            <Rectangle.Triggers>
-                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                    <BeginStoryboard>
-                        <Storyboard RepeatBehavior="Forever" AutoReverse="True">
-                            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.08" To="0.16" Duration="0:0:4.6">
-                                <DoubleAnimation.EasingFunction><SineEase EasingMode="EaseInOut"/></DoubleAnimation.EasingFunction>
-                            </DoubleAnimation>
-                        </Storyboard>
-                    </BeginStoryboard>
-                </EventTrigger>
-            </Rectangle.Triggers>
-        </Rectangle>
-        <Rectangle Width="920" Height="220" HorizontalAlignment="Right" VerticalAlignment="Top"
-                   Margin="0,40,-180,0" Fill="{DynamicResource AuroraVeilBrush}" Opacity="0.045" IsHitTestVisible="False"/>
-        <Rectangle x:Name="CloudscapeThemeSweep" Width="520" HorizontalAlignment="Left"
-                   Fill="{DynamicResource ThemeSweepBrush}" Opacity="{DynamicResource ThemeSweepOverlayOpacity}"
-                   IsHitTestVisible="False">
-            <Rectangle.RenderTransform><TranslateTransform X="-620"/></Rectangle.RenderTransform>
-            <Rectangle.Triggers>
-                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                    <BeginStoryboard>
-                        <Storyboard RepeatBehavior="Forever">
-                            <DoubleAnimation Storyboard.TargetName="CloudscapeThemeSweep"
-                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
-                                             From="-620" To="1880" Duration="0:0:20">
-                                <DoubleAnimation.EasingFunction><SineEase EasingMode="EaseInOut"/></DoubleAnimation.EasingFunction>
-                            </DoubleAnimation>
-                            <DoubleAnimation Storyboard.TargetName="CloudscapeThemeSweep"
-                                             Storyboard.TargetProperty="Opacity"
-                                             From="0.025" To="0.095" AutoReverse="True" Duration="0:0:10"/>
-                        </Storyboard>
-                    </BeginStoryboard>
-                </EventTrigger>
-            </Rectangle.Triggers>
-            <Rectangle.OpacityMask>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                    <GradientStop Offset="0" Color="#00FFFFFF"/>
-                    <GradientStop Offset="0.5" Color="#FFFFFFFF"/>
-                    <GradientStop Offset="1" Color="#00FFFFFF"/>
-                </LinearGradientBrush>
-            </Rectangle.OpacityMask>
-        </Rectangle>
+                                  Opacity="0.72" IsHitTestVisible="False"/>
 
-        <Grid Margin="30,18,30,18">
+        <Grid Margin="38,22,38,20">
             <Grid.Triggers>
                 <EventTrigger RoutedEvent="FrameworkElement.Loaded">
                     <BeginStoryboard>
@@ -633,7 +733,7 @@
             </Grid.RowDefinitions>
 
             <!-- ── Nav bar ── -->
-            <Grid x:Name="CloudscapeTopNav" Grid.Row="0" Margin="0,0,0,18" Opacity="0" RenderTransformOrigin="0.5,0.5">
+            <Grid x:Name="CloudscapeTopNav" Grid.Row="0" Margin="0,0,0,16" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Grid.RenderTransform><TranslateTransform x:Name="CloudscapeTopNavLift" Y="-10"/></Grid.RenderTransform>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -642,11 +742,12 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0">
-                    <TextBlock Text="CloudBerry" FontFamily="{DynamicResource ThemeDisplayFontFamily}" FontSize="30" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                    <TextBlock Text="Cloudscape" Style="{StaticResource MatrixTitleTextStyle}" FontSize="12" Foreground="{DynamicResource CloudBrush}"/>
+                    <TextBlock Text="Cirra" FontFamily="{DynamicResource ThemeDisplayFontFamily}" FontSize="30" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <TextBlock Text="Horizon" Style="{StaticResource MatrixTitleTextStyle}" FontSize="12" Foreground="{DynamicResource CloudBrush}"/>
                 </StackPanel>
 
                 <Border Grid.Column="1" Margin="26,2,26,0" Padding="6" HorizontalAlignment="Center"
+                        Style="{StaticResource HorizonCommandSurfaceStyle}"
                         Background="{DynamicResource ThemePanelFillSoftBrush}"
                         BorderBrush="{DynamicResource GlassPanelBorderBrush}" BorderThickness="1"
                         CornerRadius="{DynamicResource ThemeCornerRadiusPanel}">
@@ -668,7 +769,7 @@
                     <!-- ── Netflix mode toggle — compact view with more shelf rows visible ── -->
                     <Button x:Name="NetflixToggleBtn"
                             Click="NetflixModeToggleClick"
-                            Style="{StaticResource GhostButtonStyle}"
+                            Style="{StaticResource HorizonLiquidButtonStyle}"
                             Padding="11,10" Margin="0,0,10,0"
                             ToolTip="Toggle compact / full view">
                         <StackPanel Orientation="Horizontal">
@@ -712,15 +813,26 @@
                             </StackPanel>
                         </Grid>
                     </Border>
-                    <Border Padding="14,10" Margin="0,0,14,0" Style="{StaticResource FeatureDetailCardStyle}"
+                    <Border Padding="14,10" Margin="0,0,14,0" Style="{StaticResource FeatureDetailCardStyle}" Visibility="Collapsed"
                             Background="{DynamicResource ThemePanelFillSoftBrush}"
                             BorderBrush="{DynamicResource ThemePanelEdgeBrush}">
                         <!-- A2: theme-reactive glow color (was hardcoded parchment #3C3020) -->
                         <Border.Effect><DropShadowEffect Color="{DynamicResource ThemePanelShadowColor}" BlurRadius="8" ShadowDepth="0" Opacity="0.16"/></Border.Effect>
                         <TextBlock Text="Enter to launch / F11 to exit / 1-6 for pages" FontSize="12" Foreground="{DynamicResource TextMutedBrush}"/>
                     </Border>
-                    <Button Style="{StaticResource SecondaryButtonStyle}" Margin="0" Padding="18,10"
-                            Click="CloseBigPictureClick" Content="Exit Cloudscape"/>
+                    <Border Margin="0,0,12,0" Padding="12,8"
+                            Style="{StaticResource HorizonGlassSurfaceStyle}"
+                            Visibility="{Binding IsShellBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal">
+                            <ProgressBar Width="38" Height="3" Margin="0,0,9,0"
+                                         VerticalAlignment="Center" Style="{StaticResource BusyBarStyle}"/>
+                            <TextBlock Text="{Binding ShellBusyLabel}" FontSize="11"
+                                       FontWeight="SemiBold" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                        </StackPanel>
+                    </Border>
+                    <Button Style="{StaticResource HorizonLiquidButtonStyle}" Margin="0" Padding="18,10"
+                            Click="CloseBigPictureClick" Content="Exit Horizon"/>
                 </StackPanel>
             </Grid>
 
@@ -735,9 +847,9 @@
                     <ColumnDefinition Width="180"/>
                 </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="0" Style="{StaticResource FeatureDetailCardStyle}" Margin="0,0,18,0"
-                        Background="{DynamicResource ThemePanelFillSoftBrush}"
-                        BorderBrush="{DynamicResource ThemePanelEdgeBrush}" Padding="24,18">
+                <Border Grid.Column="0" Style="{StaticResource HorizonGlassSurfaceStyle}" Margin="0,0,18,0"
+                        Background="{DynamicResource BladeGlassBrush}"
+                        BorderBrush="{DynamicResource GlassPanelBorderBrush}" Padding="26,18">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -746,12 +858,33 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Rectangle Fill="{DynamicResource ThemeShellAtmosphereBrush}" Opacity="0.45" IsHitTestVisible="False"/>
-                        <DockPanel Grid.Row="0">
+                        <ToggleButton x:Name="SpotlightPauseToggle" Grid.Row="0" Grid.RowSpan="2"
+                                          HorizontalAlignment="Right" VerticalAlignment="Top"
+                                          Style="{StaticResource GhostToggleButtonStyle}"
+                                          Width="36" Height="36" Padding="0" Margin="12,0,0,0"
+                                          IsChecked="{Binding HorizonSpotlightPaused, Mode=TwoWay}"
+                                          ToolTip="{Binding HorizonSpotlightActionLabel}"
+                                          AutomationProperties.Name="{Binding HorizonSpotlightActionLabel}">
+                                <TextBlock FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons" FontSize="14">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="&#xE769;"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HorizonSpotlightPaused}" Value="True">
+                                                    <Setter Property="Text" Value="&#xE768;"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                        </ToggleButton>
+                        <DockPanel Grid.Row="0" Margin="0,0,48,0">
                             <TextBlock DockPanel.Dock="Left" Text="{Binding BigPictureHeroContextLabel}"
-                                       FontSize="11" Foreground="{DynamicResource CloudBrush}" VerticalAlignment="Center"/>
+                                       FontSize="11" Foreground="{DynamicResource CloudBrush}" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"/>
                         </DockPanel>
-                        <TextBlock Grid.Row="1" Margin="0,4,0,0"
-                                   Text="{Binding BigPictureHeroGame.Title, TargetNullValue=CloudBerry}"
+                        <TextBlock Grid.Row="1" Margin="0,4,48,0"
+                                   Text="{Binding BigPictureHeroGame.Title, TargetNullValue=Cirra}"
                                    FontFamily="{DynamicResource ThemeDisplayFontFamily}" FontSize="34" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
                         <TextBlock Grid.Row="2" Margin="0,8,0,0" Text="{Binding BigPictureHeroSummary}"
@@ -771,7 +904,7 @@
                                 </Border>
                                 <!-- Critic score badge: only shown when a score exists -->
                                 <Border Padding="10,4" Margin="0,0,8,6"
-                                        Background="#CC081A10"
+                                        Background="{DynamicResource ThemePanelFillSoftBrush}"
                                         BorderBrush="{DynamicResource GoldBrush}" BorderThickness="1"
                                         CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
                                         Visibility="{Binding BigPictureHeroGame.HasCriticRating, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -787,7 +920,7 @@
                                 </Border>
                                 <!-- Live session pill: shown only when hero game is running -->
                                 <Border Padding="10,4" Margin="0,0,8,6"
-                                        Background="#CC0D1F12"
+                                        Background="{DynamicResource ThemePanelFillSoftBrush}"
                                         BorderBrush="{DynamicResource GoldBrush}" BorderThickness="1"
                                         CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
                                         Visibility="{Binding BigPictureHeroGame.IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -807,12 +940,12 @@
                             </WrapPanel>
                             <WrapPanel Grid.Row="1">
                                 <Button Style="{StaticResource PrimaryButtonStyle}" Click="LaunchHeroGameClick" Content="Launch"/>
-                                <Button Style="{StaticResource SecondaryButtonStyle}" Click="BrowseHeroGameClick" Content="Browse Library"/>
-                                <Button Style="{StaticResource GhostButtonStyle}" Click="OpenHeroAchievementsClick" Content="Achievements"/>
-                                <Button Style="{StaticResource GhostButtonStyle}" Click="OpenHeroTrailerClick"
-                                        IsEnabled="{Binding BigPictureHeroGame.CanOpenTrailer}" Content="Trailer"/>
-                                <Button Style="{StaticResource GhostButtonStyle}" Click="OpenHeroWebsiteClick"
-                                        IsEnabled="{Binding BigPictureHeroGame.CanOpenWebsite}" Content="Website"/>
+                                <Button Style="{StaticResource HorizonLiquidButtonStyle}" Click="BrowseHeroGameClick" Content="Browse Library"/>
+                                <Button Style="{StaticResource HorizonLiquidButtonStyle}" Click="OpenHeroAchievementsClick" Content="View Achievements"/>
+                                <Button Style="{StaticResource HorizonLiquidButtonStyle}" Click="OpenHeroTrailerClick"
+                                        IsEnabled="{Binding BigPictureHeroGame.CanOpenTrailer}" Content="Watch Trailer"/>
+                                <Button Style="{StaticResource HorizonLiquidButtonStyle}" Click="OpenHeroWebsiteClick"
+                                        IsEnabled="{Binding BigPictureHeroGame.CanOpenWebsite}" Content="Open Website"/>
                             </WrapPanel>
                         </Grid>
                     </Grid>
@@ -850,7 +983,7 @@
                             </Rectangle.Fill>
                         </Rectangle>
                         <StackPanel VerticalAlignment="Bottom" Margin="14,0,14,12">
-                            <TextBlock Text="{Binding BigPictureHeroGame.Title, TargetNullValue=CloudBerry}"
+                            <TextBlock Text="{Binding BigPictureHeroGame.Title, TargetNullValue=Cirra}"
                                        FontFamily="{DynamicResource ThemeDisplayFontFamily}" FontSize="14" FontWeight="SemiBold"
                                        Foreground="{StaticResource BigPictureCardTitleBrush}" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
@@ -874,6 +1007,7 @@
                         </Grid.RowDefinitions>
                         <!-- Search bar -->
                         <Border Grid.Row="0" Margin="0,0,0,14" Padding="14,10"
+                                Style="{StaticResource HorizonCommandSurfaceStyle}"
                                 Background="{DynamicResource ThemePanelFillSoftBrush}"
                                 BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
                                 CornerRadius="{DynamicResource ThemeCornerRadiusPanel}">
@@ -881,18 +1015,22 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Border Grid.Column="0"
                                         Background="{DynamicResource GlassInputBrush}"
                                         BorderBrush="{DynamicResource GlassPanelBorderBrush}" BorderThickness="1"
                                         CornerRadius="{DynamicResource ThemeCornerRadiusSmall}" Padding="12,0">
                                     <Grid>
-                                        <TextBlock Text="&#xE721;  Search your library..."
-                                                   FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons, {DynamicResource ThemeBodyFontFamily}"
+                                        <TextBlock FontFamily="{DynamicResource ThemeBodyFontFamily}"
                                                    FontSize="13" Foreground="{DynamicResource TextMutedBrush}"
                                                    VerticalAlignment="Center" IsHitTestVisible="False"
-                                                   Visibility="{Binding BigPictureIsSearching, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                                   Visibility="{Binding BigPictureIsSearching, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                            <Run Text="&#xE721;" FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons"/>
+                                            <Run Text="  Search your library..."/>
+                                        </TextBlock>
                                         <TextBox x:Name="BigPictureSearchBox"
+                                                 AutomationProperties.Name="Search library"
                                                  Text="{Binding BigPictureSearchText, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource TextFieldStyle}" Height="34"
                                                  BorderThickness="0" Background="Transparent"
@@ -900,7 +1038,18 @@
                                                  KeyDown="BigPictureSearchBoxKeyDown"/>
                                     </Grid>
                                 </Border>
-                                <Button Grid.Column="1" Margin="10,0,0,0"
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="PLAY WINDOW" FontSize="10" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox ItemsSource="{Binding PlayWindowOptions}"
+                                              DisplayMemberPath="Label"
+                                              SelectedValuePath="Minutes"
+                                              SelectedValue="{Binding SelectedPlayWindowMinutes, Mode=TwoWay}"
+                                              MinWidth="126" Height="34"
+                                              VerticalContentAlignment="Center"/>
+                                </StackPanel>
+                                <Button Grid.Column="2" Margin="10,0,0,0"
                                         Style="{StaticResource GhostButtonStyle}" Padding="12,8"
                                         Click="BigPictureSearchClearClick"
                                         Visibility="{Binding BigPictureIsSearching, Converter={StaticResource BooleanToVisibilityConverter}}"
@@ -908,12 +1057,28 @@
                             </Grid>
                         </Border>
                         <ScrollViewer x:Name="CloudscapeHomeScroll"
-                                      Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                                      PreviewMouseWheel="CloudscapeHomeScrollWheel">
+                                      Style="{StaticResource HorizonScrollViewerStyle}"
+                                      Grid.Row="1" VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding BigPictureHomeShelves}" ItemTemplate="{StaticResource BigPictureShelfTemplate}"
                                           Visibility="{Binding BigPictureIsSearching, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                         </ScrollViewer>
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                        <Border Grid.Row="1"
+                                Background="Transparent"
+                                Visibility="{Binding HasGames, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="420">
+                                <TextBlock FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                                           FontSize="{DynamicResource FontSizeHeading}"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           TextAlignment="Center"
+                                           Text="Your library is empty"/>
+                                <TextBlock Margin="0,10,0,0"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           TextAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           Text="Head back to the desktop view to scan a folder or add a game, then come back to browse it here."/>
+                            </StackPanel>
+                        </Border>
+                        <ScrollViewer Grid.Row="1" Style="{StaticResource HorizonScrollViewerStyle}" VerticalScrollBarVisibility="Auto"
                                       Visibility="{Binding BigPictureIsSearching, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <!-- Search results shelf -->
                             <ItemsControl ItemsSource="{Binding BigPictureSearchShelves}" ItemTemplate="{StaticResource BigPictureShelfTemplate}"/>
@@ -928,16 +1093,29 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <Border x:Name="LibraryFilterPanel" Grid.Row="0" Background="{DynamicResource ThemePanelFillSoftBrush}"
+                        <Border x:Name="LibraryFilterPanel" Grid.Row="0" Style="{StaticResource HorizonGlassSurfaceStyle}"
+                                Background="{DynamicResource ThemePanelFillSoftBrush}"
                                 BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
-                                CornerRadius="{DynamicResource ThemeCornerRadiusPanel}" Padding="22,16" Margin="0,0,0,16">
+                                CornerRadius="8" Padding="18,14" Margin="0,0,0,14">
                             <StackPanel>
-                                <TextBlock Text="Browse your library" FontFamily="{DynamicResource ThemeDisplayFontFamily}"
-                                           FontSize="22" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                <TextBlock Margin="0,4,0,12" Text="{Binding BigPictureSelectedCategorySummary}"
-                                           FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <DockPanel Margin="0,0,0,10">
+                                    <Button x:Name="LibraryViewToggleButton" DockPanel.Dock="Right"
+                                            Style="{StaticResource HorizonLiquidIconButtonStyle}"
+                                            Click="LibraryViewToggleClick" ToolTip="Switch to cover grid">
+                                        <TextBlock x:Name="LibraryViewToggleIcon" Text="&#xE80A;"
+                                                   FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons" FontSize="17"/>
+                                    </Button>
+                                    <StackPanel>
+                                        <TextBlock Text="Library" FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                                                   FontSize="21" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        <TextBlock Margin="0,3,0,0" Text="{Binding BigPictureSelectedCategorySummary}"
+                                                   FontSize="11.5" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    </StackPanel>
+                                </DockPanel>
                                 <ListBox ItemsSource="{Binding BigPictureLibraryCategories}"
                                          Style="{StaticResource BigPictureNavListStyle}"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                         ScrollViewer.VerticalScrollBarVisibility="Disabled"
                                          SelectedItem="{Binding SelectedBigPictureLibraryCategory}">
                                     <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
                                     <ListBox.ItemContainerStyle><StaticResource ResourceKey="BigPictureCategoryItemStyle"/></ListBox.ItemContainerStyle>
@@ -950,13 +1128,11 @@
                                                 </Grid.RowDefinitions>
                                                 <Rectangle HorizontalAlignment="Right" Width="68" Fill="{DynamicResource ThemeSweepBrush}" Opacity="0.20" IsHitTestVisible="False"/>
                                                 <StackPanel Grid.RowSpan="2">
-                                                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold"
+                                                    <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="SemiBold"
                                                                Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Margin="0,3,0,0" Text="{Binding Subtitle}" FontSize="11"
-                                                               Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="1" Text="{Binding Count, StringFormat={}{0} titles}"
-                                                           FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"/>
+                                                           FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
@@ -967,26 +1143,58 @@
                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                VerticalAlignment="Center" Margin="0,0,10,0"/>
                                     <Button Tag="default" Click="BigPictureLibrarySortClick"
-                                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"
+                                            Style="{StaticResource HorizonLiquidButtonStyle}" Margin="0,0,6,0"
                                             Padding="12,5" FontSize="11">Default</Button>
                                     <Button Tag="az" Click="BigPictureLibrarySortClick"
-                                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"
+                                            Style="{StaticResource HorizonLiquidButtonStyle}" Margin="0,0,6,0"
                                             Padding="12,5" FontSize="11">A–Z</Button>
                                     <Button Tag="rating" Click="BigPictureLibrarySortClick"
-                                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"
+                                            Style="{StaticResource HorizonLiquidButtonStyle}" Margin="0,0,6,0"
                                             Padding="12,5" FontSize="11">Rating</Button>
                                     <Button Tag="playtime" Click="BigPictureLibrarySortClick"
-                                            Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0"
+                                            Style="{StaticResource HorizonLiquidButtonStyle}" Margin="0,0,6,0"
                                             Padding="12,5" FontSize="11">Playtime</Button>
                                     <Button Tag="recent" Click="BigPictureLibrarySortClick"
-                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Style="{StaticResource HorizonLiquidButtonStyle}"
                                             Padding="12,5" FontSize="11">Recent</Button>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ScrollViewer Grid.Row="1" Style="{StaticResource HorizonScrollViewerStyle}" VerticalScrollBarVisibility="Auto"
+                                      Visibility="{Binding IsBigPictureLibraryGrid, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                             <ItemsControl ItemsSource="{Binding BigPictureLibraryShelves}" ItemTemplate="{StaticResource BigPictureShelfTemplate}"/>
                         </ScrollViewer>
+                        <ListBox x:Name="LibraryGridList" Grid.Row="1"
+                                 ItemsSource="{Binding BigPictureLibraryGridGames}"
+                                 SelectedItem="{Binding SelectedGame, Mode=TwoWay}"
+                                 Style="{StaticResource HorizonGridListStyle}"
+                                 ItemContainerStyle="{StaticResource HorizonGridItemStyle}"
+                                 ItemTemplate="{StaticResource Horizon3DGameCaseTemplate}"
+                                 Visibility="{Binding IsBigPictureLibraryGrid, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                 SelectionChanged="LibraryGridSelectionChanged"
+                                 MouseDoubleClick="ShelfMouseDoubleClick">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel ItemWidth="222" ItemHeight="342"/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                        <Border Grid.Row="1"
+                                Background="Transparent"
+                                Visibility="{Binding HasGames, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="420">
+                                <TextBlock FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                                           FontSize="{DynamicResource FontSizeHeading}"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           TextAlignment="Center"
+                                           Text="Your library is empty"/>
+                                <TextBlock Margin="0,10,0,0"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           TextAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           Text="Head back to the desktop view to scan a folder or add a game, then come back to browse it here."/>
+                            </StackPanel>
+                        </Border>
                     </Grid>
                 </TabItem>
 
@@ -1008,6 +1216,7 @@
 
                             <!-- Stats header -->
                             <Border Grid.Row="0" Padding="16,14" Margin="0,0,12,8"
+                                    Style="{StaticResource HorizonGlassSurfaceStyle}"
                                     Background="{DynamicResource ThemePanelFillSoftBrush}"
                                     BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
                                     CornerRadius="{DynamicResource ThemeCornerRadiusPanel}">
@@ -1072,6 +1281,7 @@
 
                             <!-- Sync all row -->
                             <Border Grid.Row="1" Padding="12,10" Margin="0,0,12,8"
+                                    Style="{StaticResource HorizonInsetSurfaceStyle}"
                                     Background="{DynamicResource ThemePanelFillSoftBrush}"
                                     BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
                                     CornerRadius="{DynamicResource ThemeCornerRadiusControl}">
@@ -1091,7 +1301,8 @@
                             </Border>
 
                             <!-- Scrollable game list -->
-                            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,12,0">
+                            <ScrollViewer Grid.Row="2" Style="{StaticResource HorizonScrollViewerStyle}"
+                                          VerticalScrollBarVisibility="Auto" Margin="0,0,12,0">
                                 <ItemsControl ItemsSource="{Binding Games}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -1302,7 +1513,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <ScrollViewer Grid.Row="1" Style="{StaticResource HorizonScrollViewerStyle}" VerticalScrollBarVisibility="Auto">
                                     <ItemsControl x:Name="AchievementItemsControl"
                                                   ItemsSource="{Binding SelectedGame.Achievements}">
                                         <ItemsControl.ItemTemplate>
@@ -1316,8 +1527,8 @@
                                                             <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding IsUnlocked}" Value="True">
-                                                                    <Setter Property="Background" Value="#0D1E0A"/>
-                                                                    <Setter Property="BorderBrush" Value="#2FAF60"/>
+                                                                    <Setter Property="Background" Value="{DynamicResource MintDimBrush}"/>
+                                                                    <Setter Property="BorderBrush" Value="{DynamicResource MintBrush}"/>
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
@@ -1335,11 +1546,11 @@
                                                             <Grid>
                                                                 <Image Stretch="UniformToFill"
                                                                        Source="{Binding DisplayIconUrl, Converter={StaticResource StringToImageSourceConverter}}"/>
-                                                                <Border Background="#88000000" CornerRadius="8"
+                                                                <Border Background="{DynamicResource AppBackgroundBrush}" CornerRadius="8"
                                                                         Visibility="{Binding IsUnlocked, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                                                                     <TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons"
                                                                                FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                               Foreground="#88FFFFFF"/>
+                                                                               Foreground="{DynamicResource TextMutedBrush}"/>
                                                                 </Border>
                                                             </Grid>
                                                         </Border>
@@ -1349,8 +1560,9 @@
                                                                 <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
                                                                            Foreground="{DynamicResource TextPrimaryBrush}"
                                                                            TextTrimming="CharacterEllipsis" MaxWidth="380"/>
-                                                                <Border Margin="8,0,0,0" Padding="5,2" CornerRadius="4"
-                                                                        Background="#22FFFFFF"
+                                                                <Border Margin="8,0,0,0" Padding="5,2"
+                                                                        CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
+                                                                        Background="{DynamicResource GlassChipFillBrush}"
                                                                         Visibility="{Binding IsHidden, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                                     <TextBlock Text="HIDDEN" FontSize="9" FontWeight="Bold"
                                                                                Foreground="{DynamicResource TextMutedBrush}"/>
@@ -1389,14 +1601,14 @@
 
                 <!-- Settings -->
                 <TabItem>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer Style="{StaticResource HorizonScrollViewerStyle}" VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                             <Grid Margin="0,0,0,16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}" Margin="0,0,14,0">
+                                <Border Grid.Column="0" Style="{StaticResource HorizonGlassSurfaceStyle}" Margin="0,0,14,0">
                                     <StackPanel>
                                         <TextBlock Text="Library" Style="{StaticResource FieldLabelStyle}"/>
                                         <TextBlock Text="{Binding LibrarySummary}" FontSize="16"
@@ -1406,7 +1618,7 @@
                                                    Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap"/>
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="1" Style="{StaticResource PanelBorderStyle}">
+                                <Border Grid.Column="1" Style="{StaticResource HorizonGlassSurfaceStyle}">
                                     <StackPanel>
                                         <TextBlock Text="LIBRARY TOOLS" Style="{StaticResource FieldLabelStyle}"/>
                                         <TextBlock Text="Scan, refresh art, and sync achievements." FontSize="12"
@@ -1439,7 +1651,7 @@
                                                        FontSize="14" Foreground="{DynamicResource CloudBrush}"/>
                                             <WrapPanel Margin="0,16,0,0">
                                                 <Button Style="{StaticResource SecondaryButtonStyle}" Click="OpenDesktopManagerClick" Content="Open Desktop Manager"/>
-                                                <Button Style="{StaticResource GhostButtonStyle}" Click="CloseBigPictureClick" Content="Exit Cloudscape"/>
+                                                <Button Style="{StaticResource GhostButtonStyle}" Click="CloseBigPictureClick" Content="Exit Horizon"/>
                                             </WrapPanel>
                                         </StackPanel>
                                         <Border Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top"
@@ -1466,7 +1678,8 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <Border Grid.Row="0" Background="{DynamicResource ThemePanelFillSoftBrush}"
+                        <Border Grid.Row="0" Style="{StaticResource HorizonGlassSurfaceStyle}"
+                                Background="{DynamicResource ThemePanelFillSoftBrush}"
                                 BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
                                 CornerRadius="{DynamicResource ThemeCornerRadiusPanel}" Padding="22,16" Margin="0,0,0,16">
                             <StackPanel>
@@ -1513,8 +1726,7 @@
                                 <!-- Quick stat row -->
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                     <TextBlock FontSize="11.5" Foreground="{DynamicResource TextMutedBrush}">
-                                        <Run Text="{Binding EmulationRomCount, Mode=OneWay}"/>
-                                        <Run Text=" ROM(s) total"/>
+                                        <Run Text="{Binding EmulationRomCount, Mode=OneWay, StringFormat={}{0} ROMs total}"/>
                                     </TextBlock>
                                     <TextBlock Margin="16,0,0,0" FontSize="11.5" Foreground="{DynamicResource GoldBrush}"
                                                Visibility="{Binding HasEmulationGamesNeedingCore, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -1524,7 +1736,7 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ScrollViewer Grid.Row="1" Style="{StaticResource HorizonScrollViewerStyle}" VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding BigPictureEmulationShelves}" ItemTemplate="{StaticResource BigPictureShelfTemplate}"/>
                         </ScrollViewer>
                     </Grid>
@@ -1540,6 +1752,7 @@
 
                         <!-- Command bar -->
                         <Border Grid.Row="0" Padding="12,8"
+                                Style="{StaticResource HorizonCommandSurfaceStyle}"
                                 Background="{DynamicResource BladeGlassBrush}"
                                 BorderBrush="{DynamicResource GlassPanelBorderBrush}"
                                 BorderThickness="0,0,0,1">
@@ -1648,12 +1861,57 @@
             <DockPanel Grid.Row="3" Margin="0,10,0,2">
                 <TextBlock DockPanel.Dock="Left" Text="{Binding StatusMessage}" FontSize="12"
                            Foreground="{DynamicResource TextMutedBrush}" TextTrimming="CharacterEllipsis"/>
-                <TextBlock DockPanel.Dock="Right" Text="{Binding SelectedGame.Title, TargetNullValue=No title selected}"
-                           FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Border x:Name="ControllerActionLegend"
+                            Margin="0,0,14,0" Padding="10,5"
+                            CornerRadius="{DynamicResource ThemeCornerRadiusPill}"
+                            Background="{DynamicResource GlassChipFillBrush}"
+                            BorderBrush="{DynamicResource GlassPanelBorderBrush}"
+                            BorderThickness="1" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="ControllerDeviceText" Margin="0,0,10,0" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource GoldBrush}"/>
+                            <TextBlock Text="LB/RB" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource CloudBrush}"/>
+                            <TextBlock Text=" Pages" Margin="3,0,12,0" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <TextBlock Text="A" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource MintBrush}"/>
+                            <TextBlock x:Name="ControllerActionAText" Text=" Details" Margin="3,0,12,0" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <StackPanel x:Name="ControllerActionXGroup" Orientation="Horizontal">
+                                <TextBlock Text="X" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource CloudBrush}"/>
+                                <TextBlock x:Name="ControllerActionXText" Text=" View" Margin="3,0,12,0" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                            <StackPanel x:Name="ControllerActionYGroup" Orientation="Horizontal">
+                                <TextBlock Text="Y" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource GoldBrush}"/>
+                                <TextBlock x:Name="ControllerActionYText" Text=" Search" Margin="3,0,12,0" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                            <TextBlock Text="B" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BerryBrush}"/>
+                            <TextBlock Text=" Exit" Margin="3,0,0,0" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="{Binding SelectedGame.Title, TargetNullValue=No title selected}"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
             </DockPanel>
         </Grid>
 
-        <Ellipse x:Name="CloudscapePointerGlow" Width="148" Height="148"
+        <Border x:Name="HorizonScrollPulse"
+                Width="4" Height="132"
+                HorizontalAlignment="Right" VerticalAlignment="Center"
+                Margin="0,0,10,0"
+                Background="{DynamicResource CloudBrush}"
+                BorderBrush="{DynamicResource GlassPanelBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource ThemeCornerRadiusPill}"
+                Opacity="0" IsHitTestVisible="False" Panel.ZIndex="79">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="HorizonScrollPulseTransform" Y="0"/>
+            </Border.RenderTransform>
+            <Border.Effect>
+                <DropShadowEffect Color="{DynamicResource ThemePrimaryButtonGlowColor}"
+                                  BlurRadius="16" ShadowDepth="0" Opacity="0.42"/>
+            </Border.Effect>
+        </Border>
+
+        <Ellipse x:Name="CloudscapePointerGlow" Width="112" Height="112"
                  HorizontalAlignment="Left" VerticalAlignment="Top" Opacity="0" IsHitTestVisible="False" Panel.ZIndex="80">
             <Ellipse.Fill>
                 <RadialGradientBrush>
@@ -1699,13 +1957,13 @@
 
         <Border x:Name="CardTrailerPreviewHost" Width="220" Height="310"
                 HorizontalAlignment="Left" VerticalAlignment="Top"
-                Background="#FF050B12" BorderBrush="{DynamicResource CloudBrush}" BorderThickness="1"
+                Background="{DynamicResource AppBackgroundBrush}" BorderBrush="{DynamicResource CloudBrush}" BorderThickness="1"
                 CornerRadius="{DynamicResource ThemeCornerRadiusLarge}" ClipToBounds="True"
                 Opacity="0" Visibility="Collapsed" Panel.ZIndex="96"
                 IsHitTestVisible="False">
             <Grid>
                 <Rectangle Fill="{DynamicResource ThemeShellAtmosphereBrush}" Opacity="0.32"/>
-                <Border x:Name="CardTrailerPreviewFallback" Padding="18" Background="#F4050B12"
+                <Border x:Name="CardTrailerPreviewFallback" Padding="18" Background="{DynamicResource ThemePanelFillBrush}"
                         Visibility="Collapsed" Panel.ZIndex="2">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                         <TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons" FontSize="34"
@@ -1885,6 +2143,7 @@
 
                 <!-- Left: metadata + summary + actions -->
                 <ScrollViewer Grid.Row="1" Grid.Column="0"
+                              Style="{StaticResource HorizonScrollViewerStyle}"
                               VerticalScrollBarVisibility="Auto"
                               Margin="0,0,24,0">
                     <StackPanel>
@@ -1933,6 +2192,83 @@
                                    TextWrapping="Wrap"
                                    Text="{Binding CloudscapeDetailGame.SummaryOrPlaceholder}"
                                    Margin="0,0,0,24"/>
+                        <!-- Private return-to-game context -->
+                        <Border Margin="0,0,0,22"
+                                Padding="14,12"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
+                                Background="{DynamicResource GlassChipActiveFillBrush}"
+                                BorderBrush="{DynamicResource GlassButtonBorderBrush}"
+                                BorderThickness="1"
+                                Visibility="{Binding CloudscapeDetailGame.HasNextTimeNote, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="30"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Margin="0,2,0,0"
+                                           FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons"
+                                           FontSize="15"
+                                           Foreground="{DynamicResource CloudBrush}"
+                                           Text="&#xE70B;"/>
+                                <StackPanel Grid.Column="1">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right"
+                                                   Margin="12,0,0,0"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   Text="{Binding CloudscapeDetailGame.NextTimeUpdatedLabel}"/>
+                                        <TextBlock FontSize="10"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource CloudBrush}"
+                                                   Text="NEXT TIME"/>
+                                    </DockPanel>
+                                    <TextBlock Margin="0,6,0,0"
+                                               MaxHeight="78"
+                                               FontSize="13"
+                                               LineHeight="20"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               TextWrapping="Wrap"
+                                               TextTrimming="CharacterEllipsis"
+                                               Text="{Binding CloudscapeDetailGame.NextTimeNote}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <!-- Original-format manuals and guides -->
+                        <StackPanel Margin="0,0,0,22"
+                                    Visibility="{Binding CloudscapeDetailGame.HasGuidebooks, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <DockPanel Margin="0,0,0,8">
+                                <TextBlock DockPanel.Dock="Right" FontSize="10"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           Text="{Binding CloudscapeDetailGame.GuidebookCountLabel}"/>
+                                <TextBlock FontSize="10" FontWeight="Bold"
+                                           Foreground="{DynamicResource CloudBrush}"
+                                           Text="GUIDES &amp; MANUALS"/>
+                            </DockPanel>
+                            <ItemsControl ItemsSource="{Binding CloudscapeDetailGame.Guidebooks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource GhostButtonStyle}"
+                                                HorizontalContentAlignment="Stretch"
+                                                Padding="12,9" Margin="0,0,0,6"
+                                                Click="DetailGuidebookClick">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Margin="12,0,0,0"
+                                                           FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons"
+                                                           Foreground="{DynamicResource CloudBrush}" Text="&#xE72A;"/>
+                                                <StackPanel>
+                                                    <TextBlock FontSize="12" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                                               Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Margin="0,2,0,0" FontSize="9"
+                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               Text="{Binding DiscoveryLabel}"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                         <!-- Genres -->
                         <WrapPanel Margin="0,0,0,0">
                             <TextBlock FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
@@ -1970,7 +2306,12 @@
                     <Button Style="{StaticResource GhostButtonStyle}"
                             Padding="16,13" Margin="12,0,0,0"
                             Click="DetailAchievementsClick"
-                            Content="Achievements"/>
+                            Content="View Achievements"/>
+                    <Button Style="{StaticResource GhostButtonStyle}"
+                            Padding="16,13" Margin="12,0,0,0"
+                            Visibility="{Binding CloudscapeDetailGame.HasGuidebooks, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            Click="DetailFirstGuidebookClick"
+                            Content="Open Guide"/>
                     <Button Style="{StaticResource GhostButtonStyle}"
                             Padding="16,13" Margin="12,0,0,0"
                             Click="DetailFavoriteClick"
@@ -2045,14 +2386,87 @@
                        Margin="0,0,56,72" Opacity="0" IsHitTestVisible="False"/>
         </Grid>
 
-        <!-- Launch handoff overlay: fills screen and fades to black on game launch -->
+        <!-- Launch handoff overlay: artwork-backed confirmation shared by every Horizon Play route. -->
         <Border x:Name="LaunchHandoffOverlay"
                 Background="Black"
                 Opacity="0"
+                Visibility="Collapsed"
                 IsHitTestVisible="False"
                 Panel.ZIndex="999"
                 HorizontalAlignment="Stretch"
-                VerticalAlignment="Stretch"/>
+                VerticalAlignment="Stretch">
+            <Grid x:Name="LaunchHandoffContent">
+                <Image Stretch="UniformToFill" Opacity="0.22"
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       Source="{Binding DisplayBackgroundImagePath, Converter={StaticResource StringToImageSourceConverter}, ConverterParameter=background}"/>
+                <Rectangle>
+                    <Rectangle.Fill>
+                        <RadialGradientBrush Center="0.5,0.5" RadiusX="0.76" RadiusY="0.82">
+                            <GradientStop Offset="0" Color="#50000000"/>
+                            <GradientStop Offset="0.58" Color="#C8000000"/>
+                            <GradientStop Offset="1" Color="#F8000000"/>
+                        </RadialGradientBrush>
+                    </Rectangle.Fill>
+                </Rectangle>
+                <StackPanel Width="560" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="CIRRA / HORIZON" FontSize="11" FontWeight="Bold"
+                               HorizontalAlignment="Center" Foreground="{DynamicResource CloudBrush}"/>
+                    <TextBlock Margin="0,12,0,0" Text="{Binding Title}"
+                               FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                               FontSize="38" FontWeight="SemiBold" TextAlignment="Center"
+                               TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <TextBlock Margin="0,8,0,18" Text="Preparing your session"
+                               FontSize="13" TextAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <ProgressBar Height="4" Width="260" HorizontalAlignment="Center"
+                                 Style="{StaticResource BusyBarStyle}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Embedded Play: keeps a RetroArch-launched game's own window living inside Cloudscape
+             instead of it popping out as a separate CloudBerry window. EmbeddedPlayHostContainer
+             stays empty in XAML — BigPictureWindow.xaml.cs adds an EmbeddedProcessWindowHost to it
+             programmatically once a real target window handle exists (see ShowEmbeddedPlay). Sits
+             above Attract Mode (which is already guarded off while a game IsRunning, but this is
+             the belt-and-suspenders order) and below the transient launch-handoff flash. -->
+        <Grid x:Name="EmbeddedPlayOverlay"
+              Visibility="Collapsed"
+              Panel.ZIndex="120"
+              Background="Black">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Padding="14,10"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                    BorderThickness="0,0,0,1">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                        <TextBlock x:Name="EmbeddedPlayTitleText"
+                                   FontWeight="SemiBold"
+                                   FontSize="{DynamicResource FontSizeSmall}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center"
+                                   Text="Game"/>
+                        <TextBlock Margin="10,0,0,0"
+                                   FontSize="{DynamicResource FontSizeCaption}"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   VerticalAlignment="Center"
+                                   Text="Playing via RetroArch (embedded)"/>
+                    </StackPanel>
+                    <Button DockPanel.Dock="Right"
+                            Style="{StaticResource GhostButtonStyle}"
+                            Click="ExitEmbeddedPlayClick"
+                            Content="Exit Game"/>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Row="1" x:Name="EmbeddedPlayHostContainer" Background="Black"/>
+        </Grid>
 
     </Grid>
 </Window>

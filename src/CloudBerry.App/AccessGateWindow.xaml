@@ -1,8 +1,9 @@
 <Window x:Class="CloudBerry.App.AccessGateWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CloudBerry"
-        Icon="pack://application:,,,/Resources/Icons/cloudberry_app_icon_256.png"
+        xmlns:effects="clr-namespace:CloudBerry.App.Effects"
+        Title="Cirra"
+        Icon="pack://application:,,,/Resources/Icons/cirra_app_icon_256.png"
         Width="560"
         Height="440"
         ResizeMode="NoResize"
@@ -69,6 +70,12 @@
         </Border.RenderTransform>
 
         <Grid ClipToBounds="True">
+            <effects:ThemeEffectLayer ThemeKey="Cirra Core"
+                                      EffectRole="Splash"
+                                      Intensity="0.62"
+                                      IsEffectActive="True"
+                                      Opacity="0.34"
+                                      IsHitTestVisible="False"/>
             <!-- Top shimmer rule, matching the splash screen's chrome -->
             <Border Height="1" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0.6">
                 <Border.Background>
@@ -102,10 +109,9 @@
                         <Border.BorderBrush>
                             <DynamicResource ResourceKey="ThemePanelBorderGradientBrush"/>
                         </Border.BorderBrush>
-                        <Image Stretch="UniformToFill"
-                               Margin="2"
-                               RenderOptions.BitmapScalingMode="HighQuality"
-                               Source="pack://application:,,,/Resources/Icons/cloudberry_app_icon_256.png"/>
+                        <Image Source="pack://application:,,,/Resources/Icons/cirra_app_icon_256.png"
+                               Stretch="UniformToFill"
+                               RenderOptions.BitmapScalingMode="HighQuality"/>
                     </Border>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock FontFamily="{DynamicResource ThemeDisplayFontFamily}"
@@ -115,7 +121,7 @@
                         <TextBlock Margin="0,3,0,0"
                                    FontSize="12"
                                    Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Text="CloudBerry isn't public yet."/>
+                                   Text="Cirra isn't public yet."/>
                     </StackPanel>
                     <Button Grid.Column="2"
                             Style="{StaticResource WindowControlCloseButtonStyle}"
@@ -132,7 +138,7 @@
                            TextWrapping="Wrap"
                            LineHeight="19"
                            LineStackingStrategy="BlockLineHeight"
-                           Text="You're opening a private testing build. Enter the personal access key you were given below. It's tied to this key and this computer, and only needs to be entered once - CloudBerry will remember it for every launch after this."/>
+                           Text="You're opening a private testing build. Enter your invitation key below. Cirra remembers access for this Windows account on this computer. Please keep your key and the testing build private."/>
 
                 <!-- Key field -->
                 <StackPanel Grid.Row="2" Margin="0,22,0,0">

@@ -6,7 +6,7 @@
     xmlns:conv="clr-namespace:CloudBerry.App.Converters"
     xmlns:effects="clr-namespace:CloudBerry.App.Effects"
     Title="Import Games from Scan"
-    Icon="pack://application:,,,/Resources/Icons/cloudberry_app_icon_256.png"
+        Icon="pack://application:,,,/Resources/Icons/cirra_app_icon_256.png"
     Width="1200"
     Height="800"
     Background="{DynamicResource AppBackgroundBrush}"
@@ -128,12 +128,20 @@
                     BorderThickness="1"
                     CornerRadius="{DynamicResource ThemeCornerRadiusPanel}"
                     BorderBrush="{DynamicResource ThemePanelEdgeBrush}">
-                    <TextBlock
-                        Text="Games Found"
-                        FontFamily="{DynamicResource ThemeDisplayFontFamily}"
-                        FontSize="14"
-                        FontWeight="SemiBold"
-                        Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <StackPanel>
+                        <TextBlock
+                            Text="Games Found"
+                            FontFamily="{DynamicResource ThemeDisplayFontFamily}"
+                            FontSize="14"
+                            FontWeight="SemiBold"
+                            Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBlock
+                            Text="Checked games will be imported. Games already in your library are found but left unchecked."
+                            FontSize="10.5"
+                            Margin="0,3,0,0"
+                            Foreground="{DynamicResource TextMutedBrush}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
                 </Border>
 
                 <!-- Candidates ListBox -->
@@ -157,6 +165,15 @@
                                 BorderBrush="{DynamicResource BorderSubtleBrush}"
                                 RenderTransformOrigin="0.5,0.5"
                                 SnapsToDevicePixels="True">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding AlreadyExists}" Value="True">
+                                                <Setter Property="Opacity" Value="0.6"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <Border.RenderTransform>
                                     <ScaleTransform ScaleX="1" ScaleY="1"/>
                                 </Border.RenderTransform>
@@ -212,6 +229,28 @@
                                                 FontSize="10"
                                                 Foreground="{DynamicResource BerryDimBrush}"
                                                 Margin="0,2,0,0" />
+                                            <!-- Folder-tree location + file size: shows exactly where the exe/ROM was found,
+                                                 not just the bare filename SourceLabel used to imply. -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                <TextBlock
+                                                    FontFamily="Segoe MDL2 Assets"
+                                                    Text="&#xE8B7;"
+                                                    FontSize="9"
+                                                    Foreground="{DynamicResource TextMutedBrush}"
+                                                    VerticalAlignment="Center"
+                                                    Margin="0,0,4,0" />
+                                                <TextBlock
+                                                    Text="{Binding LocationBreadcrumb}"
+                                                    FontSize="9.5"
+                                                    FontFamily="Consolas"
+                                                    Foreground="{DynamicResource TextMutedBrush}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    ToolTip="{Binding InstallPath}" />
+                                                <TextBlock
+                                                    Text="{Binding FileSizeSuffixLabel}"
+                                                    FontSize="9.5"
+                                                    Foreground="{DynamicResource TextMutedBrush}" />
+                                            </StackPanel>
                                             <TextBlock
                                                 Text="{Binding StagedMetadataLabel}"
                                                 FontSize="10"
@@ -226,14 +265,31 @@
                                             TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
 
-                                    <!-- Confidence Badge -->
-                                    <TextBlock
-                                        Grid.Column="2"
-                                        Text="{Binding ConfidenceLabel}"
-                                        FontSize="11"
-                                        Foreground="{DynamicResource BerryBrush}"
-                                        VerticalAlignment="Center"
-                                        Margin="8,0,0,0" />
+                                    <!-- Status + Confidence Badge -->
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="8,0,0,0">
+                                        <TextBlock
+                                            Text="{Binding ReviewAccentLabel}"
+                                            FontSize="10"
+                                            FontWeight="SemiBold"
+                                            HorizontalAlignment="Right"
+                                            Foreground="{DynamicResource TextMutedBrush}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding AlreadyExists}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource GoldBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock
+                                            Text="{Binding ConfidenceLabel}"
+                                            FontSize="11"
+                                            Margin="0,2,0,0"
+                                            HorizontalAlignment="Right"
+                                            Foreground="{DynamicResource BerryBrush}" />
+                                    </StackPanel>
                                     </Grid>
                                 </Grid>
                             </Border>

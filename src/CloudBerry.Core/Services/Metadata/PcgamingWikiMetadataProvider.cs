@@ -19,7 +19,7 @@ public sealed class PcgamingWikiMetadataProvider : IGameMetadataProvider
         _httpClient = httpClient;
         _httpClient.DefaultRequestHeaders.TryAddWithoutValidation(
             "User-Agent",
-            "CloudBerry/2.0 (universal game library; metadata research)");
+            "Cirra/2.0 (universal game library; metadata research)");
     }
 
     public MetadataProviderDescriptor Descriptor { get; } = new()

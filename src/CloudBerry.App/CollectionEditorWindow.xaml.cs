@@ -23,7 +23,7 @@ public partial class CollectionEditorWindow : Window
 
         HeaderTitleText.Text = _viewModel.WindowTitle;
         ConfirmButton.Content = _viewModel.ConfirmButtonLabel;
-        Title = $"CloudBerry — {_viewModel.WindowTitle}";
+        Title = $"Cirra — {_viewModel.WindowTitle}";
 
         UpdateSelectionCount();
         foreach (var entry in _viewModel.Entries)

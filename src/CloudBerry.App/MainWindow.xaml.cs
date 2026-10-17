@@ -13,9 +13,11 @@ using System.IO;
 using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Collections.ObjectModel;
 using CloudBerry.App.Services;
 using CloudBerry.App.ViewModels;
 using CloudBerry.Core.Services;
+using CloudBerry.Core.Models;
 using CloudBerry.App.Models;
 
 namespace CloudBerry.App;
@@ -28,9 +30,10 @@ public partial class MainWindow : Window
 
     private readonly bool _initializeOnLoad;
     private BigPictureWindow? _bigPictureWindow;
-    private bool _bigPictureWindowClosedRegistered;
     private MetadataWindow? _metadataWindow;
-    private bool _mainHiddenForCloudscape;
+    private readonly HorizonEntryService _horizonEntry = new();
+    private bool _closeStarted;
+    private bool _windowClosed;
     private int _lastNonMetadataPage;
     private readonly DispatcherTimer _homeSuggestionTimer = new();
     private readonly DispatcherTimer _socialHeartbeatTimer = new();
@@ -39,6 +42,12 @@ public partial class MainWindow : Window
     private bool _startupUpdatePromptShown;
     private double _lastSidebarWidth = DefaultSidebarWidth;
     private bool _isPointerGlowVisible;
+    private readonly ObservableCollection<CommandPaletteItemViewModel> _commandPaletteResults = [];
+    private readonly List<CommandPaletteItemViewModel> _commandPaletteItems = [];
+    private bool _isCommandPaletteOpen;
+    private IInputElement? _commandPalettePreviousFocus;
+    private int _lastAnimatedPrimaryPage;
+    private bool _isLaunchHandoffActive;
 
     public MainWindow()
         : this(new MainViewModel(), initializeOnLoad: true)
@@ -51,6 +60,7 @@ public partial class MainWindow : Window
         ApplyAppearanceTheme();
         InitializeComponent();
         DataContext = ViewModel;
+        CommandPaletteResultsList.ItemsSource = _commandPaletteResults;
         SourceInitialized += (_, _) =>
         {
             var hwndSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
@@ -70,6 +80,7 @@ public partial class MainWindow : Window
         }
 
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        ViewModel.EmbeddedPlayRequested += OnEmbeddedPlayRequested;
         Loaded += OnStartupUpdatePromptLoaded;
         _homeSuggestionTimer.Tick += OnHomeSuggestionTimerTick;
         _socialHeartbeatTimer.Interval = TimeSpan.FromSeconds(70);
@@ -100,6 +111,26 @@ public partial class MainWindow : Window
         App.ApplyInteractivePerformanceMode(isFocused && !ViewModel.IsGamePerformanceMode);
     }
 
+    private void ShellBusyCapsuleIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (sender is not FrameworkElement element || e.NewValue is not true ||
+            !ViewModel.VisualEffectsEnabled || string.Equals(ViewModel.EffectsQuality, "Off", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var translate = element.RenderTransform as TranslateTransform ?? new TranslateTransform();
+        element.RenderTransform = translate;
+        element.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        }, HandoffBehavior.SnapshotAndReplace);
+        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-4, 0, TimeSpan.FromMilliseconds(220))
+        {
+            EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+        }, HandoffBehavior.SnapshotAndReplace);
+    }
+
     private async void OnStartupUpdatePromptLoaded(object sender, RoutedEventArgs e)
     {
         if (_startupUpdatePromptShown)
@@ -113,6 +144,37 @@ public partial class MainWindow : Window
     }
 
     private MainViewModel ViewModel { get; }
+
+    public Task PlayStartupRevealAsync()
+    {
+        if (!SystemParameters.ClientAreaAnimation || SystemParameters.HighContrast || !ViewModel.VisualEffectsEnabled ||
+            string.Equals(ViewModel.EffectsQuality, "Off", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ViewModel.AppearanceThemeKey, "High Contrast", StringComparison.Ordinal))
+        {
+            Opacity = 1;
+            return Task.CompletedTask;
+        }
+
+        RootShell.RenderTransformOrigin = new Point(0.5, 0.5);
+        var scale = new ScaleTransform(0.992, 0.992);
+        var translate = new TranslateTransform(0, 10);
+        RootShell.RenderTransform = new TransformGroup
+        {
+            Children = new TransformCollection { scale, translate }
+        };
+
+        var completion = new TaskCompletionSource<object?>();
+        var duration = TimeSpan.FromMilliseconds(340);
+        var easing = new QuarticEase { EasingMode = EasingMode.EaseOut };
+        var fade = new DoubleAnimation(0, 1, duration) { EasingFunction = easing };
+        fade.Completed += (_, _) => completion.TrySetResult(null);
+
+        BeginAnimation(OpacityProperty, fade, HandoffBehavior.SnapshotAndReplace);
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.992, 1, duration) { EasingFunction = easing });
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.992, 1, duration) { EasingFunction = easing });
+        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, duration) { EasingFunction = easing });
+        return completion.Task;
+    }
 
     // ── Win32 interop: fix maximized bounds for WindowStyle=None + WindowChrome ────────────
 
@@ -176,7 +238,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    OpenBigPicture();
+                    _ = OpenBigPicture();
                 }
             }));
             handled = true;
@@ -214,6 +276,7 @@ public partial class MainWindow : Window
             await ViewModel.InitializeAsync();
             ApplyAppearanceTheme();
             ApplySidebarLayout();
+            ApplySavedWindowBounds();
             RestartHomeSuggestionTimer();
             _socialHeartbeatTimer.Start();
             _ = ViewModel.PublishActiveProfilePresenceAsync();
@@ -222,24 +285,102 @@ public partial class MainWindow : Window
             if (ViewModel.StartupView == "Cloudscape")
             {
                 await Task.Delay(200); // let the window finish rendering before launching
-                OpenBigPicture();
-            }
-            else
-            {
-                // Pre-warm BigPictureWindow on an idle background pass so the
-                // constructor + XAML parse happen before the user ever clicks the button.
-                Dispatcher.InvokeAsync(PreWarmBigPictureWindow, DispatcherPriority.Background);
+                _ = OpenBigPicture();
             }
         }
         catch (Exception exception)
         {
             _sound.PlayError();
-            MessageBox.Show(this, $"CloudBerry couldn't load the local library.\n\n{exception.Message}",
-                "CloudBerry", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Cirra couldn't load the local library.\n\n{exception.Message}",
+                "Cirra", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
     // ── Window chrome ───────────────────────────────────────────────────────────────────────
+
+    // A5: true once we've captured bounds + flushed settings and are letting the real Close() through.
+    private bool _closeConfirmed;
+
+    /// <summary>
+    /// A5: restores the window's last-session size/position/maximized state, called once from OnLoaded
+    /// right after settings finish loading. Skipped (falls back to the XAML defaults + CenterScreen) if
+    /// the saved position would land entirely off every connected monitor — e.g. a second monitor that
+    /// was unplugged since the last session.
+    /// </summary>
+    private void ApplySavedWindowBounds()
+    {
+        var saved = ViewModel.SavedWindowState;
+        if (saved is null) return;
+
+        if (saved.Width > MinWidth) Width = saved.Width;
+        if (saved.Height > MinHeight) Height = saved.Height;
+
+        if (!double.IsNaN(saved.Left) && !double.IsNaN(saved.Top))
+        {
+            var virtualLeft = SystemParameters.VirtualScreenLeft;
+            var virtualTop = SystemParameters.VirtualScreenTop;
+            var virtualRight = virtualLeft + SystemParameters.VirtualScreenWidth;
+            var virtualBottom = virtualTop + SystemParameters.VirtualScreenHeight;
+
+            // Require at least a sliver of the title bar to land on a real monitor before trusting it.
+            var onScreen = saved.Left + 80 > virtualLeft && saved.Left < virtualRight - 80
+                         && saved.Top + 40 > virtualTop && saved.Top < virtualBottom - 40;
+            if (onScreen)
+            {
+                Left = saved.Left;
+                Top = saved.Top;
+            }
+            // else: leave WindowStartupLocation="CenterScreen" (from XAML) do its thing.
+        }
+
+        if (saved.IsMaximized)
+        {
+            WindowState = WindowState.Maximized;
+        }
+    }
+
+    /// <summary>
+    /// A5: captures current bounds (RestoreBounds when maximized, so we remember the un-maximized
+    /// rectangle rather than the full-screen one) and hands them to the ViewModel to persist.
+    /// </summary>
+    private void CaptureWindowBoundsForPersist()
+    {
+        var isMaximized = WindowState == WindowState.Maximized;
+        var bounds = isMaximized ? RestoreBounds : new Rect(Left, Top, Width, Height);
+        ViewModel.UpdateWindowState(bounds.Left, bounds.Top, bounds.Width, bounds.Height, isMaximized);
+    }
+
+    /// <summary>
+    /// A5: window state (and anything else still pending behind the 2s persist debounce) needs to hit
+    /// disk before the process actually exits, or a resize/move right before quitting is silently lost.
+    /// Standard WPF cancel-then-reclose pattern: cancel the first Closing, await the flush, then call
+    /// Close() again — the second time OnClosing sees _closeConfirmed and lets it through untouched.
+    /// </summary>
+    protected override async void OnClosing(CancelEventArgs e)
+    {
+        _closeStarted = true;
+        _horizonEntry.Cancel();
+        if (_closeConfirmed)
+        {
+            base.OnClosing(e);
+            return;
+        }
+
+        e.Cancel = true;
+        if (_closeFlushInProgress) return;
+        _closeFlushInProgress = true;
+        CaptureWindowBoundsForPersist();
+        try
+        {
+            await ViewModel.FlushPendingChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _diagnostics.WriteException("window-close-flush", ex);
+        }
+        _closeConfirmed = true;
+        Close();
+    }
 
     private void MinimizeClick(object sender, RoutedEventArgs e)   => WindowState = WindowState.Minimized;
     private void MaxRestoreClick(object sender, RoutedEventArgs e)  => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
@@ -253,6 +394,244 @@ public partial class MainWindow : Window
             : "Focus mode enabled. Sidebar tucked away for a roomier workspace.";
         _sound.PlaySoftClick();
         ApplySidebarLayout();
+    }
+
+    private void OpenCommandPaletteClick(object sender, RoutedEventArgs e) => OpenCommandPalette();
+
+    private void OpenCommandPalette()
+    {
+        if (_isCommandPaletteOpen)
+        {
+            CloseCommandPalette();
+            return;
+        }
+
+        _isCommandPaletteOpen = true;
+        _commandPalettePreviousFocus = Keyboard.FocusedElement;
+        BuildCommandPaletteItems();
+        CommandPaletteSearchBox.Text = string.Empty;
+        FilterCommandPalette(string.Empty);
+        CommandPaletteOverlay.Visibility = Visibility.Visible;
+        CommandPaletteOverlay.IsHitTestVisible = true;
+
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        CommandPaletteOverlay.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(170))
+        {
+            EasingFunction = ease
+        });
+        CommandPaletteScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.965, 1, TimeSpan.FromMilliseconds(220))
+        {
+            EasingFunction = ease
+        });
+        CommandPaletteScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.965, 1, TimeSpan.FromMilliseconds(220))
+        {
+            EasingFunction = ease
+        });
+        CommandPaletteLift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-14, 0, TimeSpan.FromMilliseconds(220))
+        {
+            EasingFunction = ease
+        });
+
+        _sound.PlayMenuOpen();
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            CommandPaletteSearchBox.Focus();
+            Keyboard.Focus(CommandPaletteSearchBox);
+        }));
+    }
+
+    private void CloseCommandPalette()
+    {
+        if (!_isCommandPaletteOpen)
+        {
+            return;
+        }
+
+        _isCommandPaletteOpen = false;
+        CommandPaletteOverlay.IsHitTestVisible = false;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
+        var fade = new DoubleAnimation(CommandPaletteOverlay.Opacity, 0, TimeSpan.FromMilliseconds(120))
+        {
+            EasingFunction = ease
+        };
+        fade.Completed += (_, _) =>
+        {
+            if (!_isCommandPaletteOpen)
+            {
+                CommandPaletteOverlay.Visibility = Visibility.Collapsed;
+                CommandPaletteSearchBox.Text = string.Empty;
+                _commandPalettePreviousFocus?.Focus();
+                _commandPalettePreviousFocus = null;
+            }
+        };
+        CommandPaletteOverlay.BeginAnimation(OpacityProperty, fade);
+        CommandPaletteScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, 0.98, TimeSpan.FromMilliseconds(120))
+        {
+            EasingFunction = ease
+        });
+        CommandPaletteScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, 0.98, TimeSpan.FromMilliseconds(120))
+        {
+            EasingFunction = ease
+        });
+        CommandPaletteLift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -8, TimeSpan.FromMilliseconds(120))
+        {
+            EasingFunction = ease
+        });
+    }
+
+    private void BuildCommandPaletteItems()
+    {
+        _commandPaletteItems.Clear();
+
+        AddCommand("page:home", "Home", "Resume, recommendations, and library health", "Navigate", "\uE80F", "dashboard overview resume");
+        AddCommand("page:library", "Library", "Browse, filter, and manage every game", "Navigate", "\uE8F1", "games collection browse");
+        AddCommand("page:achievements", "Achievements", "Progress, rarity, and unlock history", "Navigate", "\uE735", "trophies gamerscore progress");
+        AddCommand("page:theatre", "Theatre", "Open Cirra's focused media space", "Navigate", "\uE7F4", "video media watch");
+        AddCommand("page:friends", "Friends", "Cloud Codes, roster, and library overlap", "Navigate", "\uE716", "social roster cloud codes");
+        AddCommand("page:settings", "Settings", "Appearance, data, profiles, and services", "Navigate", "\uE713", "preferences appearance data profile");
+        AddCommand("page:emulation", "Emulation Station", "Platforms, executables, cores, and readiness", "Navigate", "\uE7FC", "retroarch emulator rom cores");
+
+        AddCommand("action:horizon", "Enter Horizon", "Open the controller-first couch experience", "Experience", "\uE768", "big picture fullscreen couch cloudscape");
+        AddCommand("action:scan", "Scan a game folder", "Preview additions before they enter the library", "Library", "\uE838", "import folder add games");
+        AddCommand("action:metadata", "Open Metadata Editor", "Search, compare, and apply game details and artwork", "Library", "\uE8A5", "artwork covers details igdb edit");
+        AddCommand("action:achievements", "Sync missing achievements", "Refresh achievement data for games that need it", "Library", "\uE895", "scan refresh trophies gamerscore");
+        AddCommand("action:health", "Run library health check", "Inspect files, metadata, emulators, providers, and storage", "Maintenance", "\uE9D9", "repair verify readiness diagnostics");
+        AddCommand("action:activity", "Open Activity Center", "See active and recent Cirra operations", "System", "\uE9D2", "tasks progress scans history operations");
+        AddCommand("action:input", "Open Input Lab", "Test connected controllers, sticks, triggers, and drift", "System", "\uE7FC", "controller gamepad calibration deadzone");
+        AddCommand("action:surprise", "Pick something to play", "Choose a game from your current library filters", "Library", "\uE8B1", "random shuffle surprise undecided backlog");
+        AddCommand("action:layout", ViewModel.IsLibraryGridView ? "Switch to list view" : "Switch to cover grid", "Change how your library is presented", "Library", "\uE8A9", "layout grid list covers density");
+
+        foreach (var theme in ViewModel.AppearanceThemeOptions)
+        {
+            _commandPaletteItems.Add(new CommandPaletteItemViewModel(
+                $"theme:{theme}",
+                theme,
+                theme.Equals(ViewModel.AppearanceThemeKey, StringComparison.OrdinalIgnoreCase)
+                    ? "Current visual and sound theme"
+                    : "Apply this visual and sound theme",
+                "Theme",
+                "\uE790",
+                $"theme appearance style visual audio {theme}"));
+        }
+
+        foreach (var game in ViewModel.Games.OrderByDescending(game => game.LastPlayedOn).ThenBy(game => game.Title))
+        {
+            _commandPaletteItems.Add(new CommandPaletteItemViewModel(
+                $"game:{game.Id}",
+                game.Title,
+                $"{game.Platform}  ·  {game.LastPlayedLabel}" + (game.HasNextTimeNote ? $"  ·  Next time: {game.NextTimeNote}" : string.Empty),
+                "Game",
+                "\uE7FC",
+                $"game play launch library {game.Title} {game.Platform} {game.Status} {game.NextTimeNote}",
+                game));
+        }
+
+        foreach (var preset in ViewModel.LibraryFilterPresets)
+            AddCommand($"view:{preset.Id}", preset.Name, preset.Summary, "Saved view", "\uE8A1", $"saved filter collection {preset.Name} {preset.Summary}");
+    }
+
+    private void AddCommand(string id, string title, string subtitle, string category, string glyph, string searchTerms)
+    {
+        _commandPaletteItems.Add(new CommandPaletteItemViewModel(
+            id,
+            title,
+            subtitle,
+            category,
+            glyph,
+            $"{title} {subtitle} {category} {searchTerms}"));
+    }
+
+    private void FilterCommandPalette(string query)
+    {
+        _commandPaletteResults.Clear();
+        foreach (var item in CommandPaletteSearch.Find(_commandPaletteItems, query))
+        {
+            _commandPaletteResults.Add(item);
+        }
+
+        CommandPaletteEmptyState.Visibility = _commandPaletteResults.Count == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        CommandPaletteResultsList.SelectedIndex = _commandPaletteResults.Count == 0 ? -1 : 0;
+    }
+
+    private void CommandPaletteSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isCommandPaletteOpen)
+        {
+            FilterCommandPalette(CommandPaletteSearchBox.Text);
+        }
+    }
+
+    private async void CommandPaletteResultDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (CommandPaletteResultsList.SelectedItem is CommandPaletteItemViewModel item)
+        {
+            await ExecuteCommandPaletteItemAsync(item);
+        }
+    }
+
+    private void CommandPaletteBackdropMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!CommandPalettePanel.IsMouseOver)
+        {
+            CloseCommandPalette();
+            e.Handled = true;
+        }
+    }
+
+    private async Task ExecuteCommandPaletteItemAsync(CommandPaletteItemViewModel item)
+    {
+        CloseCommandPalette();
+
+        if (item.Game is not null)
+        {
+            ViewModel.RevealGameInLibrary(item.Game);
+            _sound.PlayConfirm();
+            return;
+        }
+
+        if (item.Id.StartsWith("theme:", StringComparison.Ordinal))
+        {
+            ViewModel.AppearanceThemeKey = item.Id["theme:".Length..];
+            ViewModel.StatusMessage = $"Applied {ViewModel.AppearanceThemeKey}.";
+            _sound.PlayConfirm();
+            return;
+        }
+
+        if (item.Id.StartsWith("view:", StringComparison.Ordinal))
+        {
+            var preset = ViewModel.LibraryFilterPresets.FirstOrDefault(view => view.Id == item.Id[5..]);
+            if (preset is null) return;
+            ViewModel.ApplyFilterPreset(preset);
+            ViewModel.SelectedPrimaryPage = 1;
+            ViewModel.SelectedWorkspaceTab = 0;
+            _sound.PlayConfirm();
+            return;
+        }
+
+        switch (item.Id)
+        {
+            case "page:home": ViewModel.SelectedPrimaryPage = 0; break;
+            case "page:library": ViewModel.SelectedPrimaryPage = 1; ViewModel.SelectedWorkspaceTab = 0; break;
+            case "page:achievements": ViewModel.SelectedPrimaryPage = 3; break;
+            case "page:theatre": ViewModel.SelectedPrimaryPage = 4; break;
+            case "page:friends": ViewModel.SelectedPrimaryPage = 5; break;
+            case "page:settings": ViewModel.SelectedPrimaryPage = 6; break;
+            case "page:emulation": ViewModel.SelectedPrimaryPage = 7; break;
+            case "action:horizon": await OpenBigPicture(); return;
+            case "action:scan": ScanFolderClick(this, new RoutedEventArgs()); return;
+            case "action:metadata": await OpenMetadataWindowForGameAsync(ViewModel.SelectedGame, search: true); return;
+            case "action:achievements": await ViewModel.SyncGamesMissingAchievementsAsync(); _sound.PlayConfirm(); return;
+            case "action:health": await ViewModel.RunProductReadinessCheckAsync(); _sound.PlayConfirm(); return;
+            case "action:activity": OpenActivityCenterClick(this, new RoutedEventArgs()); return;
+            case "action:input": OpenInputLabClick(this, new RoutedEventArgs()); return;
+            case "action:surprise": ViewModel.PickRandomGameFromCurrentView(); ViewModel.SelectedPrimaryPage = 1; ViewModel.SelectedWorkspaceTab = 0; break;
+            case "action:layout": ViewModel.IsLibraryGridView = !ViewModel.IsLibraryGridView; ViewModel.SelectedPrimaryPage = 1; ViewModel.SelectedWorkspaceTab = 0; break;
+            default: return;
+        }
+
+        _sound.PlayTabSwitch();
     }
 
     // ── Library tabs ───────────────────────────────────────────────────────────────────
@@ -302,7 +681,7 @@ public partial class MainWindow : Window
         }
 
         _sound.PlaySoftClick();
-        await OpenScanPreviewForFoldersAsync(steamFolders, romsOnly: false, scanLabel: "Steam libraries");
+        await OpenScanPreviewForFoldersAsync(steamFolders, romsOnly: false, scanLabel: "Steam libraries", sourceKindOverride: "Steam");
     }
 
     private async void ImportSteamGamesClick(object sender, RoutedEventArgs e)
@@ -315,7 +694,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _sound.PlayError();
-            MessageBox.Show(this, $"CloudBerry couldn't import Steam games.\n\n{ex.Message}",
+            MessageBox.Show(this, $"Cirra couldn't import Steam games.\n\n{ex.Message}",
                 "Steam Import", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
@@ -358,7 +737,7 @@ public partial class MainWindow : Window
             catch (Exception ex)
             {
                 _sound.PlayError();
-                MessageBox.Show(this, $"CloudBerry couldn't save playtime.\n\n{ex.Message}",
+                MessageBox.Show(this, $"Cirra couldn't save playtime.\n\n{ex.Message}",
                     "Playtime", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -375,7 +754,7 @@ public partial class MainWindow : Window
         }
 
         _sound.PlaySoftClick();
-        await OpenScanPreviewForFoldersAsync(launcherFolders, romsOnly: false, scanLabel: "launcher libraries");
+        await OpenScanPreviewForFoldersAsync(launcherFolders, romsOnly: false, scanLabel: "launcher libraries", sourceKindOverride: "Launcher");
     }
 
     private async void ScanAllLibrariesClick(object sender, RoutedEventArgs e)
@@ -410,8 +789,15 @@ public partial class MainWindow : Window
 
             if (confirmed == true && previewWindow.ConfirmedCandidates.Count > 0)
             {
+                var importedCount = previewWindow.ConfirmedCandidates.Count;
+                var leftOverCount = candidates.Count - importedCount;
                 await ViewModel.ImportCandidatesFromPreviewAsync(previewWindow.ConfirmedCandidates);
                 _sound.PlaySuccess();
+
+                var summary = leftOverCount > 0
+                    ? $"Imported {importedCount} game{(importedCount == 1 ? "" : "s")} \u2014 {leftOverCount} found but left for later."
+                    : $"Imported {importedCount} game{(importedCount == 1 ? "" : "s")} from {folderPath}.";
+                ShowInfoToast("SCAN COMPLETE", "\uE73E", summary);
             }
             else if (confirmed != true)
             {
@@ -422,11 +808,11 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _sound.PlayError();
-            ShowError($"CloudBerry couldn't scan that folder.\n\n{ex.Message}", "Scan failed");
+            ShowError($"Cirra couldn't scan that folder.\n\n{ex.Message}", "Scan failed");
         }
     }
 
-    private async Task OpenScanPreviewForFoldersAsync(IReadOnlyList<string> folderPaths, bool romsOnly, string scanLabel)
+    private async Task OpenScanPreviewForFoldersAsync(IReadOnlyList<string> folderPaths, bool romsOnly, string scanLabel, string? sourceKindOverride = null)
     {
         try
         {
@@ -439,6 +825,11 @@ public partial class MainWindow : Window
                 {
                     if (seenPaths.Add(candidate.InstallPath))
                     {
+                        if (!string.IsNullOrEmpty(sourceKindOverride) && !candidate.IsRom)
+                        {
+                            candidate.SourceKind = sourceKindOverride;
+                        }
+
                         merged.Add(candidate);
                     }
                 }
@@ -455,7 +846,14 @@ public partial class MainWindow : Window
 
             if (confirmed == true && previewWindow.ConfirmedCandidates.Count > 0)
             {
+                var importedCount = previewWindow.ConfirmedCandidates.Count;
+                var leftOverCount = merged.Count - importedCount;
                 await ViewModel.ImportCandidatesFromPreviewAsync(previewWindow.ConfirmedCandidates);
+
+                var summary = leftOverCount > 0
+                    ? $"Imported {importedCount} game{(importedCount == 1 ? "" : "s")} from {scanLabel} \u2014 {leftOverCount} found but left for later."
+                    : $"Imported {importedCount} game{(importedCount == 1 ? "" : "s")} from {scanLabel}.";
+                ShowInfoToast("SCAN COMPLETE", "\uE73E", summary);
             }
             else if (confirmed != true)
             {
@@ -464,7 +862,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError($"CloudBerry couldn't finish scanning {scanLabel}.\n\n{ex.Message}", "Scan failed");
+            ShowError($"Cirra couldn't finish scanning {scanLabel}.\n\n{ex.Message}", "Scan failed");
         }
     }
 
@@ -474,7 +872,7 @@ public partial class MainWindow : Window
         {
             Title = "Choose game executables, shortcuts, or ROMs",
             Multiselect = true,
-            Filter = "Supported launch targets|*.exe;*.lnk;*.bat;*.cmd;*.url;*.iso;*.cue;*.chd;*.bin;*.cso;*.rvz;*.wbfs;*.nes;*.sfc;*.smc;*.gba;*.gb;*.gbc;*.n64;*.z64;*.v64;*.nds;*.3ds;*.cia;*.gcm;*.gcz;*.wad;*.pbp;*.psx;*.m3u;*.zip;*.7z|All files|*.*"
+            Filter = "Games and ROMs|*.exe;*.lnk;*.bat;*.cmd;*.url;*.iso;*.cue;*.chd;*.bin;*.cso;*.rvz;*.wbfs;*.nes;*.sfc;*.smc;*.gba;*.gb;*.gbc;*.n64;*.z64;*.v64;*.nds;*.3ds;*.3dsx;*.cci;*.cxi;*.axf;*.cia;*.gcm;*.gcz;*.wad;*.pbp;*.psx;*.m3u;*.zip;*.7z|All files|*.*"
         };
         if (dialog.ShowDialog() != true) return;
         try
@@ -485,7 +883,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _sound.PlayError();
-            ShowError($"CloudBerry couldn't add those files.\n\n{ex.Message}", "Add failed");
+            ShowError($"Cirra couldn't add those files.\n\n{ex.Message}", "Add failed");
         }
     }
 
@@ -498,8 +896,8 @@ public partial class MainWindow : Window
 
         var dialog = new OpenFileDialog
         {
-            Title = "Choose a launch target",
-            Filter = "Supported launch targets|*.exe;*.lnk;*.bat;*.cmd;*.url;*.iso;*.cue;*.chd;*.bin;*.cso;*.rvz;*.wbfs;*.nes;*.sfc;*.smc;*.gba;*.gb;*.gbc;*.n64;*.z64;*.v64;*.nds;*.3ds;*.cia;*.gcm;*.gcz;*.wad;*.pbp;*.psx;*.m3u;*.zip;*.7z|All files|*.*"
+            Title = "Choose the game file or shortcut",
+            Filter = "Games and ROMs|*.exe;*.lnk;*.bat;*.cmd;*.url;*.iso;*.cue;*.chd;*.bin;*.cso;*.rvz;*.wbfs;*.nes;*.sfc;*.smc;*.gba;*.gb;*.gbc;*.n64;*.z64;*.v64;*.nds;*.3ds;*.3dsx;*.cci;*.cxi;*.axf;*.cia;*.gcm;*.gcz;*.wad;*.pbp;*.psx;*.m3u;*.zip;*.7z|All files|*.*"
         };
 
         if (dialog.ShowDialog() == true)
@@ -516,10 +914,94 @@ public partial class MainWindow : Window
         _sound.PlaySuccess();
     }
     private async void SaveSelectedGameClick(object sender, RoutedEventArgs e)     => await ViewModel.SaveSelectedGameAsync();
+    private async void SaveNextTimeNoteClick(object sender, RoutedEventArgs e)
+    {
+        SelectedNextTimeNoteBox.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        await ViewModel.SaveSelectedNextTimeNoteAsync();
+        SelectedNextTimeNoteBox.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
+        _sound.PlayConfirm();
+    }
+
+    private async void ClearNextTimeNoteClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedGame is null)
+        {
+            return;
+        }
+
+        ViewModel.SelectedGame.NextTimeNote = string.Empty;
+        SelectedNextTimeNoteBox.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
+        await ViewModel.SaveSelectedNextTimeNoteAsync();
+        _sound.PlaySoftClick();
+    }
+
+    private async void AddLocalGuidebookClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedGame is null)
+        {
+            return;
+        }
+
+        var dialog = new OpenFileDialog
+        {
+            Title = "Attach an original game guide or manual",
+            Filter = "PDF documents|*.pdf",
+            Multiselect = false
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        await ViewModel.AddSelectedGameGuidebookAsync(new GameGuidebook
+        {
+            Title = Path.GetFileNameWithoutExtension(dialog.FileName),
+            PdfLocation = dialog.FileName,
+            SourceName = "Local PDF",
+            DocumentKind = "Local Guide",
+            Platform = ViewModel.SelectedGame.Platform
+        });
+        _sound.PlaySuccess();
+    }
+
+    private async void DiscoverGuidebooksClick(object sender, RoutedEventArgs e)
+    {
+        await ViewModel.DiscoverSelectedGameGuidebooksAsync();
+        _sound.PlaySoftClick();
+    }
+
+    private void OpenGuidebookClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not GameGuidebook guidebook || ViewModel.SelectedGame is not { } game)
+        {
+            return;
+        }
+
+        new GuideReaderWindow(game, guidebook) { Owner = this }.Show();
+        _sound.PlayMenuOpen();
+    }
+
+    private async void AttachDiscoveredGuidebookClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is GameGuidebook guidebook)
+        {
+            await ViewModel.AddSelectedGameGuidebookAsync(guidebook);
+            _sound.PlaySuccess();
+        }
+    }
+
+    private async void RemoveGuidebookClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is GameGuidebook guidebook)
+        {
+            await ViewModel.RemoveSelectedGameGuidebookAsync(guidebook);
+            _sound.PlaySoftClick();
+        }
+    }
+
     private async void LaunchSelectedGameClick(object sender, RoutedEventArgs e)
     {
-        await ViewModel.LaunchSelectedGameAsync();
-        _sound.PlayLaunchHandoff();
+        await LaunchGameWithHandoffAsync(ViewModel.SelectedGame);
     }
 
     private async void ToggleFavoriteClick(object sender, RoutedEventArgs e)
@@ -538,21 +1020,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void RemoveSelectedGameClick(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel.SelectedGame is null) return;
-        var result = MessageBox.Show(this, $"Remove {ViewModel.SelectedGame.Title} from CloudBerry?",
-            "Remove game", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (result != MessageBoxResult.Yes) return;
-        await ViewModel.RemoveSelectedGameAsync();
-        _sound.PlayWarning();
-    }
-
     // ── Undo-remove state ──────────────────────────────────────────────────
     private List<GameEntryViewModel>? _pendingRemoveGames;
     private CancellationTokenSource? _removeCts;
     private DispatcherTimer? _removeCountdownTimer;
     private int _removeCountdownSeconds;
+
+    // ── Info toast state (post-scan "what changed" summary) ─────────────────
+    private DispatcherTimer? _infoToastTimer;
 
     private async void RemoveSelectedGamesClick(object sender, RoutedEventArgs e)
     {
@@ -593,8 +1068,8 @@ public partial class MainWindow : Window
         await ViewModel.RemoveGamesAsync(selected);
         _sound.PlayWarning();
         ViewModel.StatusMessage = selected.Count == 1
-            ? $"Removed \u201c{selected[0].Title}\u201d from CloudBerry."
-            : $"Removed {selected.Count} games from CloudBerry.";
+            ? $"Removed \u201c{selected[0].Title}\u201d from Cirra."
+            : $"Removed {selected.Count} games from Cirra.";
     }
 
     private void ShowRemoveUndoToast(string label)
@@ -635,11 +1110,42 @@ public partial class MainWindow : Window
     private void HideActionToast()
     {
         _removeCountdownTimer?.Stop();
+        _infoToastTimer?.Stop();
         ActionToast.IsHitTestVisible = false;
         var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
         var fade = new DoubleAnimation(ActionToast.Opacity, 0, TimeSpan.FromMilliseconds(180)) { EasingFunction = ease };
         fade.Completed += (_, _) => ActionToast.Visibility = Visibility.Collapsed;
         ActionToast.BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>
+    /// Shows a brief, self-dismissing info toast (reusing the same visual as the remove/undo toast,
+    /// minus the countdown/undo behavior). Used for "what changed" confirmations like scan imports.
+    /// </summary>
+    private void ShowInfoToast(string label, string glyph, string message, int autoHideSeconds = 4)
+    {
+        _removeCountdownTimer?.Stop();
+        _infoToastTimer?.Stop();
+
+        ActionToastLabel.Text = label;
+        ActionToastGlyph.Text = glyph;
+        ViewModel.StatusMessage = message;
+
+        ActionToast.Visibility = Visibility.Visible;
+        ActionToast.IsHitTestVisible = false;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        ActionToast.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)) { EasingFunction = ease });
+        ActionToastLift.BeginAnimation(TranslateTransform.YProperty,
+            new DoubleAnimation(-20, 0, TimeSpan.FromMilliseconds(220)) { EasingFunction = ease });
+
+        _infoToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(autoHideSeconds) };
+        _infoToastTimer.Tick += (_, _) =>
+        {
+            _infoToastTimer?.Stop();
+            HideActionToast();
+        };
+        _infoToastTimer.Start();
     }
 
     private void UndoRemoveClick(object sender, RoutedEventArgs e)
@@ -783,6 +1289,56 @@ public partial class MainWindow : Window
         await ViewModel.SaveMetadataSettingsAsync();
     }
     private async void SaveSettingsClick(object sender, RoutedEventArgs e)              => await ViewModel.SaveSettingsAsync();
+    private void CreateDeviceProfileClick(object sender, RoutedEventArgs e)
+    {
+        ViewModel.CreateDeviceProfileFromCurrentSetup();
+        _sound.PlaySoftClick();
+    }
+
+    private void CaptureDeviceProfileClick(object sender, RoutedEventArgs e)
+    {
+        ViewModel.CaptureSelectedDeviceProfile();
+        _sound.PlaySuccess();
+    }
+
+    private void ActivateDeviceProfileClick(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ActivateSelectedDeviceProfile();
+        ApplyAppearanceTheme();
+        _sound.PlayTabSwitch();
+    }
+
+    private async void DiscoverGameSavesClick(object sender, RoutedEventArgs e)
+    {
+        await ViewModel.DiscoverSelectedGameSavesAsync();
+        _sound.PlaySoftClick();
+    }
+
+    private async void BackupGameSavesClick(object sender, RoutedEventArgs e)
+    {
+        await ViewModel.CreateSelectedGameSaveBackupAsync();
+        _sound.PlaySuccess();
+    }
+
+    private async void RestoreLatestGameSavesClick(object sender, RoutedEventArgs e)
+    {
+        string title = ViewModel.SelectedGame?.Title ?? "this game";
+        MessageBoxResult result = MessageBox.Show(
+            $"Restore the newest verified save backup for {title}?\n\nCirra will preserve every replaced live file in a rollback copy.",
+            "Restore Save Backup",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        if (await ViewModel.RestoreLatestSelectedGameSaveBackupAsync())
+        {
+            _sound.PlaySuccess();
+        }
+    }
     private void CreateProfileClick(object sender, RoutedEventArgs e)
     {
         ViewModel.CreateProfileFromCurrentSetup();
@@ -871,17 +1427,101 @@ public partial class MainWindow : Window
         _sound.PlaySoftClick();
     }
     private async void RunProductReadinessCheckClick(object sender, RoutedEventArgs e)  => await ViewModel.RunProductReadinessCheckAsync();
+    private async void RunLibraryHealthActionClick(object sender, RoutedEventArgs e)
+    {
+        switch (ViewModel.LibraryHealthActionKey)
+        {
+            case "Library":
+                ViewModel.SelectedPrimaryPage = 1;
+                ViewModel.SelectedWorkspaceTab = 1;
+                ViewModel.StatusMessage = "Choose a folder or game file to import.";
+                _sound.PlayTabSwitch();
+                break;
+            case "Game files":
+                CleanMissingLibraryClick(sender, e);
+                break;
+            case "Duplicates":
+                await ViewModel.RemoveDuplicateLibraryEntriesAsync();
+                _sound.PlaySoftClick();
+                break;
+            case "Game details":
+            case "Artwork":
+                await ViewModel.DownloadMissingMetadataAsync();
+                _sound.PlaySoftClick();
+                break;
+            case "Achievements":
+                await ViewModel.SyncGamesMissingAchievementsAsync();
+                _sound.PlaySoftClick();
+                break;
+            case "Emulators":
+                ViewModel.SelectedPrimaryPage = 6;
+                ViewModel.SelectedSettingsCategoryIndex = 3;
+                ViewModel.StatusMessage = "Review emulator mappings and apply detected matches.";
+                _sound.PlayTabSwitch();
+                break;
+            case "Metadata sources":
+                ViewModel.SelectedPrimaryPage = 6;
+                ViewModel.SelectedSettingsCategoryIndex = 2;
+                ViewModel.StatusMessage = "Review metadata source settings.";
+                _sound.PlayTabSwitch();
+                break;
+            case "Storage":
+                OpenStorageFolderClick(sender, e);
+                break;
+            default:
+                await ViewModel.RunProductReadinessCheckAsync();
+                _sound.PlaySoftClick();
+                break;
+        }
+    }
     private async void PrepareProductTestPassClick(object sender, RoutedEventArgs e)    => await ViewModel.PrepareProductTestPassAsync();
     private async void RepairLibraryClick(object sender, RoutedEventArgs e)             => await ViewModel.RepairLibraryAsync();
     private async void RemoveDuplicatesClick(object sender, RoutedEventArgs e)          => await ViewModel.RemoveDuplicateLibraryEntriesAsync();
     private async void BackupLibraryClick(object sender, RoutedEventArgs e)             => await ViewModel.CreateLibraryBackupAsync();
+    private async void UndoLatestLibraryChangeClick(object sender, RoutedEventArgs e)
+    {
+        await ViewModel.UndoLatestLibraryChangeAsync();
+        _sound.PlayConfirm();
+    }
+    private void OpenActivityCenterClick(object sender, RoutedEventArgs e)
+    {
+        var window = new ActivityCenterWindow(ViewModel) { Owner = this };
+        window.Show();
+        _sound.PlaySoftClick();
+    }
+    private void OpenInputLabClick(object sender, RoutedEventArgs e)
+    {
+        var window = new InputLabWindow { Owner = this };
+        window.Show();
+        _sound.PlaySoftClick();
+    }
+    private async void RestoreSelectedLibraryHistoryClick(object sender, RoutedEventArgs e)
+    {
+        var entry = ViewModel.SelectedLibraryHistoryEntry;
+        if (entry == null) return;
+
+        var confirmation = MessageBox.Show(
+            this,
+            $"Restore the library to before '{entry.Title}'?\n\n{entry.Summary}. Game files and current Cirra settings will not be changed. The restore itself will also be reversible.",
+            "Restore library history",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            ViewModel.StatusMessage = "Time Machine restore cancelled. Nothing changed.";
+            return;
+        }
+
+        await ViewModel.RestoreSelectedLibraryHistoryEntryAsync();
+        _sound.PlayConfirm();
+    }
     private async void ExportLibraryClick(object sender, RoutedEventArgs e)
     {
         var dialog = new SaveFileDialog
         {
-            Title = "Export CloudBerry library snapshot",
+            Title = "Export Cirra library snapshot",
             FileName = $"cloudberry-library-{DateTime.Now:yyyyMMdd-HHmm}.json",
-            Filter = "CloudBerry library snapshot (*.json)|*.json|All files|*.*"
+            Filter = "Cirra library snapshot (*.json)|*.json|All files|*.*"
         };
 
         if (dialog.ShowDialog() == true)
@@ -889,6 +1529,81 @@ public partial class MainWindow : Window
             await ViewModel.ExportLibrarySnapshotAsync(dialog.FileName);
         }
     }
+
+    private async void RestoreLibraryClick(object sender, RoutedEventArgs e)
+    {
+        var initialDirectory = Directory.Exists(ViewModel.StorageBackupLocation)
+            ? ViewModel.StorageBackupLocation
+            : Path.GetDirectoryName(ViewModel.StorageLocation);
+
+        var dialog = new OpenFileDialog
+        {
+            Title = "Choose a Cirra backup or export file",
+            InitialDirectory = initialDirectory,
+            Filter = "Cirra library snapshot (*.json)|*.json|All files|*.*"
+        };
+
+        if (dialog.ShowDialog() != true) return;
+
+        LibrarySnapshot snapshot;
+        try
+        {
+            snapshot = await ViewModel.PreviewLibraryRestoreAsync(dialog.FileName);
+        }
+        catch (Exception ex)
+        {
+            _sound.PlayError();
+            ShowError($"Cirra couldn't read that file.\n\n{ex.Message}", "Restore failed");
+            return;
+        }
+
+        var previewWindow = new RestoreBackupPreviewWindow(ViewModel, dialog.FileName, snapshot) { Owner = this };
+        var confirmed = previewWindow.ShowDialog();
+
+        if (confirmed != true)
+        {
+            _sound.PlaySoftClick();
+            ViewModel.StatusMessage = "Restore cancelled \u2014 nothing changed.";
+            return;
+        }
+
+        var restored = await ViewModel.RestoreLibraryFromBackupAsync(dialog.FileName);
+        if (!restored)
+        {
+            _sound.PlayError();
+            return;
+        }
+
+        _sound.PlaySuccess();
+        var restartChoice = MessageBox.Show(
+            this,
+            "Your library was restored. Cirra needs to restart to finish loading it.\n\nRestart now?",
+            "Restore complete",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Information);
+
+        if (restartChoice != MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (!string.IsNullOrWhiteSpace(exePath))
+            {
+                Process.Start(new ProcessStartInfo { FileName = exePath, UseShellExecute = true });
+            }
+        }
+        catch (Exception ex)
+        {
+            _diagnostics.WriteException("library-restore-relaunch", ex);
+        }
+
+        _closeConfirmed = true;
+        Application.Current.Shutdown();
+    }
+
     private void OpenStorageFolderClick(object sender, RoutedEventArgs e)
     {
         try
@@ -897,7 +1612,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError($"CloudBerry couldn't open the storage folder.\n\n{ex.Message}", "Open folder failed");
+            ShowError($"Cirra couldn't open the storage folder.\n\n{ex.Message}", "Open folder failed");
         }
     }
 
@@ -909,7 +1624,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError($"CloudBerry couldn't open the log folder.\n\n{ex.Message}", "Open folder failed");
+            ShowError($"Cirra couldn't open the log folder.\n\n{ex.Message}", "Open folder failed");
         }
     }
     private void OpenInstallFolderClick(object sender, RoutedEventArgs e)
@@ -920,7 +1635,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError($"CloudBerry couldn't open the install folder.\n\n{ex.Message}", "Open folder failed");
+            ShowError($"Cirra couldn't open the install folder.\n\n{ex.Message}", "Open folder failed");
         }
     }
 
@@ -932,7 +1647,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError($"CloudBerry couldn't open the media cache folder.\n\n{ex.Message}", "Open folder failed");
+            ShowError($"Cirra couldn't open the media cache folder.\n\n{ex.Message}", "Open folder failed");
         }
     }
 
@@ -944,7 +1659,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError($"CloudBerry couldn't open the update package folder.\n\n{ex.Message}", "Open folder failed");
+            ShowError($"Cirra couldn't open the update package folder.\n\n{ex.Message}", "Open folder failed");
         }
     }
 
@@ -984,14 +1699,14 @@ public partial class MainWindow : Window
             _sound.PlaySoftClick();
             var result = MessageBox.Show(
                 this,
-                $"CloudBerry {ViewModel.AvailableUpdateVersion} is available.\n\nUpdate now? CloudBerry will download the update, close, install it, and reopen automatically.",
-                "CloudBerry update available",
+                $"Cirra {ViewModel.AvailableUpdateVersion} is available.\n\nUpdate now? Cirra will download the update, close, install it, and reopen automatically.",
+                "Cirra update available",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
 
             if (result != MessageBoxResult.Yes)
             {
-                ViewModel.StatusMessage = $"Skipped CloudBerry {ViewModel.AvailableUpdateVersion} for now.";
+                ViewModel.StatusMessage = $"Skipped Cirra {ViewModel.AvailableUpdateVersion} for now.";
                 return;
             }
 
@@ -1015,7 +1730,7 @@ public partial class MainWindow : Window
 		catch (Exception exception)
 		{
             _sound.PlayError();
-            ShowError($"CloudBerry couldn't prepare the update.\n\n{exception.Message}", "Update failed");
+            ShowError($"Cirra couldn't prepare the update.\n\n{exception.Message}", "Update failed");
         }
     }
 
@@ -1030,7 +1745,7 @@ public partial class MainWindow : Window
         }
 
         var result = MessageBox.Show(this,
-            "CloudBerry will create a fresh backup, then launch the staged update installer.\n\nContinue?",
+            "Cirra will create a fresh backup, then launch the staged update installer.\n\nContinue?",
             "Launch local update",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
@@ -1053,20 +1768,22 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _sound.PlayError();
-            ShowError($"CloudBerry couldn't launch the staged update package.\n\n{ex.Message}", "Update handoff failed");
+            ShowError($"Cirra couldn't launch the staged update package.\n\n{ex.Message}", "Update handoff failed");
         }
     }
     private async void RefreshCompanionToolsClick(object sender, RoutedEventArgs e)     => await ViewModel.RefreshCompanionToolsAsync();
     private async void PolishLibraryTitlesClick(object sender, RoutedEventArgs e)       => await ViewModel.PolishLibraryTitlesWithCompanionToolsAsync();
     private async void RefreshCompanionInsightsClick(object sender, RoutedEventArgs e)  => await ViewModel.RefreshCompanionInsightsAsync();
     private async void DownloadMissingMetadataClick(object sender, RoutedEventArgs e)   => await ViewModel.DownloadMissingMetadataAsync();
+    private async void RetryFailedMetadataClick(object sender, RoutedEventArgs e)         => await ViewModel.RetryFailedMetadataAsync();
+    private void CancelMetadataBatchClick(object sender, RoutedEventArgs e)                => ViewModel.CancelMetadataBatch();
     private async void CleanMissingLibraryClick(object sender, RoutedEventArgs e)
     {
         var missingGames = ViewModel.GetMissingLibraryEntries();
         if (missingGames.Count == 0)
         {
             _sound.PlaySoftClick();
-            ViewModel.StatusMessage = "Library cleanup finished. No missing launch targets were found.";
+            ViewModel.StatusMessage = "Library cleanup finished. No missing games were found.";
             return;
         }
 
@@ -1132,13 +1849,120 @@ public partial class MainWindow : Window
     }
 
     private void ClearFiltersClick(object sender, RoutedEventArgs e)                    => ViewModel.ClearLibraryFilters();
-    private void QuickThemeCloudBerryClick(object sender, RoutedEventArgs e)            => ViewModel.AppearanceThemeKey = "CloudBerry Dark";
-    private void QuickThemeMatrixClick(object sender, RoutedEventArgs e)                => ViewModel.AppearanceThemeKey = "Neon Matrix";
-    private void QuickThemeGlitchClick(object sender, RoutedEventArgs e)                => ViewModel.AppearanceThemeKey = "Retro Glitch";
-    private void QuickThemeMidnightClick(object sender, RoutedEventArgs e)              => ViewModel.AppearanceThemeKey = "Blueberry Midnight";
-    private void QuickThemeNierClick(object sender, RoutedEventArgs e)                  => ViewModel.AppearanceThemeKey = "NieR Automata";
-    private void QuickThemeWutheringClick(object sender, RoutedEventArgs e)             => ViewModel.AppearanceThemeKey = "Wuthering Waves";
-    private void QuickThemeBlackFlashClick(object sender, RoutedEventArgs e)            => ViewModel.AppearanceThemeKey = "Black Flash";
+
+    private void ReviewDuplicatesClick(object sender, RoutedEventArgs e)
+    {
+        var duplicatesWindow = new DuplicateOwnershipWindow(ViewModel) { Owner = this };
+        _sound.PlaySoftClick();
+        duplicatesWindow.ShowDialog();
+    }
+
+    // ── Library filter presets ──────────────────────────────────────────────
+    private void ApplyFilterPresetClick(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is LibraryFilterPresetViewModel preset)
+        {
+            ViewModel.ApplyFilterPreset(preset);
+        }
+        e.Handled = true;
+    }
+
+    private void DeleteFilterPresetClick(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is LibraryFilterPresetViewModel preset)
+        {
+            ViewModel.DeleteFilterPreset(preset);
+        }
+        e.Handled = true;
+    }
+
+    private void SaveFilterPresetClick(object sender, RoutedEventArgs e)
+    {
+        ViewModel.SaveCurrentFiltersAsPreset(NewFilterPresetNameBox.Text);
+        NewFilterPresetNameBox.Text = string.Empty;
+    }
+
+    private void NewFilterPresetNameBoxKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            ViewModel.SaveCurrentFiltersAsPreset(NewFilterPresetNameBox.Text);
+            NewFilterPresetNameBox.Text = string.Empty;
+            e.Handled = true;
+        }
+    }
+
+    // ── Library bulk actions ───────────────────────────────────────────────
+    // Both the list-view and grid-view ListBoxes share this handler; whichever is currently
+    // visible drives the bulk selection (the other is empty since only one view is shown at
+    // a time), so ViewModel.LibraryBulkSelection always reflects what the player can see.
+
+    private void LibrarySelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox listBox)
+        {
+            ViewModel.UpdateLibraryBulkSelection(listBox.SelectedItems.OfType<GameEntryViewModel>().ToList());
+        }
+    }
+
+    private bool ConfirmBulkAction(string actionDescription, string title)
+    {
+        var preview = ViewModel.BuildBulkActionPreview(actionDescription);
+        if (!ViewModel.HasLibraryBulkSelection)
+        {
+            ViewModel.StatusMessage = preview;
+            return false;
+        }
+
+        var result = MessageBox.Show(this, preview, title, MessageBoxButton.YesNo, MessageBoxImage.Question);
+        return result == MessageBoxResult.Yes;
+    }
+
+    private async void BulkFavoriteClick(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmBulkAction("Favorite", "Favorite selected games")) return;
+        await ViewModel.ApplyBulkFavoriteAsync(true);
+    }
+
+    private async void BulkUnfavoriteClick(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmBulkAction("Remove favorite from", "Unfavorite selected games")) return;
+        await ViewModel.ApplyBulkFavoriteAsync(false);
+    }
+
+    private async void BulkMarkCompletedClick(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmBulkAction("Mark as Completed", "Mark selected games completed")) return;
+        await ViewModel.ApplyBulkStatusAsync("Completed");
+    }
+
+    private async void BulkMarkUnplayedClick(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmBulkAction("Mark as Unplayed", "Mark selected games unplayed")) return;
+        await ViewModel.ApplyBulkStatusAsync("Unplayed");
+    }
+
+    private async void BulkRemoveClick(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmBulkAction("Remove", "Remove selected games from library")) return;
+        _sound.PlaySoftClick();
+        await ViewModel.RemoveBulkSelectedGamesAsync();
+    }
+
+    private void BulkClearSelectionClick(object sender, RoutedEventArgs e)
+    {
+        GameLibraryList.UnselectAll();
+        GameLibraryGridList.UnselectAll();
+        ViewModel.UpdateLibraryBulkSelection(Array.Empty<GameEntryViewModel>());
+    }
+
+    private void QuickThemeCloudBerryClick(object sender, RoutedEventArgs e)            => ViewModel.AppearanceThemeKey = "Cirra Core";
+    private void QuickThemeMatrixClick(object sender, RoutedEventArgs e)                => ViewModel.AppearanceThemeKey = "Signal Rain";
+    private void QuickThemeGlitchClick(object sender, RoutedEventArgs e)                => ViewModel.AppearanceThemeKey = "Arcade Static";
+    private void QuickThemeMidnightClick(object sender, RoutedEventArgs e)              => ViewModel.AppearanceThemeKey = "Midnight Observatory";
+    private void QuickThemeNierClick(object sender, RoutedEventArgs e)                  => ViewModel.AppearanceThemeKey = "Archive Ivory";
+    private void QuickThemeWutheringClick(object sender, RoutedEventArgs e)             => ViewModel.AppearanceThemeKey = "Tidal Glass";
+    private void QuickThemeBlackFlashClick(object sender, RoutedEventArgs e)            => ViewModel.AppearanceThemeKey = "Impact Noir";
     private async void OpenMetadataWindowClick(object sender, RoutedEventArgs e)
     {
         await OpenMetadataWindowForGameAsync(ViewModel.SelectedGame, search: true);
@@ -1185,14 +2009,99 @@ public partial class MainWindow : Window
 
     private async void LaunchContinuePlayingClick(object sender, RoutedEventArgs e)
     {
-        await ViewModel.LaunchGameAsync(ViewModel.ContinuePlayingGame);
-        _sound.PlayLaunchHandoff();
+        await LaunchGameWithHandoffAsync(ViewModel.ContinuePlayingGame);
     }
     private void RevealContinuePlayingClick(object sender, RoutedEventArgs e)       => ViewModel.RevealGameInLibrary(ViewModel.ContinuePlayingGame);
     private async void LaunchRecommendedGameClick(object sender, RoutedEventArgs e)
     {
-        await ViewModel.LaunchGameAsync(ViewModel.RecommendedGame);
-        _sound.PlayLaunchHandoff();
+        await LaunchGameWithHandoffAsync(ViewModel.RecommendedGame);
+    }
+    private async void LaunchPlayWindowGameClick(object sender, RoutedEventArgs e)
+    {
+        await LaunchGameWithHandoffAsync(ViewModel.PlayWindowPrimaryRecommendation?.Game);
+    }
+
+    private async Task LaunchGameWithHandoffAsync(GameEntryViewModel? game)
+    {
+        if (game is null)
+        {
+            await ViewModel.LaunchGameAsync(null);
+            return;
+        }
+
+        if (_isLaunchHandoffActive)
+        {
+            return;
+        }
+
+        _isLaunchHandoffActive = true;
+        bool animate = ViewModel.VisualEffectsEnabled &&
+                       !string.Equals(ViewModel.EffectsQuality, "Off", StringComparison.OrdinalIgnoreCase) &&
+                       !string.Equals(ViewModel.AppearanceThemeKey, "High Contrast", StringComparison.Ordinal);
+
+        try
+        {
+            GameLaunchHandoffCard.DataContext = game;
+            GameLaunchHandoffOverlay.BeginAnimation(OpacityProperty, null);
+            GameLaunchHandoffScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            GameLaunchHandoffScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            GameLaunchHandoffOverlay.Opacity = animate ? 0 : 1;
+            GameLaunchHandoffScale.ScaleX = animate ? 0.97 : 1;
+            GameLaunchHandoffScale.ScaleY = animate ? 0.97 : 1;
+            GameLaunchHandoffOverlay.Visibility = Visibility.Visible;
+            GameLaunchHandoffOverlay.IsHitTestVisible = true;
+
+            if (animate)
+            {
+                var reveal = new TaskCompletionSource<object?>();
+                var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(210))
+                {
+                    EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+                };
+                fade.Completed += (_, _) => reveal.TrySetResult(null);
+                GameLaunchHandoffOverlay.BeginAnimation(OpacityProperty, fade, HandoffBehavior.SnapshotAndReplace);
+                GameLaunchHandoffScale.BeginAnimation(ScaleTransform.ScaleXProperty,
+                    new DoubleAnimation(0.97, 1, TimeSpan.FromMilliseconds(260)) { EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut } });
+                GameLaunchHandoffScale.BeginAnimation(ScaleTransform.ScaleYProperty,
+                    new DoubleAnimation(0.97, 1, TimeSpan.FromMilliseconds(260)) { EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut } });
+                await reveal.Task;
+            }
+            else
+            {
+                await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+            }
+
+            await ViewModel.LaunchGameAsync(game);
+            if (ViewModel.StatusMessage.StartsWith("Launched ", StringComparison.OrdinalIgnoreCase))
+            {
+                _sound.PlayLaunchHandoff();
+            }
+            else if (ViewModel.StatusMessage.Contains("not ready", StringComparison.OrdinalIgnoreCase))
+            {
+                _sound.PlayWarning();
+            }
+        }
+        finally
+        {
+            if (animate && GameLaunchHandoffOverlay.Visibility == Visibility.Visible)
+            {
+                await Task.Delay(90);
+                var hidden = new TaskCompletionSource<object?>();
+                var fade = new DoubleAnimation(GameLaunchHandoffOverlay.Opacity, 0, TimeSpan.FromMilliseconds(220))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+                };
+                fade.Completed += (_, _) => hidden.TrySetResult(null);
+                GameLaunchHandoffOverlay.BeginAnimation(OpacityProperty, fade, HandoffBehavior.SnapshotAndReplace);
+                await hidden.Task;
+            }
+            GameLaunchHandoffOverlay.BeginAnimation(OpacityProperty, null);
+            GameLaunchHandoffOverlay.Opacity = 0;
+            GameLaunchHandoffOverlay.Visibility = Visibility.Collapsed;
+            GameLaunchHandoffOverlay.IsHitTestVisible = false;
+            GameLaunchHandoffCard.DataContext = null;
+            _isLaunchHandoffActive = false;
+        }
     }
     private async void OpenRecommendedMetadataClick(object sender, RoutedEventArgs e)
     {
@@ -1201,8 +2110,7 @@ public partial class MainWindow : Window
     private void RevealRecommendedGameClick(object sender, RoutedEventArgs e)       => ViewModel.RevealGameInLibrary(ViewModel.RecommendedGame);
     private async void LaunchBacklogPickClick(object sender, RoutedEventArgs e)
     {
-        await ViewModel.LaunchGameAsync(ViewModel.RandomBacklogGame);
-        _sound.PlayLaunchHandoff();
+        await LaunchGameWithHandoffAsync(ViewModel.RandomBacklogGame);
     }
     private async void OpenBacklogPickMetadataClick(object sender, RoutedEventArgs e)
     {
@@ -1214,7 +2122,7 @@ public partial class MainWindow : Window
         _sound.PlaySoftClick();
     }
     private void RevealBacklogPickClick(object sender, RoutedEventArgs e)           => ViewModel.RevealGameInLibrary(ViewModel.RandomBacklogGame);
-    private void OpenBigPictureClick(object sender, RoutedEventArgs e)              => OpenBigPicture();
+    private void OpenBigPictureClick(object sender, RoutedEventArgs e)              => _ = OpenBigPicture();
 
     private void OpenYearWrappedClick(object sender, RoutedEventArgs e)
     {
@@ -1321,13 +2229,19 @@ public partial class MainWindow : Window
         if (e.OriginalSource == sender && sender is TabControl tabControl)
         {
             var presenter = FindVisualChild<ContentPresenter>(tabControl, string.Empty);
-            if (presenter != null)
+            var viewModel = ViewModel;
+            if (presenter != null && viewModel != null)
             {
-                var themeKey = ViewModel?.AppearanceThemeKey;
-                var isNierOrContrast = string.Equals(themeKey, "NieR Automata", StringComparison.Ordinal) ||
-                                       string.Equals(themeKey, "High Contrast", StringComparison.Ordinal);
+                var themeKey = viewModel.AppearanceThemeKey;
+                // A5 fix: only High Contrast (an accessibility theme — "pure black, pure white,
+                // hard edges") should skip animation for reduced motion. Archive Ivory is a purely
+                // aesthetic theme with its own tuned motion pack below (180ms fade / 210ms slide) that
+                // was previously dead code because this check intercepted it before ever reaching that switch.
+                var isReducedMotionTheme = string.Equals(themeKey, "High Contrast", StringComparison.Ordinal) ||
+                                           !viewModel.VisualEffectsEnabled ||
+                                           string.Equals(viewModel.EffectsQuality, "Off", StringComparison.OrdinalIgnoreCase);
 
-                if (isNierOrContrast)
+                if (isReducedMotionTheme)
                 {
                     presenter.Opacity = 1.0;
                     if (presenter.RenderTransform is TranslateTransform oldTrans)
@@ -1338,22 +2252,26 @@ public partial class MainWindow : Window
                     return;
                 }
 
+                int page = tabControl.SelectedIndex;
+                bool movingForward = page >= _lastAnimatedPrimaryPage;
+                _lastAnimatedPrimaryPage = page;
+                var motion = ResolveShellMotionPack();
                 var animOpacity = new DoubleAnimation
                 {
                     From = 0.0,
                     To = 1.0,
-                    Duration = ResolveShellMotionPack().FadeDuration,
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                    Duration = motion.FadeDuration,
+                    EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
                 };
 
                 var transform = EnsureWritableTranslateTransform(presenter);
 
                 var animSlide = new DoubleAnimation
                 {
-                    From = ResolveShellMotionPack().SlideDistance,
+                    From = movingForward ? motion.SlideDistance : -motion.SlideDistance,
                     To = 0.0,
-                    Duration = ResolveShellMotionPack().SlideDuration,
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                    Duration = motion.SlideDuration,
+                    EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
                 };
 
                 presenter.BeginAnimation(UIElement.OpacityProperty, animOpacity);
@@ -1384,11 +2302,16 @@ public partial class MainWindow : Window
     {
         return ViewModel.AppearanceThemeKey switch
         {
-            "NieR Automata" => (new Duration(TimeSpan.FromMilliseconds(180)), new Duration(TimeSpan.FromMilliseconds(210)), 8),
-            "Wuthering Waves" => (new Duration(TimeSpan.FromMilliseconds(260)), new Duration(TimeSpan.FromMilliseconds(320)), 16),
-            "Neon Matrix" => (new Duration(TimeSpan.FromMilliseconds(200)), new Duration(TimeSpan.FromMilliseconds(240)), 12),
-            "Retro Glitch" => (new Duration(TimeSpan.FromMilliseconds(190)), new Duration(TimeSpan.FromMilliseconds(220)), 10),
-            _ => (new Duration(TimeSpan.FromMilliseconds(240)), new Duration(TimeSpan.FromMilliseconds(280)), 14)
+            "Cirra Core" => (new Duration(TimeSpan.FromMilliseconds(220)), new Duration(TimeSpan.FromMilliseconds(270)), 11),
+            "Archive Ivory" => (new Duration(TimeSpan.FromMilliseconds(180)), new Duration(TimeSpan.FromMilliseconds(210)), 8),
+            "Tidal Glass" => (new Duration(TimeSpan.FromMilliseconds(260)), new Duration(TimeSpan.FromMilliseconds(320)), 16),
+            "Signal Rain" => (new Duration(TimeSpan.FromMilliseconds(200)), new Duration(TimeSpan.FromMilliseconds(240)), 12),
+            "Arcade Static" => (new Duration(TimeSpan.FromMilliseconds(190)), new Duration(TimeSpan.FromMilliseconds(220)), 10),
+            "Midnight Observatory" => (new Duration(TimeSpan.FromMilliseconds(250)), new Duration(TimeSpan.FromMilliseconds(310)), 13),
+            "Verdant Glass" => (new Duration(TimeSpan.FromMilliseconds(230)), new Duration(TimeSpan.FromMilliseconds(290)), 9),
+            "Impact Noir" => (new Duration(TimeSpan.FromMilliseconds(140)), new Duration(TimeSpan.FromMilliseconds(175)), 5),
+            "High Contrast" => (Duration.Automatic, Duration.Automatic, 0),
+            _ => (new Duration(TimeSpan.FromMilliseconds(220)), new Duration(TimeSpan.FromMilliseconds(270)), 11)
         };
     }
 
@@ -1396,8 +2319,7 @@ public partial class MainWindow : Window
     {
         if (ViewModel.SelectedGame is not null)
         {
-            await ViewModel.LaunchSelectedGameAsync();
-            _sound.PlayLaunchHandoff();
+            await LaunchGameWithHandoffAsync(ViewModel.SelectedGame);
         }
     }
 
@@ -1418,9 +2340,52 @@ public partial class MainWindow : Window
 
     private async void WindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.K)
+        {
+            OpenCommandPalette();
+            e.Handled = true;
+            return;
+        }
+
+        if (_isCommandPaletteOpen)
+        {
+            switch (e.Key)
+            {
+                case Key.Escape:
+                    CloseCommandPalette();
+                    e.Handled = true;
+                    return;
+                case Key.Down:
+                    if (_commandPaletteResults.Count > 0)
+                    {
+                        CommandPaletteResultsList.SelectedIndex = Math.Min(
+                            _commandPaletteResults.Count - 1,
+                            CommandPaletteResultsList.SelectedIndex + 1);
+                        CommandPaletteResultsList.ScrollIntoView(CommandPaletteResultsList.SelectedItem);
+                    }
+                    e.Handled = true;
+                    return;
+                case Key.Up:
+                    if (_commandPaletteResults.Count > 0)
+                    {
+                        CommandPaletteResultsList.SelectedIndex = Math.Max(0, CommandPaletteResultsList.SelectedIndex - 1);
+                        CommandPaletteResultsList.ScrollIntoView(CommandPaletteResultsList.SelectedItem);
+                    }
+                    e.Handled = true;
+                    return;
+                case Key.Enter:
+                    if (CommandPaletteResultsList.SelectedItem is CommandPaletteItemViewModel selectedItem)
+                    {
+                        await ExecuteCommandPaletteItemAsync(selectedItem);
+                    }
+                    e.Handled = true;
+                    return;
+            }
+        }
+
         if (e.Key == Key.F11)
         {
-            OpenBigPicture();
+            _ = OpenBigPicture();
             e.Handled = true;
             return;
         }
@@ -1476,6 +2441,11 @@ public partial class MainWindow : Window
                     ViewModel.SelectedPrimaryPage = 6; // Settings
                     e.Handled = true;
                     return;
+                case Key.D8:
+                case Key.NumPad8:
+                    ViewModel.SelectedPrimaryPage = 7; // Emulation
+                    e.Handled = true;
+                    return;
             }
         }
 
@@ -1484,7 +2454,7 @@ public partial class MainWindow : Window
             ViewModel.SelectedWorkspaceTab == 0 &&
             e.OriginalSource is not TextBox)
         {
-            await ViewModel.LaunchSelectedGameAsync();
+            await LaunchGameWithHandoffAsync(ViewModel.SelectedGame);
             e.Handled = true;
             return;
         }
@@ -1525,6 +2495,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _windowClosed = true;
+        _horizonEntry.Cancel();
         UnregisterHotKey(new WindowInteropHelper(this).Handle, HOTKEY_CLOUDSCAPE_ID);
 
         if (_bigPictureWindow is not null)
@@ -1542,10 +2514,39 @@ public partial class MainWindow : Window
         }
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        ViewModel.EmbeddedPlayRequested -= OnEmbeddedPlayRequested;
         _homeSuggestionTimer.Stop();
         _homeSuggestionTimer.Tick -= OnHomeSuggestionTimerTick;
+        _socialHeartbeatTimer.Stop();
 
         base.OnClosed(e);
+    }
+
+    /// <summary>
+    /// A RetroArch window was found and reparented — route into Cloudscape and show it there rather
+    /// than in a separate CloudBerry window, so embedded play lives in the same one-hub-one-window
+    /// experience as everything else in Big Picture mode. OpenBigPicture already handles "Cloudscape
+    /// is already open" (just activates it) vs "needs to be created" (loading overlay, hide MainWindow,
+    /// show BigPictureWindow) — reused as-is rather than duplicating that sequence here.
+    /// </summary>
+    private async void OnEmbeddedPlayRequested(object? sender, EmbeddedPlayRequestedEventArgs e)
+    {
+        var gameTitle = e.Game.Title;
+        ViewModel.StatusMessage = $"Opening Cloudscape to play {gameTitle}...";
+
+        try
+        {
+            await OpenBigPicture();
+        }
+        catch (Exception ex)
+        {
+            // The game is already running normally regardless of whether Cloudscape opens —
+            // a failure here only affects the cosmetic embedding, never the actual launch.
+            _diagnostics.WriteException("embedded-play-cloudscape-open", ex);
+            return;
+        }
+
+        _bigPictureWindow?.ShowEmbeddedPlay(gameTitle, e.WindowHandle, e.Session, e.TempConfigPath);
     }
 
     private void OpenMetadataWindow()
@@ -1591,6 +2592,12 @@ public partial class MainWindow : Window
         _sound.PlayTabSwitch();
     }
 
+    private void OpenEmulationPageClick(object sender, RoutedEventArgs e)
+    {
+        ViewModel.SelectedPrimaryPage = 7;
+        _sound.PlayTabSwitch();
+    }
+
     private void OnMetadataWindowClosed(object? sender, EventArgs e)
     {
         if (_metadataWindow is null)
@@ -1603,122 +2610,98 @@ public partial class MainWindow : Window
         Activate();
     }
 
-    private void PreWarmBigPictureWindow()
-    {
-        if (_bigPictureWindow is not null) return;
-        try
-        {
-            _bigPictureWindow = new BigPictureWindow(ViewModel) { Owner = this };
-            _bigPictureWindow.Closed += OnBigPictureWindowClosed;
-            _bigPictureWindowClosedRegistered = true;
-        }
-        catch { /* silent — OpenBigPicture will create it on demand if this fails */ }
-    }
+    private bool _closeFlushInProgress;
 
-    private async void OpenBigPicture()
+    private Task OpenBigPicture()
     {
+        if (_closeStarted || _windowClosed || Dispatcher.HasShutdownStarted) return Task.CompletedTask;
+        if (_horizonEntry.IsEntering) return _horizonEntry.CurrentEntry!;
         if (_bigPictureWindow is { IsVisible: true })
         {
             _bigPictureWindow.Activate();
-            return;
+            return Task.CompletedTask;
         }
+        return OpenBigPictureCoreAsync();
+    }
 
+    private async Task OpenBigPictureCoreAsync()
+    {
+        var loadingModel = new SplashViewModel
+        {
+            ThemeKey = ViewModel.AppearanceThemeKey,
+            StatusText = "Entering Horizon",
+            DetailText = "Preparing your dashboard and game shelves."
+        };
+        void UpdateLoadingState(HorizonEntryState state)
+        {
+            if (state != HorizonEntryState.Presenting) return;
+            loadingModel.StatusText = "Opening your dashboard";
+            loadingModel.DetailText = "Arranging shelves and restoring your selection.";
+        }
+        _horizonEntry.StateChanged += UpdateLoadingState;
         try
         {
-            ShowCloudscapeLoadingOverlay();
-        }
-        catch { /* overlay is cosmetic; continue even if it fails */ }
+            var result = await _horizonEntry.EnterAsync(this,
+                () => new SplashWindow(horizon: true,
+                    motionEnabled: ViewModel.VisualEffectsEnabled && ViewModel.EffectsQuality != "Off")
+                {
+                    DataContext = loadingModel, WindowStartupLocation = WindowStartupLocation.CenterOwner
+                },
+                () =>
+                {
+                    var destination = new BigPictureWindow(ViewModel);
+                    _bigPictureWindow = destination;
+                    destination.Closed += OnBigPictureWindowClosed;
+                    return destination;
+                },
+                (loading, token) => ((SplashWindow)loading).PlayCloseTransitionAsync(token));
 
-        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
-
-        if (ViewModel.SelectedGame is null)
-        {
-            ViewModel.SelectedGame = ViewModel.BigPictureHeroGame;
-        }
-
-        if (_bigPictureWindow is null)
-        {
-            // Pre-warm didn't run yet (e.g. user clicked very fast) — create now.
-            // Short delay so the loading overlay has time to paint before the freeze.
-            await Task.Delay(60);
-            try
+            _diagnostics.WriteInfo("horizon-entry", $"{result.State}; loading-frame={Milliseconds(result.LoadingFirstFrame)}; " +
+                $"dashboard-frame={Milliseconds(result.DashboardFirstFrame)}; ready={Milliseconds(result.Ready)}; total={result.Total.TotalMilliseconds:0}ms");
+            if (_closeStarted || _windowClosed || Dispatcher.HasShutdownStarted) return;
+            if (result.State == HorizonEntryState.Ready && _bigPictureWindow is { IsVisible: true }) _sound.PlayMenuOpen();
+            else if (result.State == HorizonEntryState.Cancelled) ViewModel.StatusMessage = "Horizon entry cancelled.";
+            else if (result.Error != null)
             {
-                _bigPictureWindow = new BigPictureWindow(ViewModel) { Owner = this };
-            }
-            catch (Exception ex)
-            {
-                var inner = ex.InnerException is not null
-                    ? $"\n\nInner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}\n{ex.InnerException.StackTrace?.Split('\n').FirstOrDefault()}"
-                    : string.Empty;
-                MessageBox.Show(
-                    $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace?.Split('\n').Take(6).Aggregate((a, b) => a + "\n" + b)}{inner}",
-                    "Cloudscape Init Crash — Report This",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                _mainHiddenForCloudscape = false;
-                HideCloudscapeLoadingOverlay();
-                return;
+                _diagnostics.WriteException("horizon-entry", result.Error);
+                MessageBox.Show(this, "Cirra couldn't open Horizon. " + result.Error.Message,
+                    "Horizon", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
-        if (!_bigPictureWindowClosedRegistered)
+        catch (Exception ex)
         {
-            _bigPictureWindow.Closed += OnBigPictureWindowClosed;
-            _bigPictureWindowClosedRegistered = true;
+            _diagnostics.WriteException("horizon-entry", ex);
+            if (!_closeStarted && !_windowClosed && !Dispatcher.HasShutdownStarted)
+                MessageBox.Show(this, "Cirra couldn't open Horizon. " + ex.Message, "Horizon", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _horizonEntry.StateChanged -= UpdateLoadingState;
         }
 
-        _mainHiddenForCloudscape = true;
-        Hide();
-        _bigPictureWindow.Show();
-        _bigPictureWindow.Activate();
-        HideCloudscapeLoadingOverlay();
-        _sound.PlayMenuOpen();
-    }
-
-    private void ShowCloudscapeLoadingOverlay()
-    {
-        CloudscapeLoadingOverlay.Visibility = Visibility.Visible;
-        CloudscapeLoadingOverlay.IsHitTestVisible = true;
-        CloudscapeLoadingOverlay.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140))
-        {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        });
-    }
-
-    private void HideCloudscapeLoadingOverlay()
-    {
-        var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(220))
-        {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-        };
-        fade.Completed += (_, _) =>
-        {
-            CloudscapeLoadingOverlay.IsHitTestVisible = false;
-            CloudscapeLoadingOverlay.Visibility = Visibility.Collapsed;
-        };
-        CloudscapeLoadingOverlay.BeginAnimation(OpacityProperty, fade);
+        static string Milliseconds(TimeSpan? value) => value.HasValue ? $"{value.Value.TotalMilliseconds:0}ms" : "not reached";
     }
 
     private void OnBigPictureWindowClosed(object? sender, EventArgs e)
     {
-        if (_bigPictureWindow is null) return;
+        if (sender is not BigPictureWindow destination || !ReferenceEquals(destination, _bigPictureWindow)) return;
 
         _bigPictureWindow.Closed -= OnBigPictureWindowClosed;
         _bigPictureWindow = null;
-        _bigPictureWindowClosedRegistered = false;
 
         // Guarantee the cursor is restored when returning from Cloudscape,
         // regardless of where the BigPictureWindow left things.
         Mouse.OverrideCursor = null;
+        if (_horizonEntry.IsEntering)
+        {
+            _horizonEntry.Cancel();
+            return;
+        }
+        if (_closeStarted || _windowClosed || Dispatcher.HasShutdownStarted) return;
 
         try
         {
-            if (_mainHiddenForCloudscape)
-            {
-                _mainHiddenForCloudscape = false;
-                Show();
-                WindowState = WindowState.Maximized;
-            }
-
+            if (!IsVisible) Show();
             Activate();
         }
         catch (InvalidOperationException)
@@ -1727,8 +2710,6 @@ public partial class MainWindow : Window
             // while Big Picture is open) — suppress and let shutdown proceed.
         }
 
-        // Re-warm immediately so the next open is instant too.
-        Dispatcher.InvokeAsync(PreWarmBigPictureWindow, DispatcherPriority.Background);
     }
 
     private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1864,7 +2845,7 @@ public partial class MainWindow : Window
             }
 
             _lastNonMetadataPage = ViewModel.SelectedPrimaryPage;
-            ApplyBlackFlashPageArtworkResources(string.Equals(ViewModel.AppearanceThemeKey, "Black Flash", StringComparison.Ordinal));
+            ApplyBlackFlashPageArtworkResources(string.Equals(ViewModel.AppearanceThemeKey, "Impact Noir", StringComparison.Ordinal));
             ApplyTheatreChrome(ViewModel.SelectedPrimaryPage == 4);
         }
     }
@@ -2148,17 +3129,19 @@ public partial class MainWindow : Window
         var profileThemeKey = string.IsNullOrWhiteSpace(ViewModel.ActiveProfileThemeLabel)
             ? themeKey
             : ViewModel.ActiveProfileThemeLabel;
+
         var palette = themeKey switch
         {
-            "Blueberry Midnight" => new ThemePalette("#07101F", "#030915", "#0D1B32", "#152A48", "#60A5FA", "#1C3356", "#9CC9FF"),
-            "Mint Cloud" => new ThemePalette("#081713", "#06110F", "#0E211D", "#183831", "#2DB880", "#0D342A", "#9DE7C9"),
+            "Cirra Core" => new ThemePalette("#070B10", "#0A1017", "#0F1721", "#141F2B", "#62D5F6", "#17394A", "#F3F9FC"),
+            "Midnight Observatory" => new ThemePalette("#07101F", "#030915", "#0D1B32", "#152A48", "#60A5FA", "#1C3356", "#9CC9FF"),
+            "Verdant Glass" => new ThemePalette("#081713", "#06110F", "#0E211D", "#183831", "#2DB880", "#0D342A", "#9DE7C9"),
             "High Contrast" => new ThemePalette("#000000", "#000000", "#0B0B0B", "#181818", "#FFFFFF", "#2A2A2A", "#FFFFFF"),
-            "Neon Matrix" => new ThemePalette("#040F0B", "#030A07", "#0A1812", "#13261E", "#46FF8A", "#0D3E24", "#D8FFE9"),
-            "Retro Glitch" => new ThemePalette("#0E0A1B", "#080515", "#171128", "#231A3B", "#FF4FD0", "#321044", "#EFE6FF"),
-            "NieR Automata" => new ThemePalette("#D8D0BF", "#0E0D0B", "#D9D1BF", "#E2D9C7", "#2B2721", "#C9BCA3", "#F3EBD9", "#2A261F"),
-            "Wuthering Waves" => new ThemePalette("#061320", "#030810", "#091B28", "#10293A", "#72F6E8", "#0E4351", "#E8FFFA", "#EAFDF8"),
-            "Black Flash" => new ThemePalette("#050204", "#010101", "#0A0506", "#18080B", "#E51B2D", "#2A0508", "#FFF1F2", "#FFF6F6"),
-            _ => new ThemePalette("#090D1A", "#060A14", "#0F1623", "#172030", "#E04469", "#2E0F1C", "#E2EAF8")
+            "Signal Rain" => new ThemePalette("#040F0B", "#030A07", "#0A1812", "#13261E", "#46FF8A", "#0D3E24", "#D8FFE9"),
+            "Arcade Static" => new ThemePalette("#0E0A1B", "#080515", "#171128", "#231A3B", "#FF4FD0", "#321044", "#EFE6FF"),
+            "Archive Ivory" => new ThemePalette("#D8D0BF", "#0E0D0B", "#D9D1BF", "#E2D9C7", "#2B2721", "#C9BCA3", "#F3EBD9", "#2A261F"),
+            "Tidal Glass" => new ThemePalette("#061320", "#030810", "#091B28", "#10293A", "#72F6E8", "#0E4351", "#E8FFFA", "#EAFDF8"),
+            "Impact Noir" => new ThemePalette("#050204", "#010101", "#0A0506", "#18080B", "#E51B2D", "#2A0508", "#FFF1F2", "#FFF6F6"),
+            _ => new ThemePalette("#070B10", "#0A1017", "#0F1721", "#141F2B", "#62D5F6", "#17394A", "#F3F9FC")
         };
 
         SetBrush("AppBackgroundBrush", palette.AppBackground);
@@ -2167,18 +3150,24 @@ public partial class MainWindow : Window
         SetBrush("SurfaceElevatedBrush", palette.Elevated);
         SetBrush("BerryBrush", palette.Accent);
         SetBrush("BerryHoverBrush", palette.AccentText);
-        SetBrush("BerryPressedBrush", "#C8395E");
+        SetBrush("BerryPressedBrush", "#35A8C9");
         SetBrush("BerryDimBrush", palette.AccentDim);
         SetBrush("TextPrimaryBrush", palette.PrimaryText);
+        // Reset shared text tokens before applying a theme-specific pack. Without this,
+        // switching themes could leave low-contrast labels from the previous palette.
+        SetBrush("TextSecondaryBrush", "#B8C8D1");
+        SetBrush("TextMutedBrush", "#748A98");
+        SetBrush("TextOnDarkBrush", "#FFFFFF");
 
-        var isNierTheme = string.Equals(themeKey, "NieR Automata", StringComparison.Ordinal);
-        var isWutheringTheme = string.Equals(themeKey, "Wuthering Waves", StringComparison.Ordinal);
-        var isBlueberryTheme = string.Equals(themeKey, "Blueberry Midnight", StringComparison.Ordinal);
-        var isMintTheme = string.Equals(themeKey, "Mint Cloud", StringComparison.Ordinal);
+        var isCirraTheme = string.Equals(themeKey, "Cirra Core", StringComparison.Ordinal);
+        var isNierTheme = string.Equals(themeKey, "Archive Ivory", StringComparison.Ordinal);
+        var isWutheringTheme = string.Equals(themeKey, "Tidal Glass", StringComparison.Ordinal);
+        var isBlueberryTheme = string.Equals(themeKey, "Midnight Observatory", StringComparison.Ordinal);
+        var isMintTheme = string.Equals(themeKey, "Verdant Glass", StringComparison.Ordinal);
         var isHighContrastTheme = string.Equals(themeKey, "High Contrast", StringComparison.Ordinal);
-        var isMatrixTheme = string.Equals(themeKey, "Neon Matrix", StringComparison.Ordinal);
-        var isGlitchTheme = string.Equals(themeKey, "Retro Glitch", StringComparison.Ordinal);
-        var isBlackFlashTheme = string.Equals(themeKey, "Black Flash", StringComparison.Ordinal);
+        var isMatrixTheme = string.Equals(themeKey, "Signal Rain", StringComparison.Ordinal);
+        var isGlitchTheme = string.Equals(themeKey, "Arcade Static", StringComparison.Ordinal);
+        var isBlackFlashTheme = string.Equals(themeKey, "Impact Noir", StringComparison.Ordinal);
         SetResource("NierArtworkOpacity", isNierTheme ? 0.74d : 0d);
         SetResource("WutheringArtworkOpacity", isWutheringTheme ? 0.56d : 0d);
         SetResource("BlackFlashArtworkOpacity", isBlackFlashTheme ? 0.42d : 0d);
@@ -2187,37 +3176,37 @@ public partial class MainWindow : Window
         SetResource("ThemeShellOverlayOpacity", isNierTheme ? 0.42d : isWutheringTheme ? 0.54d : isBlackFlashTheme ? 0.44d : isMatrixTheme ? 0.74d : isGlitchTheme ? 0.72d : 0.82d);
         SetResource("ThemeBodyFontFamily", new FontFamily(themeKey switch
         {
-        "NieR Automata" => "Yu Gothic UI, Segoe UI, Calibri", 
-        "Neon Matrix" => "Cascadia Mono, Consolas, Segoe UI", 
-        "Retro Glitch" => "Bahnschrift, Segoe UI Variable Text, Segoe UI", 
-        "Wuthering Waves" => "Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI", 
-        "Black Flash" => "Yu Gothic UI, Segoe UI Variable Text, Segoe UI", 
-        "Mint Cloud" => "Calibri, Segoe UI", 
-            "Blueberry Midnight" => "Candara, Segoe UI", 
-            "High Contrast" => "Segoe UI, Arial", 
-            _ => "Corbel, Segoe UI Variable Text, Segoe UI"
+            "Archive Ivory" => "Yu Gothic UI, Segoe UI Variable Text, Segoe UI",
+            "Signal Rain" => "Cascadia Mono, Consolas, Segoe UI",
+            "Arcade Static" => "Bahnschrift, Segoe UI Variable Text, Segoe UI",
+            "Tidal Glass" => "Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI",
+            "Impact Noir" => "Bahnschrift, Segoe UI Variable Text, Segoe UI",
+            "Verdant Glass" => "Segoe UI Variable Text, Segoe UI",
+            "Midnight Observatory" => "Segoe UI Variable Text, Segoe UI",
+            "High Contrast" => "Segoe UI, Arial",
+            _ => "Segoe UI Variable Text, Segoe UI, Arial"
         }));
         SetResource("ThemeDisplayFontFamily", new FontFamily(themeKey switch
         {
-        "NieR Automata" => "Yu Gothic UI Semibold, Segoe UI Semibold, Segoe UI", 
-        "Neon Matrix" => "Cascadia Mono SemiBold, Consolas, Segoe UI Semibold", 
-        "Retro Glitch" => "Bahnschrift SemiBold, Segoe UI Black, Segoe UI", 
-            "Wuthering Waves" => "Bahnschrift SemiBold, Segoe UI Semibold, Segoe UI", 
-            "Black Flash" => "Bahnschrift SemiBold, Yu Gothic UI Semibold, Segoe UI Semibold", 
-            "Mint Cloud" => "Calibri Light, Calibri, Segoe UI Semibold", 
-            "Blueberry Midnight" => "Candara, Segoe UI Semibold", 
-            "High Contrast" => "Segoe UI Semibold, Segoe UI, Arial", 
-            _ => "Corbel, Segoe UI Semibold, Segoe UI"
+            "Archive Ivory" => "Yu Gothic UI Semibold, Segoe UI Semibold, Segoe UI",
+            "Signal Rain" => "Cascadia Mono SemiBold, Consolas, Segoe UI Semibold",
+            "Arcade Static" => "Bahnschrift SemiBold, Segoe UI Black, Segoe UI",
+            "Tidal Glass" => "Bahnschrift SemiBold, Segoe UI Semibold, Segoe UI",
+            "Impact Noir" => "Bahnschrift SemiBold, Yu Gothic UI Semibold, Segoe UI Semibold",
+            "Verdant Glass" => "Segoe UI Variable Display Semibold, Segoe UI Semibold, Segoe UI",
+            "Midnight Observatory" => "Bahnschrift Light, Segoe UI Variable Display, Segoe UI",
+            "High Contrast" => "Segoe UI Semibold, Segoe UI, Arial",
+            _ => "Segoe UI Variable Display, Segoe UI Semibold, Segoe UI"
         }));
 
         var squareTheme = isNierTheme || isHighContrastTheme;
-        var controlRadius = squareTheme ? 0 : isMatrixTheme ? 5 : isBlackFlashTheme ? 6 : isWutheringTheme ? 12 : 9;
-        var panelRadius = squareTheme ? 0 : isMatrixTheme ? 8 : isBlackFlashTheme ? 10 : isWutheringTheme ? 18 : 14;
+        var controlRadius = squareTheme ? 0 : isMatrixTheme ? 4 : isBlackFlashTheme ? 4 : 6;
+        var panelRadius = squareTheme ? 0 : isMatrixTheme ? 6 : isBlackFlashTheme ? 6 : 8;
         SetResource("ThemeCornerRadiusControl", new CornerRadius(controlRadius));
         SetResource("ThemeCornerRadiusPanel", new CornerRadius(panelRadius));
-        SetResource("ThemeCornerRadiusLarge", new CornerRadius(squareTheme ? 0 : isBlackFlashTheme ? 12 : isWutheringTheme ? 20 : 12));
+        SetResource("ThemeCornerRadiusLarge", new CornerRadius(squareTheme ? 0 : 8));
         SetResource("ThemeCornerRadiusPill", new CornerRadius(squareTheme ? 0 : 999));
-        SetResource("GlassButtonCornerRadius", new CornerRadius(isHighContrastTheme ? 4 : isNierTheme ? 12 : isBlackFlashTheme ? 14 : isWutheringTheme ? 20 : isMatrixTheme ? 16 : 18));
+        SetResource("GlassButtonCornerRadius", new CornerRadius(isNierTheme ? 0 : isHighContrastTheme ? 4 : 7));
         SetResource("GlassChipCornerRadius", new CornerRadius(isHighContrastTheme ? 4 : 999));
         SetResource("GlassButtonBorderThickness", new Thickness(isHighContrastTheme ? 1.4 : isBlackFlashTheme ? 1.2 : 1));
         SetResource("GlassButtonFillBrush", BuildLinearBrush("#5EFFFFFF", "#2412D7FF", "#16000000", diagonal: true));
@@ -2242,8 +3231,104 @@ public partial class MainWindow : Window
         SetResource("ThemePointerGlowCenterColor", (Color)ColorConverter.ConvertFromString("#34FFFFFF"));
         SetResource("ThemePointerGlowMidColor", (Color)ColorConverter.ConvertFromString("#225DA6FF"));
         SetResource("ThemePointerClickColor", (Color)ColorConverter.ConvertFromString("#AA5DA6FF"));
+        SetResource("NostalgiaScanlineBrush", BuildCadenceLineBrush("#1262D5F6", "#087DA8FF"));
+        SetResource("MatrixRainBrush", new SolidColorBrush(Colors.Transparent));
+        SetResource("MintGlowColor", (Color)ColorConverter.ConvertFromString("#58D6B2"));
 
-        if (isNierTheme)
+        if (isCirraTheme)
+        {
+            SetBrush("AppBackgroundBrush", "#070B10");
+            SetBrush("SidebarBrush", "#0A1017");
+            SetBrush("SurfaceBrush", "#0F1721");
+            SetBrush("SurfaceElevatedBrush", "#141F2B");
+            SetBrush("SurfaceHighBrush", "#192735");
+            SetBrush("CardBrush", "#172431");
+            SetBrush("CardHoverBrush", "#203344");
+            SetBrush("CardSelectedBrush", "#274257");
+            SetBrush("TextPrimaryBrush", "#F3F9FC");
+            SetBrush("TextSecondaryBrush", "#B8C8D1");
+            SetBrush("TextMutedBrush", "#748A98");
+            SetBrush("TextOnDarkBrush", "#FFFFFF");
+            SetBrush("ErrorBrush", "#F36B74");
+            SetBrush("ErrorHoverBrush", "#FF8790");
+            SetBrush("ErrorDimBrush", "#703039");
+            SetBrush("CloudBrush", "#9CB7C5");
+            SetBrush("CloudDimBrush", "#1A3442");
+            SetBrush("MintBrush", "#58D6B2");
+            SetBrush("MintDimBrush", "#123E34");
+            SetBrush("GoldBrush", "#E4C47D");
+            SetBrush("GoldDimBrush", "#594A26");
+            SetBrush("NeoCyanBrush", "#62D5F6");
+            SetBrush("NeoBerryBrush", "#7DA8FF");
+            SetBrush("BorderBrush", "#273B4A");
+            SetBrush("BorderSubtleBrush", "#355265");
+            SetBrush("GlassPanelBorderBrush", "#42677A");
+            SetBrush("GlassPanelHoverBorderBrush", "#7CDFF8");
+            SetResource("ThemePanelFillBrush", BuildGlassBackingBrush("#E6111C27", "#C9162633"));
+            SetResource("ThemePanelFillSoftBrush", BuildGlassBackingBrush("#C90E1822", "#A812202C"));
+            SetBrush("ThemePanelEdgeBrush", "#3C6074");
+            SetBrush("ThemePanelShadowBrush", "#020509");
+            SetResource("ThemePanelShadowColor", (Color)ColorConverter.ConvertFromString("#020509"));
+            SetResource("ThemePrimaryButtonGlowColor", (Color)ColorConverter.ConvertFromString("#62D5F6"));
+            SetResource("ThemePanelBorderGradientBrush", BuildGlassBorderBrush("#62D5F6"));
+            SetResource("ThemeAtmosphereBlobBrush", new SolidColorBrush(Colors.Transparent));
+            SetResource("ThemeAtmosphereBlobSecondaryBrush", new SolidColorBrush(Colors.Transparent));
+            SetBrush("ThemeDeckFrameBrush", "#241C3342");
+            SetBrush("ThemeDeckFrameBorderBrush", "#345466");
+            SetBrush("ThemeNavItemBackgroundBrush", "#160E1822");
+            SetBrush("ThemeNavItemHoverBackgroundBrush", "#2A183447");
+            SetBrush("ThemeNavItemSelectedBackgroundBrush", "#3A1C4054");
+            SetBrush("ThemeNavItemBorderBrush", "#294858");
+            SetBrush("ThemeNavItemHoverBorderBrush", "#62D5F6");
+            SetBrush("ThemeNavItemSelectedBorderBrush", "#E4C47D");
+            SetBrush("ThemeNavItemTopEdgeBrush", "#72FFFFFF");
+            SetBrush("ThemePillFillBrush", "#1A142330");
+            SetBrush("ThemePillHoverFillBrush", "#2A1D3546");
+            SetBrush("ThemePillSelectedFillBrush", "#3821465B");
+            SetBrush("ThemePillBorderBrush", "#335466");
+            SetBrush("ThemePillHoverBorderBrush", "#62D5F6");
+            SetBrush("ThemePillSelectedBorderBrush", "#E4C47D");
+            SetBrush("ThemePillLabelBrush", "#A9BAC4");
+            SetBrush("ThemePillLabelActiveBrush", "#FFFFFF");
+            SetBrush("ThemePrimaryButtonTextBrush", "#031117");
+            SetResource("ThemePrimaryButtonFillBrush", BuildButtonGradient("#8CE5FC", "#45B9D8"));
+            SetResource("ThemePrimaryButtonHoverFillBrush", BuildButtonGradient("#B8F2FF", "#62D5F6"));
+            SetResource("ThemePrimaryButtonPressedFillBrush", BuildButtonGradient("#55C1DD", "#278DAA"));
+            SetBrush("ThemeSecondaryButtonTextBrush", "#E6F1F6");
+            SetBrush("ThemeSecondaryButtonFillBrush", "#233846");
+            SetBrush("ThemeSecondaryButtonHoverFillBrush", "#2D4859");
+            SetBrush("ThemeSecondaryButtonPressedFillBrush", "#1A2C38");
+            SetBrush("ThemeSecondaryButtonBorderBrush", "#42677A");
+            SetBrush("ThemeGhostButtonHoverFillBrush", "#281C4053");
+            SetBrush("ThemeGhostButtonPressedFillBrush", "#3A173648");
+            SetBrush("ThemeGhostButtonBorderBrush", "#35596B");
+            SetBrush("ThemeGhostButtonHoverBorderBrush", "#62D5F6");
+            SetResource("HeroOverlayBrush", BuildVerticalBrush("#16070B10", "#76070B10", "#B8070B10"));
+            SetResource("NostalgiaAtmosphereBrush", BuildLinearBrush("#1662D5F6", "#0C7DA8FF", "#0AE4C47D", diagonal: true));
+            SetResource("AuroraVeilBrush", BuildLinearBrush("#1A62D5F6", "#0C58D6B2", "#08E4C47D", diagonal: true));
+            SetResource("GlitchNeonBrush", BuildLinearBrush("#AA62D5F6", "#887DA8FF", "#88E4C47D"));
+            SetResource("BladeGlassBrush", BuildLinearBrush("#66192735", "#55203A4A", "#44101B25", diagonal: true));
+            SetResource("BladeActiveBrush", BuildLinearBrush("#8062D5F6", "#547DA8FF", "#40E4C47D"));
+            SetResource("ThemeShellAtmosphereBrush", BuildVerticalBrush("#160E2734", "#0A10202C", "#00070B10"));
+            SetResource("ThemeSidebarOverlayBrush", BuildVerticalBrush("#30070B10", "#16070B10", "#00070B10"));
+            SetResource("ThemeSweepBrush", BuildLinearBrush("#7062D5F6", "#28FFFFFF", "#00FFFFFF"));
+            SetResource("ThemeShellPatternOpacity", 0.025d);
+            SetResource("ThemeSidebarPatternOpacity", 0.025d);
+            SetResource("ThemeSweepOpacity", 0.045d);
+            SetResource("ThemeShellOverlayOpacity", 0.76d);
+            SetResource("ThemePointerGlowCenterColor", (Color)ColorConverter.ConvertFromString("#3062D5F6"));
+            SetResource("ThemePointerGlowMidColor", (Color)ColorConverter.ConvertFromString("#187DA8FF"));
+            SetResource("ThemePointerClickColor", (Color)ColorConverter.ConvertFromString("#B062D5F6"));
+            SetResource("GlassButtonFillBrush", BuildLinearBrush("#5862D5F6", "#241B6078", "#16070B10", diagonal: true));
+            SetResource("GlassButtonHoverFillBrush", BuildLinearBrush("#82A8EDFF", "#3431A1C1", "#1E070B10", diagonal: true));
+            SetResource("GlassButtonPressedFillBrush", BuildLinearBrush("#365EC6E4", "#20227F99", "#2A05080C", diagonal: true));
+            SetResource("GlassButtonBorderBrush", BuildLinearBrush("#B8D8F7FF", "#6862D5F6", "#38E4C47D", diagonal: true));
+            SetResource("GlassChipFillBrush", BuildLinearBrush("#2EFFFFFF", "#161B6078", "#10070B10", diagonal: true));
+            SetResource("GlassChipActiveFillBrush", BuildLinearBrush("#48FFFFFF", "#242B92AF", "#16070B10", diagonal: true));
+            SetResource("GlassChipBorderBrush", BuildLinearBrush("#86FFFFFF", "#5462D5F6", "#32E4C47D", diagonal: true));
+            SetResource("GlassSheenBrush", BuildVerticalBrush("#34FFFFFF", "#1262D5F6", "#00FFFFFF"));
+        }
+        else if (isNierTheme)
         {
             SetBrush("AppBackgroundBrush", "#CCC4AE");
             SetBrush("SidebarBrush", "#17130F");
@@ -2344,33 +3429,6 @@ public partial class MainWindow : Window
             SetResource("GlassChipBorderBrush", BuildLinearBrush("#98FFF8E8", "#62D7C27C", "#305E5548", diagonal: true));
             SetResource("GlassSheenBrush", BuildVerticalBrush("#2AFFFFFF", "#0EF3EBD9", "#00FFFFFF"));
 
-            // Authentic NieR replicant save data deletion drifting glitch effect in C#
-            if (TryFindResourceValue(Application.Current.Resources, "NierDeletionBrush", out var rawNierBrush) && rawNierBrush is DrawingBrush staticNierBrush)
-            {
-                var animatedNierBrush = staticNierBrush.Clone();
-                var trans = new TranslateTransform();
-                
-                var animX = new DoubleAnimation 
-                { 
-                    From = 0, 
-                    To = -72, 
-                    Duration = TimeSpan.FromSeconds(8), 
-                    RepeatBehavior = RepeatBehavior.Forever 
-                };
-                var animY = new DoubleAnimation 
-                { 
-                    From = 0, 
-                    To = 28, 
-                    Duration = TimeSpan.FromSeconds(16), 
-                    RepeatBehavior = RepeatBehavior.Forever 
-                };
-                
-                trans.BeginAnimation(TranslateTransform.XProperty, animX);
-                trans.BeginAnimation(TranslateTransform.YProperty, animY);
-                animatedNierBrush.Transform = trans;
-                
-                SetResource("NierDeletionBrush", animatedNierBrush);
-            }
         }
         else if (isWutheringTheme)
         {
@@ -2456,7 +3514,7 @@ public partial class MainWindow : Window
             SetResource("ThemePointerGlowMidColor", (Color)ColorConverter.ConvertFromString("#3672F6E8"));
             SetResource("ThemePointerClickColor", (Color)ColorConverter.ConvertFromString("#CC72F6E8"));
 
-            // Wuthering Waves shifting holographic elegant glass sheen (Changli vermilion/gold, Yinlin violet/teal)
+            // Tidal Glass shifting holographic elegant glass sheen (Changli vermilion/gold, Yinlin violet/teal)
             var wuwaSheen = new LinearGradientBrush
             {
                 StartPoint = new Point(0, 0),
@@ -2617,21 +3675,47 @@ public partial class MainWindow : Window
             }
             else if (isMintTheme)
             {
-                SetBrush("AppBackgroundBrush", "#071510");
-                SetBrush("SidebarBrush", "#05100C");
-                SetBrush("ThemePanelEdgeBrush", "#246E5B");
+                SetBrush("AppBackgroundBrush", "#06100D");
+                SetBrush("SidebarBrush", "#07110F");
+                SetBrush("SurfaceBrush", "#0B1815");
+                SetBrush("SurfaceElevatedBrush", "#12231F");
+                SetBrush("SurfaceHighBrush", "#19312A");
+                SetBrush("CardBrush", "#111F1C");
+                SetBrush("CardHoverBrush", "#19332B");
+                SetBrush("CardSelectedBrush", "#21483B");
+                SetBrush("BorderBrush", "#1E3C34");
+                SetBrush("BorderSubtleBrush", "#2A5649");
+                SetBrush("TextPrimaryBrush", "#F1FAF6");
+                SetBrush("TextSecondaryBrush", "#B8D5CB");
+                SetBrush("TextMutedBrush", "#7FA698");
+                SetBrush("CloudBrush", "#9BCBBC");
+                SetBrush("CloudDimBrush", "#15362D");
+                SetBrush("MintBrush", "#56D6A6");
+                SetBrush("MintDimBrush", "#123B2E");
+                SetBrush("GoldBrush", "#E4C778");
+                SetBrush("GoldDimBrush", "#554824");
+                SetBrush("ThemePanelEdgeBrush", "#285447");
                 SetBrush("ThemeDeckFrameBorderBrush", "#2DB880");
-                SetResource("ThemePanelFillBrush", BuildGlassBackingBrush("#CC081713", "#A00E211D"));
-                SetResource("ThemePanelFillSoftBrush", BuildGlassBackingBrush("#B50E211D", "#80183831"));
-                SetResource("ThemePanelShadowColor", (Color)ColorConverter.ConvertFromString("#2DB880"));
+                SetResource("ThemePanelFillBrush", BuildGlassBackingBrush("#F20A1513", "#E70F1F1B"));
+                SetResource("ThemePanelFillSoftBrush", BuildGlassBackingBrush("#E30D1B18", "#D5162B25"));
+                SetResource("ThemePanelShadowColor", (Color)ColorConverter.ConvertFromString("#020806"));
                 SetResource("ThemePrimaryButtonGlowColor", (Color)ColorConverter.ConvertFromString("#2DB880"));
                 SetResource("ThemePanelBorderGradientBrush", BuildGlassBorderBrush("#2DB880"));
-                SetResource("ThemeAtmosphereBlobBrush", new SolidColorBrush(Color.FromArgb(34, 45, 184, 128)));
-                SetResource("ThemeAtmosphereBlobSecondaryBrush", new SolidColorBrush(Color.FromArgb(24, 13, 52, 42)));
+                SetResource("ThemeAtmosphereBlobBrush", new SolidColorBrush(Color.FromArgb(20, 45, 184, 128)));
+                SetResource("ThemeAtmosphereBlobSecondaryBrush", new SolidColorBrush(Color.FromArgb(14, 13, 52, 42)));
                 SetResource("ThemePrimaryButtonFillBrush", BuildButtonGradient("#2DB880", "#0F764F"));
                 SetResource("ThemePrimaryButtonHoverFillBrush", BuildButtonGradient("#52D5A0", "#159565"));
                 SetResource("ThemePrimaryButtonPressedFillBrush", BuildButtonGradient("#159565", "#064E3B"));
                 SetBrush("ThemePrimaryButtonTextBrush", "#02130E");
+                SetBrush("ThemeSecondaryButtonTextBrush", "#DDEDE7");
+                SetBrush("ThemeSecondaryButtonFillBrush", "#172A25");
+                SetBrush("ThemeSecondaryButtonHoverFillBrush", "#203C33");
+                SetBrush("ThemeSecondaryButtonPressedFillBrush", "#10221D");
+                SetBrush("ThemeSecondaryButtonBorderBrush", "#31594C");
+                SetBrush("ThemeGhostButtonHoverFillBrush", "#1A382F");
+                SetBrush("ThemeGhostButtonPressedFillBrush", "#21483B");
+                SetBrush("ThemeGhostButtonBorderBrush", "#284B41");
+                SetBrush("ThemeGhostButtonHoverBorderBrush", "#54C79B");
                 SetBrush("ThemeNavItemBackgroundBrush", "#0A1F1A");
                 SetBrush("ThemeNavItemHoverBackgroundBrush", "#14372F");
                 SetBrush("ThemeNavItemSelectedBackgroundBrush", "#1A463B");
@@ -2644,7 +3728,7 @@ public partial class MainWindow : Window
                 SetBrush("ThemePillBorderBrush", "#1C4E41");
                 SetBrush("ThemePillHoverBorderBrush", "#2DB880");
                 SetBrush("ThemePillSelectedBorderBrush", "#9DE7C9");
-                SetBrush("ThemePillLabelBrush", "#5E8E81");
+                SetBrush("ThemePillLabelBrush", "#8AB3A6");
                 SetBrush("ThemePillLabelActiveBrush", "#9DE7C9");
                 SetResource("AuroraVeilBrush", BuildLinearBrush("#242DB880", "#184FD1A5", "#102AC79A", diagonal: true));
                 SetResource("GlitchNeonBrush", BuildLinearBrush("#AA2DB880", "#887EE7C2", "#AA27D1A5"));
@@ -2656,9 +3740,9 @@ public partial class MainWindow : Window
                 SetResource("ThemeSidebarOverlayBrush", BuildVerticalBrush("#4205100C", "#1505100C", "#0005100C"));
                 SetResource("ThemeSidebarPatternBrush", BuildCadenceLineBrush("#162DB880", "#0E1C4E41"));
                 SetResource("ThemeSweepBrush", BuildLinearBrush("#622DB880", "#289DE7C9", "#0027D1A5"));
-                SetResource("ThemeShellPatternOpacity", 0.05d);
-                SetResource("ThemeSidebarPatternOpacity", 0.05d);
-                SetResource("ThemeSweepOpacity", 0.04d);
+                SetResource("ThemeShellPatternOpacity", 0.018d);
+                SetResource("ThemeSidebarPatternOpacity", 0.022d);
+                SetResource("ThemeSweepOpacity", 0.022d);
 
                 // Mint emerald glass sheen — cool teal highlight with green mid-band
                 var mintSheen = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
@@ -2768,7 +3852,7 @@ public partial class MainWindow : Window
                 SetResource("HeroOverlayBrush", BuildVerticalBrush("#D8040F0B", "#E60A1812", "#F3040F0B"));
                 SetResource("NostalgiaAtmosphereBrush", BuildLinearBrush("#2334FF8A", "#1200E676", "#0C9AFFC9", diagonal: true));
 
-                // Neon Matrix phosphor green terminal glass sheen
+                // Signal Rain phosphor green terminal glass sheen
                 var matrixSheen = new LinearGradientBrush
                 {
                     StartPoint = new Point(0, 0),
@@ -2840,7 +3924,7 @@ public partial class MainWindow : Window
                 SetResource("ThemePointerGlowMidColor", (Color)ColorConverter.ConvertFromString("#36FF4FD0"));
                 SetResource("ThemePointerClickColor", (Color)ColorConverter.ConvertFromString("#CCFF4FD0"));
 
-                // Retro Glitch cyberpunk hot pink-to-cyan outrun glass sheen
+                // Arcade Static cyberpunk hot pink-to-cyan outrun glass sheen
                 var glitchSheen = new LinearGradientBrush
                 {
                     StartPoint = new Point(0, 0),
@@ -2852,18 +3936,7 @@ public partial class MainWindow : Window
                 glitchSheen.GradientStops.Add(new GradientStop((Color)ColorConverter.ConvertFromString("#1158B7FF"), 1.0));
                 SetResource("GlassSheenBrush", glitchSheen);
 
-                // Retro Glitch animated neon landscape grid scrolling vertically
                 var gridBrush = BuildSynthwaveGridBrush();
-                var trans = new TranslateTransform();
-                var animY = new DoubleAnimation 
-                { 
-                    From = 0, 
-                    To = 40, 
-                    Duration = TimeSpan.FromSeconds(4), 
-                    RepeatBehavior = RepeatBehavior.Forever 
-                };
-                trans.BeginAnimation(TranslateTransform.YProperty, animY);
-                gridBrush.Transform = trans;
                 SetResource("MatrixRainBrush", gridBrush);
                 SetResource("ThemeShellAtmosphereBrush", BuildLinearBrush("#180E0A1B", "#10171128", "#080A0715", diagonal: true));
                 SetResource("ThemeShellPatternBrush", gridBrush);
@@ -2898,7 +3971,7 @@ public partial class MainWindow : Window
                 SetBrush("GlassPanelBorderBrush",      "#A81724");
                 SetBrush("GlassPanelHoverBorderBrush", "#FF4755");
 
-                // ── Accent — Black Flash red / impact white ──────────────────────────
+                // ── Accent — Impact Noir red / impact white ──────────────────────────
                 SetBrush("BerryBrush",                 "#E51B2D");
                 SetBrush("BerryHoverBrush",            "#FF4252");
                 SetBrush("BerryPressedBrush",          "#A80012");
@@ -3012,22 +4085,44 @@ public partial class MainWindow : Window
             }
         }
 
+        ApplyThemeGrain(themeKey);
         ApplyGlassControlPalette(themeKey);
         ApplyProfileVisualPack(profileThemeKey, themeKey);
+        // The final material contract owns both contrast and each world's geometry.
+        CloudBerry.App.Effects.ThemeVisualProfile.Resolve(themeKey).ApplyMaterials(SetResource, profileThemeKey);
+    }
+
+    private static void ApplyThemeGrain(string themeKey)
+    {
+        var grain = themeKey switch
+        {
+            "Archive Ivory" => ("#16F3EBD9", "#105E5548", 0.13d, 46d),
+            "Tidal Glass" => ("#1472F6E8", "#0E071320", 0.12d, 44d),
+            "Midnight Observatory" => ("#1260A5FA", "#0C030915", 0.12d, 46d),
+            "Verdant Glass" => ("#129DE7C9", "#0C06110F", 0.055d, 46d),
+            "High Contrast" => ("#00FFFFFF", "#00000000", 0d, 48d),
+            "Signal Rain" => ("#1234FF8A", "#0A000000", 0.1d, 42d),
+            "Arcade Static" => ("#12FF4FD0", "#0A58B7FF", 0.11d, 40d),
+            "Impact Noir" => ("#14FFF6F6", "#10E51B2D", 0.13d, 42d),
+            _ => ("#12FFFFFF", "#0C000000", 0.11d, 48d)
+        };
+
+        SetResource("ThemeGrainBrush", BuildGrainBrush(grain.Item1, grain.Item2, grain.Item4));
+        SetResource("ThemeGrainOpacity", grain.Item3);
     }
 
     private static void ApplyGlassControlPalette(string themeKey)
     {
         var palette = themeKey switch
         {
-            "NieR Automata" => ("#72F3EBD9", "#28D7C27C", "#1427231D", "#96FFF6E4", "#36D7C27C", "#1D373229", "#B8FFF8E8", "#7DD7C27C", "#405E5548"),
-            "Wuthering Waves" => ("#6872F6E8", "#245DA6FF", "#14071320", "#8AFFFFFF", "#3472F6E8", "#20153A50", "#BCFFFFFF", "#8072F6E8", "#38D9C98A"),
-            "Neon Matrix" => ("#5A46FF8A", "#2400F0FF", "#10020805", "#7846FF8A", "#3400F0FF", "#18020805", "#A846FF8A", "#6600F0FF", "#2646FF8A"),
-            "Retro Glitch" => ("#58FF4FD0", "#2458B7FF", "#12080511", "#78FF80DD", "#3058B7FF", "#1C0E0A1B", "#AAFF4FD0", "#7058B7FF", "#36FFE45F"),
-            "Blueberry Midnight" => ("#5860A5FA", "#227DD3FC", "#12060913", "#787DD3FC", "#3060A5FA", "#1C030915", "#AAFFFFFF", "#7260A5FA", "#387DD3FC"),
-            "Mint Cloud" => ("#5A9DE7C9", "#242DB880", "#1006110F", "#789DE7C9", "#342DB880", "#18081713", "#AAE8FFF5", "#682DB880", "#389DE7C9"),
+            "Archive Ivory" => ("#72F3EBD9", "#28D7C27C", "#1427231D", "#96FFF6E4", "#36D7C27C", "#1D373229", "#B8FFF8E8", "#7DD7C27C", "#405E5548"),
+            "Tidal Glass" => ("#6872F6E8", "#245DA6FF", "#14071320", "#8AFFFFFF", "#3472F6E8", "#20153A50", "#BCFFFFFF", "#8072F6E8", "#38D9C98A"),
+            "Signal Rain" => ("#5A46FF8A", "#2400F0FF", "#10020805", "#7846FF8A", "#3400F0FF", "#18020805", "#A846FF8A", "#6600F0FF", "#2646FF8A"),
+            "Arcade Static" => ("#58FF4FD0", "#2458B7FF", "#12080511", "#78FF80DD", "#3058B7FF", "#1C0E0A1B", "#AAFF4FD0", "#7058B7FF", "#36FFE45F"),
+            "Midnight Observatory" => ("#5860A5FA", "#227DD3FC", "#12060913", "#787DD3FC", "#3060A5FA", "#1C030915", "#AAFFFFFF", "#7260A5FA", "#387DD3FC"),
+            "Verdant Glass" => ("#5A9DE7C9", "#242DB880", "#1006110F", "#789DE7C9", "#342DB880", "#18081713", "#AAE8FFF5", "#682DB880", "#389DE7C9"),
             "High Contrast" => ("#18FFFFFF", "#0CFFFFFF", "#00000000", "#30FFFFFF", "#18FFFFFF", "#05000000", "#FFFFFFFF", "#FFFFFFFF", "#FFFFFFFF"),
-            "Black Flash" => ("#68E51B2D", "#28FFF6F6", "#18010203", "#88FF4252", "#34E51B2D", "#2218080A", "#AAFFF6F6", "#78E51B2D", "#40FFF6F6"),
+            "Impact Noir" => ("#68E51B2D", "#28FFF6F6", "#18010203", "#88FF4252", "#34E51B2D", "#2218080A", "#AAFFF6F6", "#78E51B2D", "#40FFF6F6"),
             _ => ("#5EFFFFFF", "#2412D7FF", "#16000000", "#82FFFFFF", "#3220DFFF", "#1E000000", "#B8FFFFFF", "#5C8EDBFF", "#30FFFFFF")
         };
 
@@ -3066,7 +4161,7 @@ public partial class MainWindow : Window
 
         switch (profileThemeKey)
         {
-            case "Neon Matrix":
+            case "Signal Rain":
                 SetResource("ProfileSurfaceAtmosphereBrush", BuildLinearBrush("#1A0D2D17", "#0E071A10", "#00040F0B", diagonal: true));
                 SetResource("ProfileSurfacePatternBrush", BuildMatrixRainBrush());
                 SetResource("ProfileSurfaceSweepBrush", BuildLinearBrush("#8846FF8A", "#2800F0FF", "#0046FF8A"));
@@ -3081,7 +4176,7 @@ public partial class MainWindow : Window
                 SetResource("ProfileSurfaceSweepOpacity", 0.18d);
                 SetResource("ProfileBadgePulseOpacity", 0.22d);
                 break;
-            case "NieR Automata":
+            case "Archive Ivory":
                 SetResource("ProfileSurfaceAtmosphereBrush", BuildVerticalBrush("#24EEE4CF", "#10D8D0BF", "#00D8D0BF"));
                 SetResource("ProfileSurfacePatternBrush", BuildNierDotGridBrush());
                 SetResource("ProfileSurfaceSweepBrush", BuildLinearBrush("#406E6452", "#166E6452", "#006E6452"));
@@ -3096,7 +4191,7 @@ public partial class MainWindow : Window
                 SetResource("ProfileSurfaceSweepOpacity", 0.08d);
                 SetResource("ProfileBadgePulseOpacity", 0.11d);
                 break;
-            case "Wuthering Waves":
+            case "Tidal Glass":
                 SetResource("ProfileSurfaceAtmosphereBrush", BuildLinearBrush("#2A0F2B39", "#163A5C76", "#06101E2A", diagonal: true));
                 SetResource("ProfileSurfacePatternBrush", BuildWaveLineBrush());
                 SetResource("ProfileSurfaceSweepBrush", BuildLinearBrush("#78D9C98A", "#4472F6E8", "#0065B5FF"));
@@ -3111,7 +4206,7 @@ public partial class MainWindow : Window
                 SetResource("ProfileSurfaceSweepOpacity", 0.18d);
                 SetResource("ProfileBadgePulseOpacity", 0.20d);
                 break;
-            case "Retro Glitch":
+            case "Arcade Static":
                 SetResource("ProfileSurfaceAtmosphereBrush", BuildLinearBrush("#240E0A1B", "#12171128", "#060A0715", diagonal: true));
                 SetResource("ProfileSurfacePatternBrush", BuildSynthwaveGridBrush());
                 SetResource("ProfileSurfaceSweepBrush", BuildLinearBrush("#80FF4FD0", "#3A58B7FF", "#00FFE45F"));
@@ -3126,7 +4221,7 @@ public partial class MainWindow : Window
                 SetResource("ProfileSurfaceSweepOpacity", 0.19d);
                 SetResource("ProfileBadgePulseOpacity", 0.22d);
                 break;
-            case "Blueberry Midnight":
+            case "Midnight Observatory":
                 SetResource("ProfileSurfaceAtmosphereBrush", BuildLinearBrush("#220C1830", "#10173152", "#0409151F", diagonal: true));
                 SetResource("ProfileSurfacePatternBrush", BuildCadenceLineBrush("#1660A5FA", "#0E7DD3FC"));
                 SetResource("ProfileSurfaceSweepBrush", BuildLinearBrush("#7260A5FA", "#347DD3FC", "#0038BDF8"));
@@ -3141,7 +4236,7 @@ public partial class MainWindow : Window
                 SetResource("ProfileSurfaceSweepOpacity", 0.16d);
                 SetResource("ProfileBadgePulseOpacity", 0.18d);
                 break;
-            case "Mint Cloud":
+            case "Verdant Glass":
                 SetResource("ProfileSurfaceAtmosphereBrush", BuildLinearBrush("#1E0A1A15", "#10183831", "#04081713", diagonal: true));
                 SetResource("ProfileSurfacePatternBrush", BuildCadenceLineBrush("#142DB880", "#0E9DE7C9"));
                 SetResource("ProfileSurfaceSweepBrush", BuildLinearBrush("#682DB880", "#289DE7C9", "#0027D1A5"));
@@ -3172,7 +4267,7 @@ public partial class MainWindow : Window
                 SetResource("ProfileBadgePulseOpacity", 0.10d);
                 break;
             default:
-                if (string.Equals(shellThemeKey, "Wuthering Waves", StringComparison.Ordinal))
+                if (string.Equals(shellThemeKey, "Tidal Glass", StringComparison.Ordinal))
                 {
                     SetResource("ProfileSurfaceAtmosphereBrush", BuildLinearBrush("#220F2B39", "#123A5C76", "#06091520", diagonal: true));
                     SetResource("ProfileSurfacePatternBrush", BuildWaveLineBrush());
@@ -3384,6 +4479,31 @@ public partial class MainWindow : Window
         };
     }
 
+    private static DrawingBrush BuildGrainBrush(string highlightHex, string shadowHex, double viewportSize)
+    {
+        var highlight = new SolidColorBrush((Color)ColorConverter.ConvertFromString(highlightHex));
+        var shadow = new SolidColorBrush((Color)ColorConverter.ConvertFromString(shadowHex));
+        var group = new DrawingGroup();
+
+        group.Children.Add(new GeometryDrawing(highlight, null, Geometry.Parse("M1,2 L2,2 2,3 1,3 Z")));
+        group.Children.Add(new GeometryDrawing(shadow, null, Geometry.Parse("M7,13 L8,13 8,14 7,14 Z")));
+        group.Children.Add(new GeometryDrawing(highlight, null, Geometry.Parse("M15,5 L16,5 16,6 15,6 Z")));
+        group.Children.Add(new GeometryDrawing(shadow, null, Geometry.Parse("M24,18 L25,18 25,19 24,19 Z")));
+        group.Children.Add(new GeometryDrawing(highlight, null, Geometry.Parse("M34,9 L35,9 35,10 34,10 Z")));
+        group.Children.Add(new GeometryDrawing(shadow, null, Geometry.Parse("M41,29 L42,29 42,30 41,30 Z")));
+        group.Children.Add(new GeometryDrawing(highlight, null, Geometry.Parse("M12,36 L13,36 13,37 12,37 Z")));
+        group.Children.Add(new GeometryDrawing(shadow, null, Geometry.Parse("M28,43 L29,43 29,44 28,44 Z")));
+        group.Children.Add(new GeometryDrawing(highlight, null, Geometry.Parse("M45,45 L46,45 46,46 45,46 Z")));
+
+        return new DrawingBrush(group)
+        {
+            Viewport = new Rect(0, 0, viewportSize, viewportSize),
+            ViewportUnits = BrushMappingMode.Absolute,
+            TileMode = TileMode.Tile,
+            Stretch = Stretch.None
+        };
+    }
+
     private static DrawingBrush BuildNierDotGridBrush()
     {
         var group = new DrawingGroup();
@@ -3551,7 +4671,7 @@ public partial class MainWindow : Window
         string AccentText,
         string PrimaryText = "#E2EAF8");
 
-    private void ShowError(string message, string title = "CloudBerry") =>
+    private void ShowError(string message, string title = "Cirra") =>
         MessageBox.Show(this, message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
 
     // ── Mouse wheel bubbling ─────────────────────────────────────────────────────────────────
@@ -3876,7 +4996,12 @@ public partial class MainWindow : Window
 
         menuItem.Items.Clear();
 
-        var selectedGames = GameLibraryList.SelectedItems.Cast<GameEntryViewModel>().ToList();
+        // A5 fix: read selection from whichever ListBox actually owns this context menu (List or
+        // Grid view), instead of hardcoding GameLibraryList. WPF sets PlacementTarget to the owning
+        // element automatically when a declaratively-assigned ContextMenu is opened, so this works
+        // for both views without needing to know which one is currently visible.
+        var ownerListBox = (menuItem.Parent as ContextMenu)?.PlacementTarget as ListBox;
+        var selectedGames = ownerListBox?.SelectedItems.Cast<GameEntryViewModel>().ToList() ?? new List<GameEntryViewModel>();
         if (selectedGames.Count == 0 && ViewModel.SelectedGame != null)
         {
             selectedGames.Add(ViewModel.SelectedGame);

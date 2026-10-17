@@ -1,6 +1,6 @@
-# CloudBerry
+# Cirra
 
-A universal game library for Windows. One place for your Steam games, ROM collections,
+A premium universal game library for Windows. One place for your Steam games, ROM collections,
 and whatever else is scattered across launchers, with real emulation support and
 achievement tracking baked in instead of bolted on.
 
@@ -21,7 +21,7 @@ Built with WPF on .NET 10.
   all-time view of when you actually play (time of day, day of week, session length).
 - **Backlog debt tracker** - turns "$40 game, 0 hours played" into an actual number
   instead of a guilty feeling you ignore.
-- **Big Picture mode** (Cloudscape) for couch use, plus a set of switchable visual themes.
+- **Horizon mode** for couch use, plus a set of distinct visual, motion, and audio themes.
 
 Longer-term plans and half-baked ideas live in `ROADMAP.md` and `DIFFERENTIATORS.md`.
 
@@ -56,7 +56,7 @@ To produce a self-contained single-file release build:
 publish.bat
 ```
 
-This drops `CloudBerry.exe` in `publish\win-x64` - no .NET runtime install required on
+This drops `Cirra.exe` in `publish\win-x64` - no .NET runtime install required on
 the machine running it.
 
 ## Contributing

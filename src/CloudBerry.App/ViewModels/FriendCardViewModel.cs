@@ -13,7 +13,7 @@ public sealed class FriendCardViewModel : ViewModelBase
 
 	private string _iconKey = "Controller";
 
-	private string _displayName = "CloudBerry Friend";
+	private string _displayName = "Cirra Friend";
 
 	private string _motto = "Library ready.";
 
@@ -23,7 +23,7 @@ public sealed class FriendCardViewModel : ViewModelBase
 
 	private string _shellStyle = "Blade";
 
-	private string _preferredTheme = "CloudBerry Dark";
+	private string _preferredTheme = "Cirra Core";
 
 	private string _favoritePlatform = "Unknown";
 

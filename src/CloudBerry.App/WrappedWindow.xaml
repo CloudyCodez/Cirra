@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:effects="clr-namespace:CloudBerry.App.Effects"
-        Title="Year Wrapped"
-        Icon="pack://application:,,,/Resources/Icons/cloudberry_app_icon_256.png"
+        Title="Cirra Year in Review"
+        Icon="pack://application:,,,/Resources/Icons/cirra_app_icon_256.png"
         Width="860" Height="640"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
@@ -49,9 +49,9 @@
         <Grid Grid.Row="0" Background="{DynamicResource SidebarBrush}" MouseLeftButtonDown="TitleBarDrag">
             <Border VerticalAlignment="Bottom" Height="1" Background="{DynamicResource BorderSubtleBrush}"/>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                <TextBlock Text="&#x2728;" FontSize="13" VerticalAlignment="Center"
-                           Foreground="{DynamicResource BerryBrush}" Margin="0,0,8,0"/>
-                <TextBlock Text="Year Wrapped"
+                <Border Width="3" Height="14" Margin="0,0,9,0"
+                        CornerRadius="1" Background="{DynamicResource BerryGradientBrush}"/>
+                <TextBlock Text="Cirra Year in Review"
                            Foreground="{DynamicResource TextPrimaryBrush}"
                            FontFamily="{DynamicResource ThemeDisplayFontFamily}"
                            FontSize="13" FontWeight="SemiBold"

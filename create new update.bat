@@ -6,7 +6,7 @@ pushd "%ROOT%" >nul
 
 echo.
 echo ==============================================================
-echo   CloudBerry ^| Update Builder
+echo   Cirra ^| Update Builder
 echo ==============================================================
 echo.
 
@@ -103,7 +103,7 @@ echo     Version : %CURRENT_VERSION%
 echo     Saved to: !FINAL_EXE!
 echo.
 echo   Also staged to:
-echo     %LOCALAPPDATA%\CloudBerry\updates\!PACKAGE_NAME!.exe
+echo     %LOCALAPPDATA%\Cirra\updates\!PACKAGE_NAME!.exe
 echo.
 
 :: ── Run prompt ───────────────────────────────────────────────────────────────

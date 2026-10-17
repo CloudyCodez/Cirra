@@ -40,7 +40,7 @@ public partial class App : Application
     }
 
     private readonly AppDiagnostics _diagnostics = new();
-    private const int MinimumSplashDurationMilliseconds = 1350;
+    private const int MinimumSplashDurationMilliseconds = 300;
     private static ProcessPriorityClass _currentPriorityClass = ProcessPriorityClass.Normal;
 
     protected override async void OnStartup(StartupEventArgs e)
@@ -72,12 +72,11 @@ public partial class App : Application
             DataContext = splashViewModel
         };
 
-        splashWindow.Show();
-
         var startupTimer = Stopwatch.StartNew();
 
         try
         {
+            await WindowPresentation.ShowFirstFrameAsync(splashWindow);
             var mainViewModel = new MainViewModel();
             var progress = new Progress<StartupProgressUpdate>(splashViewModel.Apply);
             await mainViewModel.InitializeAsync(progress);
@@ -91,16 +90,12 @@ public partial class App : Application
             var mainWindow = new MainWindow(mainViewModel);
             MainWindow = mainWindow;
             mainWindow.Opacity = 0;
-            mainWindow.Show();
-            await splashWindow.PlayCloseTransitionAsync();
+            await WindowPresentation.ShowFirstFrameAsync(mainWindow);
+            splashViewModel.ProgressValue = 100;
+            await Task.WhenAll(
+                splashWindow.PlayCloseTransitionAsync(),
+                mainWindow.PlayStartupRevealAsync());
             splashWindow.Close();
-            mainWindow.BeginAnimation(Window.OpacityProperty, new DoubleAnimation
-            {
-                From = 0,
-                To = 1,
-                Duration = TimeSpan.FromMilliseconds(180),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            });
         }
         catch (Exception exception)
         {
@@ -108,8 +103,8 @@ public partial class App : Application
             splashWindow.Close();
 
             MessageBox.Show(
-                $"CloudBerry couldn't finish starting up.\n\n{exception.Message}",
-                "CloudBerry",
+                $"Cirra couldn't finish starting up.\n\n{exception.Message}",
+                "Cirra",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
 

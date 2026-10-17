@@ -17,7 +17,7 @@ public sealed class OpenCriticMetadataProvider : IGameMetadataProvider
         _httpClient = httpClient;
         _httpClient.DefaultRequestHeaders.TryAddWithoutValidation(
             "User-Agent",
-            "CloudBerry/2.0 (universal game library; no commercial use)");
+            "Cirra/2.0 (universal game library; no commercial use)");
     }
 
     public MetadataProviderDescriptor Descriptor { get; } = new()

@@ -13,7 +13,7 @@ public sealed class RetroArchCoreDetector
         new("Game Boy Color", ["gambatte", "mgba", "sameboy"]),
         new("Game Boy Advance", ["mgba", "gpsp", "vba_next"]),
         new("Nintendo DS", ["melonds", "desmume"]),
-        new("Nintendo 3DS", ["citra"]),
+        new("Nintendo 3DS", ["citra", "citra_canary", "citra2018"]),
         new("GameCube", ["dolphin"]),
         new("Wii", ["dolphin"]),
         new("PlayStation", ["swanstation", "beetle_psx_hw", "beetle_psx", "pcsx_rearmed"]),
@@ -52,7 +52,7 @@ public sealed class RetroArchCoreDetector
 
         var summary = installedCores.Count == 0
             ? $"Found RetroArch at {retroArchPath}, but no installed cores were found in {coresDirectory}."
-            : $"Found RetroArch with {installedCores.Count} installed core(s). CloudBerry matched {suggestions.Count} platform mapping(s).";
+            : $"Found RetroArch with {installedCores.Count} installed core(s). Cirra matched {suggestions.Count} platform mapping(s).";
 
         return new RetroArchDetectionResult(retroArchPath, coresDirectory, installedCores, suggestions, summary);
     }
@@ -60,17 +60,67 @@ public sealed class RetroArchCoreDetector
     public static string BuildLaunchTemplate(string retroArchPath, string corePath) =>
         $"\"{retroArchPath}\" -L \"{corePath}\" {{rom}}";
 
+    public static IReadOnlySet<string> ReadSupportedExtensions(string corePath)
+    {
+        if (string.IsNullOrWhiteSpace(corePath))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var coresDirectory = Path.GetDirectoryName(corePath);
+        var retroArchDirectory = string.IsNullOrWhiteSpace(coresDirectory)
+            ? null
+            : Directory.GetParent(coresDirectory)?.FullName;
+        if (string.IsNullOrWhiteSpace(retroArchDirectory))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var coreName = Path.GetFileNameWithoutExtension(corePath);
+        var infoPath = Path.Combine(retroArchDirectory, "info", $"{coreName}.info");
+        if (!File.Exists(infoPath))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            var supportedLine = File.ReadLines(infoPath).FirstOrDefault(line =>
+                line.TrimStart().StartsWith("supported_extensions", StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(supportedLine))
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var separator = supportedLine.IndexOf('=');
+            if (separator < 0)
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            return supportedLine[(separator + 1)..]
+                .Trim()
+                .Trim('"')
+                .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(extension => $".{extension.TrimStart('.')}".ToLowerInvariant())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (IOException)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
     private static RetroArchPlatformSuggestion? BuildSuggestion(
         RetroArchPlatformRule rule,
         string retroArchPath,
         IReadOnlyList<string> installedCores)
     {
-        var corePath = installedCores.FirstOrDefault(core =>
-        {
-            var name = Path.GetFileNameWithoutExtension(core).Replace("_libretro", string.Empty, StringComparison.OrdinalIgnoreCase);
-            return rule.CoreNamePreferences.Any(preference =>
-                name.Contains(preference, StringComparison.OrdinalIgnoreCase));
-        });
+        var corePath = FindPreferredCore(rule, installedCores);
 
         return string.IsNullOrWhiteSpace(corePath)
             ? null
@@ -80,6 +130,37 @@ public sealed class RetroArchCoreDetector
                 corePath,
                 BuildLaunchTemplate(retroArchPath, corePath));
     }
+
+    private static string? FindPreferredCore(
+        RetroArchPlatformRule rule,
+        IReadOnlyList<string> installedCores)
+    {
+        foreach (var preference in rule.CoreNamePreferences)
+        {
+            var exactMatch = installedCores.FirstOrDefault(core =>
+                string.Equals(NormalizeCoreName(core), preference, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(exactMatch))
+            {
+                return exactMatch;
+            }
+        }
+
+        foreach (var preference in rule.CoreNamePreferences)
+        {
+            var partialMatch = installedCores.FirstOrDefault(core =>
+                NormalizeCoreName(core).Contains(preference, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(partialMatch))
+            {
+                return partialMatch;
+            }
+        }
+
+        return null;
+    }
+
+    private static string NormalizeCoreName(string corePath) =>
+        Path.GetFileNameWithoutExtension(corePath)
+            .Replace("_libretro", string.Empty, StringComparison.OrdinalIgnoreCase);
 
     private static string ResolveRetroArchPath(string? explicitRetroArchPath)
     {

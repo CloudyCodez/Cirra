@@ -72,7 +72,7 @@ public sealed class RawgMetadataProvider : IGameMetadataProvider
             return apiKey;
         }
 
-        throw new InvalidOperationException("Add a RAWG API key in CloudBerry before searching for online metadata.");
+        throw new InvalidOperationException("Add a RAWG API key in Cirra before searching for online metadata.");
     }
 
     private GameMetadataRecord MapSearchResult(RawgGameSummaryResponse source)

@@ -76,7 +76,7 @@ public sealed class CloudBerrySocialService
         {
             Timeout = TimeSpan.FromSeconds(12)
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudBerry/1.1");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Cirra/1.1");
         return client;
     }
 

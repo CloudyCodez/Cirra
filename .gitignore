@@ -26,6 +26,12 @@ recovered_*.cs
 .codex_video_refs/
 .wrangler/
 .agents/
+_retired/
+
+# Local release outputs and downloaded tooling
+artifacts/
+tools/obfuscation/.store/
+tools/obfuscation/*.exe
 
 # User-specific settings / local data
 *.local.json

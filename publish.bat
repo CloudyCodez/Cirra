@@ -11,7 +11,7 @@ if /I "%~1"=="--no-explorer" (
 
 echo.
 echo ============================================================
-echo  CloudBerry ^| Self-contained single-file publish
+echo  Cirra ^| Self-contained single-file publish
 echo ============================================================
 echo.
 
@@ -34,7 +34,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
-echo  Done!  CloudBerry.exe is in:
+echo  Done!  Cirra.exe is in:
 echo  %OUTPUT%
 echo.
 if "%OPEN_OUTPUT%"=="1" (

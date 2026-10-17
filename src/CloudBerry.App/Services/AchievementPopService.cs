@@ -49,7 +49,7 @@ public sealed class AchievementPopService
         string description,
         string iconUrl,
         int gamerScore,
-        string providerName = "CloudBerry")
+        string providerName = "Cirra")
     {
         Show(new AchievementUnlockEvent
         {

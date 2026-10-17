@@ -99,6 +99,7 @@ public sealed class GameScannerTests : IDisposable
     [InlineData("Switch", "Metroid Dread.xci", "Nintendo Switch")]
     [InlineData("Wii U", "The Wind Waker HD.wua", "Wii U")]
     [InlineData("Genesis", "Sonic The Hedgehog.md", "Sega Genesis")]
+    [InlineData("3DS", "Dragon Ball Fusions.cxi", "Nintendo 3DS")]
     public async Task ScanFolderAsync_RecognizesCommonEmulationPlatforms(string folder, string fileName, string platform)
     {
         var root = Path.Combine(_rootPath, "ROMs", folder);

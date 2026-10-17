@@ -2,12 +2,12 @@
 setlocal EnableExtensions
 
 :: ============================================================
-::  CloudBerry  |  v1-19 Installer Builder
-::  Builds CloudBerry.exe, compiles the Inno Setup installer,
+::  Cirra  |  v1-19 Installer Builder
+::  Builds Cirra.exe, compiles the Inno Setup installer,
 ::  and saves it as:
 ::    <root>\update1-19.exe            (project root copy)
 ::    <root>\publish\installer\update1-19.exe
-::    %LOCALAPPDATA%\CloudBerry\updates\update1-19.exe
+::    %LOCALAPPDATA%\Cirra\updates\update1-19.exe
 :: ============================================================
 
 for %%I in ("%~dp0.") do set ROOT=%%~fI
@@ -25,7 +25,7 @@ if not defined APP_VERSION set APP_VERSION=1.19.0
 
 echo.
 echo ============================================================
-echo  CloudBerry  ^|  Installer Build  ^|  %OUTPUT_NAME%
+echo  Cirra  ^|  Installer Build  ^|  %OUTPUT_NAME%
 echo ============================================================
 echo  Version   : %APP_VERSION%
 echo  Output    : %ROOT%\%OUTPUT_NAME%.exe
@@ -119,11 +119,11 @@ copy /Y "%INSTALLER_SRC%" "%ROOT%\%OUTPUT_NAME%.exe" >nul
 echo  Copied to: %ROOT%\%OUTPUT_NAME%.exe
 
 :: Local updates cache
-if not exist "%LOCALAPPDATA%\CloudBerry\updates" (
-    mkdir "%LOCALAPPDATA%\CloudBerry\updates" >nul 2>&1
+if not exist "%LOCALAPPDATA%\Cirra\updates" (
+    mkdir "%LOCALAPPDATA%\Cirra\updates" >nul 2>&1
 )
-copy /Y "%INSTALLER_SRC%" "%LOCALAPPDATA%\CloudBerry\updates\%OUTPUT_NAME%.exe" >nul
-echo  Cached at:  %LOCALAPPDATA%\CloudBerry\updates\%OUTPUT_NAME%.exe
+copy /Y "%INSTALLER_SRC%" "%LOCALAPPDATA%\Cirra\updates\%OUTPUT_NAME%.exe" >nul
+echo  Cached at:  %LOCALAPPDATA%\Cirra\updates\%OUTPUT_NAME%.exe
 
 echo.
 echo ============================================================
@@ -132,7 +132,7 @@ echo.
 echo  update1-19.exe
 echo    %ROOT%\%OUTPUT_NAME%.exe
 echo    %INSTALLER_DIR%\%OUTPUT_NAME%.exe
-echo    %LOCALAPPDATA%\CloudBerry\updates\%OUTPUT_NAME%.exe
+echo    %LOCALAPPDATA%\Cirra\updates\%OUTPUT_NAME%.exe
 echo ============================================================
 echo.
 

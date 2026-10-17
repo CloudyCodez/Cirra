@@ -22,7 +22,7 @@ internal static class ProceduralSoundPack
         var amp = subtle ? 0.16 : cinematic ? 0.27 : digital ? 0.19 : themeSync ? 0.23 : 0.21;
         var normalizedTheme = (theme ?? string.Empty).Trim().ToLowerInvariant();
 
-        if (themeSync || normalizedTheme is "nier automata" or "neon matrix" or "retro glitch" or "wuthering waves")
+        if (themeSync || normalizedTheme is "cirra core" or "archive ivory" or "signal rain" or "arcade static" or "tidal glass" or "midnight observatory" or "verdant glass" or "high contrast" or "impact noir")
         {
             return ResolveThemeSyncedCue(cue, normalizedTheme, variant, amp, cinematic);
         }
@@ -51,7 +51,24 @@ internal static class ProceduralSoundPack
     {
         return theme switch
         {
-            "neon matrix" => cue switch
+            "cirra core" => cue switch
+            {
+                "app.boot" => ([196.00, 293.66, 440.00, 659.25], cinematic ? 600 : 510, amplitude * 0.84),
+                "app.ready" => ([440.00, 659.25], 130, amplitude * 0.76),
+                "menu.open" => ([329.63, 493.88], 78, amplitude * 0.68),
+                "tab.switch" => ([392.00, 587.33], 48, amplitude * 0.6),
+                "ui.focus" => ([659.25], 34, amplitude * 0.48),
+                "ui.click" => ([493.88], 30, amplitude * 0.5),
+                "ui.confirm" => ([440.00, 659.25], 92, amplitude * 0.72),
+                "ui.success" => ([392.00, 587.33, 783.99], 148, amplitude * 0.78),
+                "metadata.apply" => ([523.25, 698.46], 112, amplitude * 0.72),
+                "achievement.unlock" => ([440.00, 659.25, 987.77], 220, amplitude * 0.86),
+                "game.launch.handoff" => ([246.94, 369.99, 554.37, 830.61], cinematic ? 300 : 235, amplitude * 0.82),
+                "ui.warning" => ([349.23, 293.66], 132, amplitude * 0.66),
+                "ui.error" => ([293.66, 220.00], 150, amplitude * 0.68),
+                _ => ([493.88], 34, amplitude * 0.52)
+            },
+            "signal rain" => cue switch
             {
                 "app.boot" => ([164.81, 246.94, 369.99], cinematic ? 560 : 490, amplitude * 0.94),
                 "ui.focus" => ([739.99], 42, amplitude * 0.72),
@@ -60,7 +77,7 @@ internal static class ProceduralSoundPack
                 "game.launch.handoff" => ([329.63, 493.88, 739.99], cinematic ? 290 : 235, amplitude),
                 _ => ResolveCue(cue, "Digital", string.Empty, variant)
             },
-            "retro glitch" => cue switch
+            "arcade static" => cue switch
             {
                 "app.boot" => ([196.00, 293.66, 440.00], cinematic ? 540 : 480, amplitude * 0.92),
                 "ui.focus" => ([622.25], 46, amplitude * 0.72),
@@ -69,7 +86,7 @@ internal static class ProceduralSoundPack
                 "game.launch.handoff" => ([311.13, 466.16, 698.46], cinematic ? 285 : 230, amplitude),
                 _ => ResolveCue(cue, "Balanced", string.Empty, variant)
             },
-            "wuthering waves" => cue switch
+            "tidal glass" => cue switch
             {
                 "app.boot" => ([233.08, 349.23, 523.25], cinematic ? 590 : 510, amplitude),
                 "ui.focus" => ([523.25], 52, amplitude * 0.7),
@@ -78,7 +95,7 @@ internal static class ProceduralSoundPack
                 "game.launch.handoff" => ([349.23, 523.25, 783.99], cinematic ? 300 : 245, amplitude),
                 _ => ResolveCue(cue, "Cinematic", string.Empty, variant)
             },
-            "nier automata" => cue switch
+            "archive ivory" => cue switch
             {
                 "app.boot" => ([146.83, 220.00, 329.63], cinematic ? 560 : 480, amplitude * 0.72),
                 "app.ready" => ([329.63, 440.00], 118, amplitude * 0.70),
@@ -94,6 +111,47 @@ internal static class ProceduralSoundPack
                 "ui.warning" => ([220.00, 196.00], 128, amplitude * 0.58),
                 "ui.error" => ([174.61, 146.83], 150, amplitude * 0.58),
                 _ => ([246.94], 36, amplitude * 0.48)
+            },
+            "midnight observatory" => cue switch
+            {
+                "app.boot" => ([110.00, 164.81, 246.94, 369.99], cinematic ? 680 : 560, amplitude * 0.72),
+                "ui.focus" => ([493.88], 46, amplitude * 0.46),
+                "metadata.apply" => ([392.00, 587.33], 142, amplitude * 0.66),
+                "achievement.unlock" => ([329.63, 493.88, 739.99], 250, amplitude * 0.76),
+                "game.launch.handoff" => ([164.81, 246.94, 369.99], cinematic ? 330 : 260, amplitude * 0.7),
+                _ => ResolveCue(cue, "Subtle", string.Empty, variant)
+            },
+            "verdant glass" => cue switch
+            {
+                "app.boot" => ([174.61, 261.63, 392.00, 587.33], cinematic ? 590 : 500, amplitude * 0.78),
+                "ui.focus" => ([587.33], 40, amplitude * 0.52),
+                "metadata.apply" => ([493.88, 739.99], 126, amplitude * 0.72),
+                "achievement.unlock" => ([392.00, 587.33, 880.00], 220, amplitude * 0.8),
+                "game.launch.handoff" => ([220.00, 329.63, 493.88], cinematic ? 300 : 238, amplitude * 0.74),
+                _ => ResolveCue(cue, "Balanced", string.Empty, variant)
+            },
+            "high contrast" => cue switch
+            {
+                "app.boot" => ([220.00, 440.00], cinematic ? 420 : 360, amplitude * 0.82),
+                "ui.focus" => ([880.00], 30, amplitude * 0.62),
+                "ui.click" => ([440.00], 26, amplitude * 0.62),
+                "ui.confirm" => ([440.00, 880.00], 76, amplitude * 0.82),
+                "ui.warning" => ([330.00, 220.00], 110, amplitude * 0.8),
+                "ui.error" => ([220.00, 110.00], 140, amplitude * 0.84),
+                _ => ResolveCue(cue, "Balanced", string.Empty, variant)
+            },
+            "impact noir" => cue switch
+            {
+                "app.boot" => ([82.41, 123.47, 185.00], cinematic ? 520 : 440, amplitude * 0.9),
+                "ui.focus" => ([369.99], 28, amplitude * 0.62),
+                "ui.click" => ([146.83, 293.66], 34, amplitude * 0.72),
+                "ui.confirm" => ([123.47, 246.94, 493.88], 86, amplitude * 0.88),
+                "metadata.apply" => ([185.00, 369.99, 554.37], 116, amplitude * 0.78),
+                "achievement.unlock" => ([123.47, 246.94, 493.88, 987.77], 190, amplitude),
+                "game.launch.handoff" => ([92.50, 185.00, 369.99], cinematic ? 270 : 210, amplitude * 0.94),
+                "ui.warning" => ([164.81, 138.59], 106, amplitude * 0.82),
+                "ui.error" => ([110.00, 92.50], 128, amplitude * 0.86),
+                _ => ResolveCue(cue, "Digital", string.Empty, variant)
             },
             _ => ResolveCue(cue, "Balanced", string.Empty, variant)
         };

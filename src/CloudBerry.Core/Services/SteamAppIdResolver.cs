@@ -12,7 +12,7 @@ public sealed class SteamAppIdResolver
         _httpClient = httpClient ?? new HttpClient();
         _httpClient.DefaultRequestHeaders.TryAddWithoutValidation(
             "User-Agent",
-            "CloudBerry/2.0 (achievement metadata resolver; no commercial use)");
+            "Cirra/2.0 (achievement metadata resolver; no commercial use)");
     }
 
     public async Task<string> ResolveByTitleAsync(

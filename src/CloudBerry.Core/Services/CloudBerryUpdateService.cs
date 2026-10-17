@@ -58,7 +58,7 @@ public sealed class CloudBerryUpdateService
 
         return availableVersion > currentVersion
             ? CloudBerryUpdateCheckResult.UpdateAvailable(normalized, availableVersion)
-            : CloudBerryUpdateCheckResult.NoUpdate($"CloudBerry {currentVersion} is current.");
+            : CloudBerryUpdateCheckResult.NoUpdate($"Cirra {currentVersion} is current.");
     }
 
     public async Task<string> DownloadInstallerAsync(CloudBerryUpdateManifest manifest, string destinationDirectory, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
@@ -146,7 +146,7 @@ public sealed class CloudBerryUpdateService
             Timeout = TimeSpan.FromSeconds(45)
         };
 
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("CloudBerry-Updater/1.2");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Cirra-Updater/1.2");
         return client;
     }
 
@@ -184,5 +184,5 @@ public sealed record CloudBerryUpdateCheckResult(
         new(false, null, null, statusMessage);
 
     public static CloudBerryUpdateCheckResult UpdateAvailable(CloudBerryUpdateManifest manifest, Version availableVersion) =>
-        new(true, manifest, availableVersion, $"CloudBerry {availableVersion} is ready to download.");
+        new(true, manifest, availableVersion, $"Cirra {availableVersion} is ready to download.");
 }

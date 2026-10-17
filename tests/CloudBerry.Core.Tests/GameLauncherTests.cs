@@ -11,6 +11,18 @@ public sealed class GameLauncherTests : IDisposable
         Directory.CreateDirectory(_root);
     }
 
+    [Theory]
+    [InlineData("game.3ds")]
+    [InlineData("game.3dsx")]
+    [InlineData("game.cci")]
+    [InlineData("game.cxi")]
+    [InlineData("game.axf")]
+    [InlineData("game.cia")]
+    public void IsRomFile_RecognizesNintendo3dsContent(string fileName)
+    {
+        Assert.True(GameLauncher.IsRomFile(fileName));
+    }
+
     [Fact]
     public void TryResolveLaunchTarget_KeepsStorefrontUrls()
     {

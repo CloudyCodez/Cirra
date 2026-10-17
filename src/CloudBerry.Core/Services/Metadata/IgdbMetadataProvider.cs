@@ -24,7 +24,7 @@ public sealed class IgdbMetadataProvider : IGameMetadataProvider
         Description = "Uses the official IGDB API when Twitch client credentials are configured.",
         RequiresApiKey = true,
         ApiKeyLabel = "Twitch Client ID + Secret",
-        ApiKeyHelpText = "IGDB requires a Twitch application client ID and secret. CloudBerry keeps those local."
+        ApiKeyHelpText = "IGDB requires a Twitch application client ID and secret. Cirra keeps those local."
     };
 
     public async Task<IReadOnlyList<GameMetadataRecord>> SearchAsync(
