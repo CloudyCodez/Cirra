@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<Obfuscator>
+  <Var name="InPath" value="__INPUT_DIRECTORY__" />
+  <Var name="OutPath" value="__OUTPUT_DIRECTORY__" />
+  <Var name="KeepPublicApi" value="true" />
+  <Var name="HidePrivateApi" value="true" />
+  <Var name="HideStrings" value="true" />
+  <Var name="OptimizeMethods" value="true" />
+  <Var name="SuppressIldasm" value="true" />
+  <Var name="RenameProperties" value="false" />
+  <Var name="RenameEvents" value="false" />
+  <Var name="SkipSpecialName" value="true" />
+  <Var name="SkipGenerated" value="true" />
+  <Module file="$(InPath)\CloudBerry.Core.dll" />
+  <Module file="$(InPath)\Cirra.dll">
+    <SkipType name="CloudBerry.App.App" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" skipStringHiding="true" />
+    <SkipType name="CloudBerry.App.*Window" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" skipStringHiding="true" />
+    <SkipNamespace name="CloudBerry.App.Controls*" />
+    <SkipNamespace name="CloudBerry.App.Converters*" />
+    <SkipNamespace name="CloudBerry.App.Effects*" />
+    <SkipNamespace name="CloudBerry.App.Resources*" />
+  </Module>
+</Obfuscator>
