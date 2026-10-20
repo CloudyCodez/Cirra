@@ -1695,7 +1695,7 @@ public partial class MainWindow : Window
         try
         {
             await ViewModel.CheckForAppUpdatesAsync(silent: true, allowAutoDownload: false);
-            if (!ViewModel.HasAvailableUpdate)
+            if (!ViewModel.CanPromptForStartupUpdate)
             {
                 return;
             }
@@ -1761,12 +1761,12 @@ public partial class MainWindow : Window
         try
         {
             await ViewModel.CreateLibraryBackupAsync();
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = packagePath,
-                UseShellExecute = true
-            });
-            ViewModel.StatusMessage = $"Launched local update package: {Path.GetFileName(packagePath)}";
+			if (!ViewModel.TryLaunchQueuedUpdateNow())
+			{
+				_sound.PlayWarning();
+				return;
+			}
+			Application.Current.Shutdown();
             _sound.PlayLaunchHandoff();
         }
         catch (Exception ex)

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace CloudBerry.Core.Services;
@@ -68,9 +69,29 @@ public sealed class CloudBerryUpdateService
             throw new InvalidOperationException("The update manifest does not include a downloadable package.");
         }
 
+        if (string.IsNullOrWhiteSpace(manifest.Sha256) || manifest.Sha256.Length != 64 ||
+            !manifest.Sha256.All(Uri.IsHexDigit))
+        {
+            throw new InvalidOperationException("The update manifest does not include a valid SHA-256 checksum.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(manifest.InstallerUrl) &&
+            !string.Equals(Path.GetExtension(new Uri(manifest.InstallerUrl).AbsolutePath), ".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Cirra updates must be Windows installer executables.");
+        }
+
         Directory.CreateDirectory(destinationDirectory);
         var targetPath = Path.Combine(destinationDirectory, BuildInstallerFileName(manifest));
         var tempPath = targetPath + ".download";
+
+        if (File.Exists(targetPath) && await ValidatePackageAsync(targetPath, manifest, cancellationToken))
+        {
+            progress?.Report(1.0);
+            return targetPath;
+        }
+
+        TryDelete(targetPath);
         if (File.Exists(tempPath))
         {
             File.Delete(tempPath);
@@ -112,9 +133,10 @@ public sealed class CloudBerryUpdateService
             await output.FlushAsync(cancellationToken);
         }
 
-        if (File.Exists(targetPath))
+        if (!await ValidatePackageAsync(tempPath, manifest, cancellationToken))
         {
-            File.Delete(targetPath);
+            TryDelete(tempPath);
+            throw new InvalidDataException("The downloaded update did not match its release manifest.");
         }
 
         File.Move(tempPath, targetPath);
@@ -124,13 +146,37 @@ public sealed class CloudBerryUpdateService
     public static string BuildInstallerFileName(CloudBerryUpdateManifest manifest)
     {
         var version = string.IsNullOrWhiteSpace(manifest.Version) ? "latest" : manifest.Version.Trim();
-        var extension = Path.GetExtension(manifest.InstallerUrl);
-        if (string.IsNullOrWhiteSpace(extension))
+        var safeVersion = string.Concat(version.Select(character =>
+            Path.GetInvalidFileNameChars().Contains(character) ? '-' : character));
+        return $"cirra-update-{safeVersion}.exe";
+    }
+
+    private static async Task<bool> ValidatePackageAsync(string path, CloudBerryUpdateManifest manifest, CancellationToken cancellationToken)
+    {
+        var file = new FileInfo(path);
+        if (!file.Exists || (manifest.PackageSizeBytes.HasValue && file.Length != manifest.PackageSizeBytes.Value))
         {
-            extension = ".exe";
+            return false;
         }
 
-        return $"cloudberry-update-{version}{extension}";
+        await using var stream = File.OpenRead(path);
+        var checksum = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken));
+        return checksum.Equals(manifest.Sha256, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // A locked old package is ignored; a new target uses a versioned name.
+        }
     }
 
     private static HttpClient CreateClient(bool useProxy)
@@ -172,7 +218,9 @@ public sealed record CloudBerryUpdateManifest(
     string InstallerUrl,
     string Notes,
     DateTime PublishedAtUtc,
-    IReadOnlyList<string>? ChunkUrls = null);
+    IReadOnlyList<string>? ChunkUrls = null,
+    string Sha256 = "",
+    long? PackageSizeBytes = null);
 
 public sealed record CloudBerryUpdateCheckResult(
     bool IsUpdateAvailable,

@@ -295,7 +295,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private string _audioProfile = "Subtle";
 
-	private string _updateFeedEndpoint = "https://cloudberry-updates.pages.dev/latest.json";
+	private string _updateFeedEndpoint = CloudBerrySettings.BuiltInUpdateFeedEndpoint;
 
 	private bool _autoCheckForUpdates = true;
 
@@ -321,6 +321,8 @@ public sealed class MainViewModel : ViewModelBase
 	private string _downloadedUpdateVersion = string.Empty;
 
 	private bool _pendingSilentUpdateOnExit;
+
+	private string _blockedAutomaticUpdateVersion = string.Empty;
 
 	private CloudBerryUpdateManifest? _availableUpdateManifest;
 
@@ -4110,6 +4112,7 @@ public sealed class MainViewModel : ViewModelBase
 			if (SetProperty(ref _availableUpdateVersion, value, "AvailableUpdateVersion"))
 			{
 				OnPropertyChanged("HasAvailableUpdate");
+				OnPropertyChanged("CanPromptForStartupUpdate");
 				OnPropertyChanged("CanDownloadLatestUpdate");
 				OnPropertyChanged("UpdateWorkflowSummary");
 			}
@@ -4135,6 +4138,9 @@ public sealed class MainViewModel : ViewModelBase
 	}
 
 	public bool HasAvailableUpdate => !string.IsNullOrWhiteSpace(AvailableUpdateVersion);
+
+	public bool CanPromptForStartupUpdate => HasAvailableUpdate &&
+		!string.Equals(AvailableUpdateVersion, _blockedAutomaticUpdateVersion, StringComparison.OrdinalIgnoreCase);
 
 	public bool HasDownloadedUpdateReady
 	{
@@ -5014,7 +5020,8 @@ public sealed class MainViewModel : ViewModelBase
 			}
 			_selectedDeviceProfile = currentDevice;
 			DeviceProfileStatusMessage = $"{currentDevice.DisplayName} is active on this PC.";
-			_updateFeedEndpoint = (string.IsNullOrWhiteSpace(_settings.Updates.FeedEndpoint) ? "https://cloudberry-updates.pages.dev/latest.json" : _settings.Updates.FeedEndpoint);
+			_updateFeedEndpoint = NormalizeUpdateFeedEndpoint(_settings.Updates.FeedEndpoint);
+			_settings.Updates.FeedEndpoint = _updateFeedEndpoint;
 			_autoCheckForUpdates = _settings.Updates.AutoCheckEnabled;
 			_autoDownloadUpdates = _settings.Updates.AutoDownloadEnabled;
 			_enableEmbeddedPlayForRetroArch = _settings.Emulators.EnableEmbeddedPlayForRetroArch;
@@ -5100,6 +5107,7 @@ public sealed class MainViewModel : ViewModelBase
 				SelectedPrimaryPage = 1;
 			}
 			StatusMessage = (HasGames ? $"Loaded {TotalGames} games from your local Cirra library." : "Cirra is ready. Scan a folder to start building the library.");
+			ReconcileUpdateInstallState();
 			ReportStartup(progress, 1.0, "Cirra is ready", LibrarySummary);
 			if (AutoCheckForUpdates)
 			{
@@ -6003,9 +6011,22 @@ public sealed class MainViewModel : ViewModelBase
 			AvailableUpdateVersion = val.AvailableVersion?.ToString() ?? string.Empty;
 			if (val.IsUpdateAvailable && val.Manifest is not null)
 			{
+				if (!string.Equals(_blockedAutomaticUpdateVersion, val.Manifest.Version, StringComparison.OrdinalIgnoreCase) &&
+					Version.TryParse(_blockedAutomaticUpdateVersion, out Version? blockedVersion) &&
+					val.AvailableVersion > blockedVersion)
+				{
+					_blockedAutomaticUpdateVersion = string.Empty;
+					new CirraUpdateInstallStateStore(LocalUpdatePackageDirectory).Clear();
+				}
 				UpdateStatusMessage = val.StatusMessage;
 				StatusMessage = val.StatusMessage;
-				if (AutoDownloadUpdates && allowAutoDownload)
+				OnPropertyChanged("CanPromptForStartupUpdate");
+				if (string.Equals(_blockedAutomaticUpdateVersion, val.Manifest.Version, StringComparison.OrdinalIgnoreCase))
+				{
+					UpdateStatusMessage = $"Cirra {val.Manifest.Version} needs a manual retry after the previous install did not finish.";
+					StatusMessage = UpdateStatusMessage;
+				}
+				else if (AutoDownloadUpdates && allowAutoDownload)
 				{
 					await DownloadLatestUpdateAsync(silent: true);
 				}
@@ -6053,6 +6074,12 @@ public sealed class MainViewModel : ViewModelBase
 		UpdateDownloadProgress = 0.0;
 		try
 		{
+			if (!silent)
+			{
+				new CirraUpdateInstallStateStore(LocalUpdatePackageDirectory).Clear();
+				_blockedAutomaticUpdateVersion = string.Empty;
+				OnPropertyChanged("CanPromptForStartupUpdate");
+			}
 			Progress<double> progress = new Progress<double>(delegate(double value)
 			{
 				UpdateDownloadProgress = value * 100.0;
@@ -6126,7 +6153,26 @@ public sealed class MainViewModel : ViewModelBase
 		}
 		try
 		{
-			LaunchSilentUpdateScript(localUpdatePackagePath);
+			string targetVersion = InferDownloadedUpdateVersion(localUpdatePackagePath);
+			Version currentVersion = ParseAppVersion();
+			if (!Version.TryParse(targetVersion, out Version? stagedVersion) || stagedVersion <= currentVersion)
+			{
+				UpdateStatusMessage = "The staged package is not newer than this Cirra installation.";
+				StatusMessage = UpdateStatusMessage;
+				return false;
+			}
+
+			var stateStore = new CirraUpdateInstallStateStore(LocalUpdatePackageDirectory);
+			stateStore.WritePending(targetVersion, localUpdatePackagePath);
+			try
+			{
+				LaunchSilentUpdateScript(localUpdatePackagePath);
+			}
+			catch
+			{
+				stateStore.Clear();
+				throw;
+			}
 			_pendingSilentUpdateOnExit = false;
 			UpdateStatusMessage = "Cirra is closing so the update can install.";
 			StatusMessage = UpdateStatusMessage;
@@ -8932,7 +8978,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			_deviceProfileService.Capture(_settings, activeDevice);
 		}
-		_settings.Updates.FeedEndpoint = (string.IsNullOrWhiteSpace(UpdateFeedEndpoint) ? "https://cloudberry-updates.pages.dev/latest.json" : UpdateFeedEndpoint.Trim());
+		_settings.Updates.FeedEndpoint = NormalizeUpdateFeedEndpoint(UpdateFeedEndpoint);
 		_settings.Updates.AutoCheckEnabled = AutoCheckForUpdates;
 		_settings.Updates.AutoDownloadEnabled = AutoDownloadUpdates;
 		_settings.Updates.InstallOnExit = InstallUpdatesOnExit;
@@ -12760,35 +12806,28 @@ public sealed class MainViewModel : ViewModelBase
 	{
 		if (!string.IsNullOrWhiteSpace(_downloadedUpdatePackagePath) && File.Exists(_downloadedUpdatePackagePath))
 		{
-			return _downloadedUpdatePackagePath;
-		}
-		IEnumerable<string> enumerable = new string[3]
-		{
-			LocalUpdatePackageDirectory,
-			InstallLocation,
-			Path.Combine(InstallLocation, "updates")
-		}.Where(Directory.Exists).Distinct<string>(StringComparer.OrdinalIgnoreCase);
-		string[] array = new string[3] { "setupCB.exe", "update1-2.exe", "update1-1.exe" };
-		foreach (string item in enumerable)
-		{
-			string[] array2 = array;
-			foreach (string path in array2)
+			string currentCandidateVersion = InferDownloadedUpdateVersion(_downloadedUpdatePackagePath);
+			if (Version.TryParse(currentCandidateVersion, out Version? currentCandidate) && currentCandidate > ParseAppVersion())
 			{
-				string text = Path.Combine(item, path);
-				if (File.Exists(text))
-				{
-					return text;
-				}
+				return _downloadedUpdatePackagePath;
 			}
 		}
-		return enumerable.SelectMany((string directory) => SafeEnumerateUpdatePackages(directory)).OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault() ?? string.Empty;
+		IEnumerable<string> enumerable = new string[1]
+		{
+			LocalUpdatePackageDirectory
+		}.Where(Directory.Exists).Distinct<string>(StringComparer.OrdinalIgnoreCase);
+		Version currentVersion = ParseAppVersion();
+		return enumerable.SelectMany((string directory) => SafeEnumerateUpdatePackages(directory))
+			.Where(path => Version.TryParse(InferDownloadedUpdateVersion(path), out Version? packageVersion) && packageVersion > currentVersion)
+			.OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault() ?? string.Empty;
 	}
 
 	private static IEnumerable<string> SafeEnumerateUpdatePackages(string directory)
 	{
 		try
 		{
-			return Directory.EnumerateFiles(directory, "cloudberry-update-*.exe", SearchOption.TopDirectoryOnly).Concat(Directory.EnumerateFiles(directory, "update*.exe", SearchOption.TopDirectoryOnly)).Concat(Directory.EnumerateFiles(directory, "setupCB.exe", SearchOption.TopDirectoryOnly));
+			return Directory.EnumerateFiles(directory, "cirra-update-*.exe", SearchOption.TopDirectoryOnly)
+				.Concat(Directory.EnumerateFiles(directory, "cloudberry-update-*.exe", SearchOption.TopDirectoryOnly));
 		}
 		catch
 		{
@@ -12828,6 +12867,61 @@ public sealed class MainViewModel : ViewModelBase
 			UseShellExecute = true,
 			WindowStyle = ProcessWindowStyle.Hidden
 		});
+	}
+
+	private void ReconcileUpdateInstallState()
+	{
+		CleanupStaleUpdatePackages();
+		var stateStore = new CirraUpdateInstallStateStore(LocalUpdatePackageDirectory);
+		CirraUpdateInstallAttempt? attempt = stateStore.Read();
+		CirraUpdateInstallDisposition disposition = stateStore.Reconcile(ParseAppVersion());
+		if (disposition == CirraUpdateInstallDisposition.BlockedRetry && attempt is not null)
+		{
+			_blockedAutomaticUpdateVersion = attempt.Version;
+			UpdateStatusMessage = $"Cirra {attempt.Version} did not finish installing. Automatic retry is paused; use Install now when you're ready.";
+		}
+		else if (disposition == CirraUpdateInstallDisposition.Completed)
+		{
+			UpdateStatusMessage = $"Cirra {AppVersion} installed successfully.";
+		}
+		OnPropertyChanged("CanPromptForStartupUpdate");
+	}
+
+	private void CleanupStaleUpdatePackages()
+	{
+		if (!Directory.Exists(LocalUpdatePackageDirectory))
+		{
+			return;
+		}
+
+		Version currentVersion = ParseAppVersion();
+		foreach (string path in SafeEnumerateUpdatePackages(LocalUpdatePackageDirectory))
+		{
+			if (!Version.TryParse(InferDownloadedUpdateVersion(path), out Version? packageVersion) || packageVersion > currentVersion)
+			{
+				continue;
+			}
+			try
+			{
+				File.Delete(path);
+			}
+			catch
+			{
+				// A running or externally locked installer can be cleaned up next launch.
+			}
+		}
+	}
+
+	private Version ParseAppVersion() => Version.TryParse(AppVersion, out Version? version) ? version : new Version(0, 0, 0);
+
+	private static string NormalizeUpdateFeedEndpoint(string? endpoint)
+	{
+		if (string.IsNullOrWhiteSpace(endpoint) ||
+			string.Equals(endpoint.Trim(), CloudBerrySettings.LegacyUpdateFeedEndpoint, StringComparison.OrdinalIgnoreCase))
+		{
+			return CloudBerrySettings.BuiltInUpdateFeedEndpoint;
+		}
+		return endpoint.Trim();
 	}
 }
 

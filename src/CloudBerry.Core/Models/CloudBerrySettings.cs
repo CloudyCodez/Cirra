@@ -4,7 +4,8 @@ public sealed class CloudBerrySettings
 {
     public const string BuiltInIgdbProxyEndpoint = "https://cloudberry-igdb-proxy.cloudberryxo.workers.dev";
     public const string BuiltInSocialEndpoint = "https://cloudberry-social.cloudberryxo.workers.dev";
-    public const string BuiltInUpdateFeedEndpoint = "https://cloudberry-updates.pages.dev/latest.json";
+    public const string BuiltInUpdateFeedEndpoint = "https://raw.githubusercontent.com/CloudyCodez/Cirra/master/update-feed/latest.json";
+    public const string LegacyUpdateFeedEndpoint = "https://cloudberry-updates.pages.dev/latest.json";
 
     /// <summary>CloudBerry uses the unified IGDB-first metadata pipeline by default.</summary>
     public string SelectedMetadataProviderId { get; set; } = "aggregated";

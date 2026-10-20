@@ -1,5 +1,5 @@
 param(
-    [string]$PackageName = "update1-2",
+    [string]$PackageName = "Cirra-Setup-v0.4.1",
     [string]$ProjectName = "cloudberry-updates"
 )
 
@@ -57,6 +57,8 @@ $manifest = [ordered]@{
     chunkUrls = $chunkUrls
     notes = "Cirra $version is ready."
     publishedAtUtc = [DateTime]::UtcNow.ToString("o")
+    sha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    packageSizeBytes = (Get-Item -LiteralPath $installerPath).Length
 }
 
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $feedRoot "latest.json") -Encoding UTF8
