@@ -1,0 +1,8 @@
+{
+  "version": "0.4.1",
+  "installerUrl": "https://github.com/CloudyCodez/Cirra/releases/download/v0.4.1/Cirra-Setup-v0.4.1.exe",
+  "notes": "The rebuilt Cirra platform arrives with stronger duplicate prevention, improved metadata and launching, Horizon refinements, guide support, and verified no-loop updates.",
+  "publishedAtUtc": "2026-10-20T02:42:02.6245350Z",
+  "sha256": "fa0e70a3531bc6021f32695fb044b06b7c09c2f877496cc61f7c3baf0a7819bb",
+  "packageSizeBytes": 58084288
+}
