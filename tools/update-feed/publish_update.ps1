@@ -1,5 +1,5 @@
 param(
-    [string]$PackageName = "Cirra-Setup-v0.4.1",
+    [string]$PackageName = "",
     [string]$ProjectName = "cloudberry-updates"
 )
 
@@ -7,19 +7,21 @@ $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $projectPath = Join-Path $root "src\CloudBerry.App\CloudBerry.App.csproj"
-$installerPath = Join-Path $root ("publish\installer\" + $PackageName + ".exe")
 $feedRoot = Join-Path $root "publish\update-feed"
 $downloadsRoot = Join-Path $feedRoot "downloads"
 $chunkSizeBytes = 20MB
-
-if (-not (Test-Path $installerPath)) {
-    throw "Installer not found at $installerPath"
-}
 
 [xml]$project = Get-Content $projectPath
 $version = @($project.Project.PropertyGroup.Version)[0]
 if ([string]::IsNullOrWhiteSpace($version)) {
     $version = "1.0.0"
+}
+if ([string]::IsNullOrWhiteSpace($PackageName)) {
+    $PackageName = "Cirra-Setup-v$version"
+}
+$installerPath = Join-Path $root ("publish\installer\" + $PackageName + ".exe")
+if (-not (Test-Path $installerPath)) {
+    throw "Installer not found at $installerPath"
 }
 
 New-Item -ItemType Directory -Force -Path $downloadsRoot | Out-Null
@@ -69,13 +71,22 @@ Write-Host "Version: $version"
 Write-Host "Package: $installerPath"
 Write-Host ""
 
-$projectList = cmd /c "npx --yes wrangler pages project list" 2>&1 | Out-String
+$projectList = & npx --yes wrangler pages project list 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0) {
+    throw "Wrangler could not list Cloudflare Pages projects. Set CLOUDFLARE_API_TOKEN and try again.`n$projectList"
+}
 if ($projectList -notmatch [regex]::Escape($ProjectName)) {
     Write-Host "Creating Pages project $ProjectName..." -ForegroundColor Yellow
-    cmd /c "npx --yes wrangler pages project create $ProjectName --production-branch main" | Out-Host
+    & npx --yes wrangler pages project create $ProjectName --production-branch main
+    if ($LASTEXITCODE -ne 0) {
+        throw "Wrangler could not create the Cloudflare Pages project."
+    }
 }
 
-cmd /c "npx --yes wrangler pages deploy `"$feedRoot`" --project-name $ProjectName" | Out-Host
+& npx --yes wrangler pages deploy $feedRoot --project-name $ProjectName
+if ($LASTEXITCODE -ne 0) {
+    throw "Wrangler could not deploy the legacy update feed."
+}
 
 Write-Host ""
 Write-Host "Done. Update feed URL:" -ForegroundColor Green
