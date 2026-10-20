@@ -32,6 +32,9 @@ public sealed class GameLaunchSession : IDisposable
 
     public int? ProcessId => _process?.Id;
 
+    public static GameLaunchSession CreateUntracked(DateTime? startedAtLocal = null) =>
+        new(null, startedAtLocal ?? DateTime.Now);
+
     /// <summary>
     /// Polls for this session's main window handle, refreshing the underlying <see cref="Process"/>
     /// snapshot each attempt since a just-started process (especially an SDL/Qt-based emulator that

@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/CloudBerry.App/CloudBerry.App.csproj" />
     <Project Path="src/CloudBerry.Core/CloudBerry.Core.csproj" />
+    <Project Path="src/CloudBerry.Data/CloudBerry.Data.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CloudBerry.Core.Tests/CloudBerry.Core.Tests.csproj" />

@@ -25,6 +25,7 @@ using CloudBerry.Core.Models;
 using CloudBerry.Core.Services;
 using CloudBerry.Core.Services.Achievements;
 using CloudBerry.Core.Services.Metadata;
+using CloudBerry.Data;
 
 namespace CloudBerry.App.ViewModels;
 
@@ -93,7 +94,29 @@ public sealed class MainViewModel : ViewModelBase
 
 	private readonly CloudBerryUpdateService _updateService;
 
+	private readonly LibraryIndexMigration _libraryIndexMigration;
+
+	private readonly IndexedLibraryProjectionService _indexedLibraryProjection;
+
+	private readonly LibraryArtifactReconciliationService _artifactReconciliation;
+
+	private readonly object _libraryIndexSyncGate = new();
+
+	private LibrarySnapshot? _pendingLibraryIndexSnapshot;
+
+	private Task? _libraryIndexSyncTask;
+
+	private volatile bool _isLibraryIndexReady;
+
+	private CancellationTokenSource? _indexedSearchCancellation;
+
+	private IReadOnlySet<Guid>? _indexedSearchMatches;
+
+	private string _indexedSearchQuery = string.Empty;
+
 	private readonly LaunchPreflightService _launchPreflightService = new LaunchPreflightService();
+
+	private readonly LaunchOrchestrator _launchOrchestrator = new LaunchOrchestrator();
 
 	private readonly ActivityCenterService _activityCenter = new ActivityCenterService();
 
@@ -990,6 +1013,7 @@ public sealed class MainViewModel : ViewModelBase
 			if (SetProperty(ref _searchText, value, "SearchText"))
 			{
 				RefreshLibraryView();
+				QueueIndexedSearch(value);
 			}
 		}
 	}
@@ -3535,7 +3559,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	public int ReadyToImportCount => ImportCandidates.Count((ImportCandidateViewModel candidate) => candidate.IsSelected && !candidate.AlreadyExists);
 
-	public int StrongMatchCount => ImportCandidates.Count((ImportCandidateViewModel candidate) => candidate.Confidence >= 0.55 && !candidate.AlreadyExists);
+	public int StrongMatchCount => ImportCandidates.Count((ImportCandidateViewModel candidate) => candidate.Confidence >= 0.55 && !candidate.AlreadyExists && !candidate.NeedsReconciliationReview);
 
 	public string LibrarySummary
 	{
@@ -4895,6 +4919,10 @@ public sealed class MainViewModel : ViewModelBase
 		_diagnostics = diagnostics;
 		_socialService = socialService;
 		_updateService = updateService;
+		var libraryIndex = new CirraLibraryDatabase(CirraLibraryDatabase.GetDefaultIndexPath(libraryStore.FilePath));
+		_libraryIndexMigration = new LibraryIndexMigration(libraryIndex);
+		_indexedLibraryProjection = new IndexedLibraryProjectionService(libraryIndex);
+		_artifactReconciliation = new LibraryArtifactReconciliationService(libraryIndex);
 		_activityCenter.Changed += OnActivityOperationChanged;
 		LibraryView = CollectionViewSource.GetDefaultView(Games);
 		LibraryView.Filter = FilterGame;
@@ -4928,6 +4956,8 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			ReportStartup(progress, 0.12, "Opening your local library", "Loading from " + StorageLocation);
 			LibrarySnapshot snapshot = await _libraryStore.LoadAsync(default(CancellationToken));
+			ReportStartup(progress, 0.22, "Checking your library index", "Reconciling saved titles and launch artifacts");
+			ScheduleLibraryIndexRefresh(snapshot);
 			_settings = (CloudBerrySettings)(((object)snapshot.Settings) ?? ((object)new CloudBerrySettings()));
 			_settings.Appearance ??= new AppearanceSettings();
 			_settings.Audio ??= new AudioSettings();
@@ -5094,15 +5124,24 @@ public sealed class MainViewModel : ViewModelBase
 		try
 		{
 			HashSet<string> existingLaunchKeys = BuildExistingLaunchKeySet();
-			ScanReport val = await _gameScanner.ScanFolderAsync(folderPath, default(CancellationToken));
+			HashSet<string> existingIdentityKeys = BuildExistingImportIdentitySet();
+			ScanReport val = await ScanWithActivityAsync(folderPath, "Scan game library");
+			IReadOnlyDictionary<string, ArtifactReconciliationResult> artifactMatches =
+				await ReconcileArtifactsAsync(val.Candidates);
 			ClearImportCandidates();
 			foreach (ImportCandidate item in val.Candidates.DistinctBy<ImportCandidate, string>((ImportCandidate item) => item.InstallPath, StringComparer.OrdinalIgnoreCase))
 			{
-				bool alreadyExists = IsKnownLaunchTarget(item.InstallPath, existingLaunchKeys);
+				artifactMatches.TryGetValue(item.InstallPath, out ArtifactReconciliationResult? artifactMatch);
+				bool needsReview = artifactMatch?.Kind == ArtifactReconciliationKind.ProbableMovedArtifact;
+				bool alreadyExists = IsKnownLaunchTarget(item.InstallPath, existingLaunchKeys) ||
+					IsKnownImportIdentity(item.DeduplicationKey, existingIdentityKeys) ||
+					artifactMatch?.AlreadyIndexed == true;
 				AddCandidateInternal(new ImportCandidateViewModel(item)
 				{
 					AlreadyExists = alreadyExists,
-					IsSelected = ShouldAutoSelectDesktopCandidate(item.Confidence, item.InstallPath, string.Join(" | ", item.Signals), alreadyExists)
+					NeedsReconciliationReview = needsReview,
+					ReconciliationReason = ResolveReconciliationReason(alreadyExists, artifactMatch),
+					IsSelected = ShouldAutoSelectDesktopCandidate(item.Confidence, item.InstallPath, string.Join(" | ", item.Signals), alreadyExists || needsReview)
 				});
 			}
 			SelectedCandidate = ImportCandidates.FirstOrDefault();
@@ -5113,8 +5152,13 @@ public sealed class MainViewModel : ViewModelBase
 				_diagnostics.WriteWarning("scan", warning);
 			}
 			string text = ((val.ErrorsSkipped > 0) ? $" Cirra safely skipped {val.ErrorsSkipped} unreadable files or folders." : string.Empty);
-			StatusMessage = ((ImportCandidates.Count == 0) ? ("No likely games found in that folder." + text).Trim() : $"Found {ImportCandidates.Count} candidate {Pluralize(ImportCandidates.Count, "game", "games")}. Auto-selected {StrongMatchCount} strong {Pluralize(StrongMatchCount, "match", "matches")} for review.{text}".Trim());
+			string intakeSummary = string.IsNullOrWhiteSpace(val.IntakeSummary) ? string.Empty : " " + val.IntakeSummary;
+			StatusMessage = ((ImportCandidates.Count == 0) ? ("No likely games found in that folder." + text + intakeSummary).Trim() : $"Found {ImportCandidates.Count} candidate {Pluralize(ImportCandidates.Count, "game", "games")}. Auto-selected {StrongMatchCount} strong {Pluralize(StrongMatchCount, "match", "matches")} for review.{text}{intakeSummary}".Trim());
 			RefreshDerivedState();
+		}
+		catch (OperationCanceledException)
+		{
+			StatusMessage = "Library scan cancelled. Nothing was imported.";
 		}
 		catch (Exception ex)
 		{
@@ -5133,23 +5177,37 @@ public sealed class MainViewModel : ViewModelBase
 		try
 		{
 			HashSet<string> existingLaunchKeys = BuildExistingLaunchKeySet();
-			ScanReport val = await _gameScanner.ScanFolderAsync(folderPath, default(CancellationToken));
+			HashSet<string> existingIdentityKeys = BuildExistingImportIdentitySet();
+			ScanReport val = await ScanWithActivityAsync(folderPath, "Scan ROM library");
 			List<ImportCandidate> list = val.Candidates.Where((ImportCandidate c) => GameLauncher.IsRomFile(c.InstallPath)).DistinctBy<ImportCandidate, string>((ImportCandidate c) => c.InstallPath, StringComparer.OrdinalIgnoreCase).ToList();
+			IReadOnlyDictionary<string, ArtifactReconciliationResult> artifactMatches =
+				await ReconcileArtifactsAsync(list);
 			ClearImportCandidates();
 			foreach (ImportCandidate item in list)
 			{
-				bool flag = IsKnownLaunchTarget(item.InstallPath, existingLaunchKeys);
+				artifactMatches.TryGetValue(item.InstallPath, out ArtifactReconciliationResult? artifactMatch);
+				bool needsReview = artifactMatch?.Kind == ArtifactReconciliationKind.ProbableMovedArtifact;
+				bool flag = IsKnownLaunchTarget(item.InstallPath, existingLaunchKeys) ||
+					IsKnownImportIdentity(item.DeduplicationKey, existingIdentityKeys) ||
+					artifactMatch?.AlreadyIndexed == true;
 				AddCandidateInternal(new ImportCandidateViewModel(item)
 				{
 					AlreadyExists = flag,
-					IsSelected = !flag
+					NeedsReconciliationReview = needsReview,
+					ReconciliationReason = ResolveReconciliationReason(flag, artifactMatch),
+					IsSelected = !flag && !needsReview
 				});
 			}
 			SelectedCandidate = ImportCandidates.FirstOrDefault();
 			SelectedWorkspaceTab = (ImportCandidates.Any((ImportCandidateViewModel c) => !c.AlreadyExists) ? 1 : 0);
 			SelectedPrimaryPage = 1;
-			StatusMessage = ((ImportCandidates.Count == 0) ? "No ROM files found in that folder." : ($"Found {ImportCandidates.Count} {Pluralize(ImportCandidates.Count, "ROM", "ROMs")}. Review and import." + ((val.ErrorsSkipped > 0) ? $" {val.ErrorsSkipped} unreadable {Pluralize(val.ErrorsSkipped, "entry was", "entries were")} skipped." : string.Empty)));
+			string intakeSummary = string.IsNullOrWhiteSpace(val.IntakeSummary) ? string.Empty : " " + val.IntakeSummary;
+			StatusMessage = ((ImportCandidates.Count == 0) ? "No ROM files found in that folder." : $"Found {ImportCandidates.Count} {Pluralize(ImportCandidates.Count, "ROM", "ROMs")}. Review and import.") + intakeSummary;
 			RefreshDerivedState();
+		}
+		catch (OperationCanceledException)
+		{
+			StatusMessage = "ROM scan cancelled. Nothing was imported.";
 		}
 		catch (Exception ex)
 		{
@@ -5164,14 +5222,24 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task AddManualGamesAsync(IEnumerable<string> filePaths)
 	{
+		List<GameEntryViewModel> addedGames = [];
 		try
 		{
-			List<GameEntryViewModel> addedGames = new List<GameEntryViewModel>();
+			List<string> requestedPaths = (filePaths ?? Array.Empty<string>())
+				.Where(path => !string.IsNullOrWhiteSpace(path))
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.ToList();
+			IReadOnlyList<ArtifactReconciliationResult> artifactMatches =
+				await _artifactReconciliation.ReconcileAsync(requestedPaths);
+			HashSet<string> indexedPaths = artifactMatches
+				.Where(match => match.AlreadyIndexed)
+				.Select(match => match.InputPath)
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
 			HashSet<string> hashSet = BuildExistingLaunchKeySet();
-			foreach (string filePath in filePaths)
+			foreach (string filePath in requestedPaths)
 			{
 				string text = NormalizeLaunchTargetKey(filePath);
-				if (!string.IsNullOrWhiteSpace(text) && !hashSet.Contains(text))
+				if (!indexedPaths.Contains(filePath) && !string.IsNullOrWhiteSpace(text) && !hashSet.Contains(text))
 				{
 					GameEntryViewModel gameEntryViewModel = new ImportCandidateViewModel(_gameScanner.CreateManualCandidate(filePath)).ToGameEntry();
 					gameEntryViewModel.SourceKind = "Manual Add";
@@ -5189,29 +5257,67 @@ public sealed class MainViewModel : ViewModelBase
 			}
 			SelectedGame = addedGames.First();
 			SelectedWorkspaceTab = 0;
-			AppendRecentActivity("import.manual", addedGames.First(), $"Added {addedGames.Count} manual {Pluralize(addedGames.Count, "game", "games")} to the library.");
 			await PersistWithHistoryAsync(new LibraryHistoryContext(
 				"import.manual",
 				$"Added {addedGames.Count} manual {Pluralize(addedGames.Count, "game", "games")}",
 				"Files were added directly by the player."));
+			AppendRecentActivity("import.manual", addedGames.First(), $"Added {addedGames.Count} manual {Pluralize(addedGames.Count, "game", "games")} to the library.");
+			SchedulePersist();
 			RefreshDerivedState();
 			StatusMessage = $"Added {addedGames.Count} game{((addedGames.Count == 1) ? string.Empty : "s")} manually.";
 		}
 		catch (Exception ex)
 		{
+			foreach (GameEntryViewModel game in addedGames)
+			{
+				game.PropertyChanged -= OnGamePropertyChanged;
+				Games.Remove(game);
+			}
+			SelectedGame = Games.FirstOrDefault();
+			RefreshDerivedState();
 			_diagnostics.WriteException("manual-add", ex);
-			StatusMessage = "Cirra couldn't add the selected games.";
+			StatusMessage = "Cirra couldn't save those games. The library was restored to its previous state.";
 		}
 	}
 
 	public async Task ImportSelectedAsync()
 	{
+		List<GameEntryViewModel> addedGames = [];
+		List<ImportCandidateViewModel> removedCandidates = [];
 		try
 		{
-			List<ImportCandidateViewModel> selectedCandidates = ImportCandidates.Where((ImportCandidateViewModel candidate) => candidate.IsSelected && !candidate.AlreadyExists).ToList();
+			List<ImportCandidateViewModel> requestedCandidates = ImportCandidates.Where((ImportCandidateViewModel candidate) => candidate.IsSelected && !candidate.AlreadyExists).ToList();
+			IReadOnlyList<ArtifactReconciliationResult> persistentMatches =
+				await _artifactReconciliation.ReconcileAsync(requestedCandidates.Select(candidate => candidate.InstallPath));
+			HashSet<string> indexedPaths = persistentMatches
+				.Where(match => match.AlreadyIndexed)
+				.Select(match => match.InputPath)
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
+			HashSet<string> existingLaunchKeys = BuildExistingLaunchKeySet();
+			HashSet<string> existingIdentityKeys = BuildExistingImportIdentitySet();
+			List<ImportCandidateViewModel> selectedCandidates = new List<ImportCandidateViewModel>(requestedCandidates.Count);
+			int duplicatesPrevented = 0;
+			foreach (ImportCandidateViewModel candidate in requestedCandidates)
+			{
+				string launchKey = NormalizeLaunchTargetKey(candidate.InstallPath);
+				string identityKey = ResolveCandidateIdentity(candidate.DeduplicationKey, candidate.InstallPath);
+				if (indexedPaths.Contains(candidate.InstallPath) ||
+					(!string.IsNullOrWhiteSpace(launchKey) && !existingLaunchKeys.Add(launchKey)) ||
+					(!string.IsNullOrWhiteSpace(identityKey) && !existingIdentityKeys.Add(identityKey)))
+				{
+					candidate.AlreadyExists = true;
+					candidate.IsSelected = false;
+					duplicatesPrevented++;
+					continue;
+				}
+
+				selectedCandidates.Add(candidate);
+			}
 			if (selectedCandidates.Count == 0)
 			{
-				StatusMessage = "Choose at least one candidate to import.";
+				StatusMessage = duplicatesPrevented > 0
+					? "Those selected games are already represented in your Cirra library. Nothing was imported."
+					: "Choose at least one candidate to import.";
 				return;
 			}
 			List<GameEntryViewModel> list = new List<GameEntryViewModel>(selectedCandidates.Count);
@@ -5220,29 +5326,48 @@ public sealed class MainViewModel : ViewModelBase
 				GameEntryViewModel gameEntryViewModel = item.ToGameEntry();
 				AddGameInternal(gameEntryViewModel, select: false);
 				list.Add(gameEntryViewModel);
+				addedGames.Add(gameEntryViewModel);
 			}
 			foreach (ImportCandidateViewModel item2 in selectedCandidates)
 			{
 				item2.PropertyChanged -= OnCandidatePropertyChanged;
 				ImportCandidates.Remove(item2);
+				removedCandidates.Add(item2);
 			}
 			SelectedGame = list.FirstOrDefault() ?? Games.FirstOrDefault();
 			SelectedWorkspaceTab = 0;
-			if (list.Count > 0)
-			{
-				AppendRecentActivity("import.scan", list[0], $"Imported {list.Count} title{((list.Count == 1) ? string.Empty : "s")} from scan review.");
-			}
 			await PersistWithHistoryAsync(new LibraryHistoryContext(
 				"import.scan",
 				$"Imported {selectedCandidates.Count} {Pluralize(selectedCandidates.Count, "game", "games")}",
 				"Approved candidates from scan review."));
+			if (list.Count > 0)
+			{
+				AppendRecentActivity("import.scan", list[0], $"Imported {list.Count} title{((list.Count == 1) ? string.Empty : "s")} from scan review.");
+				SchedulePersist();
+			}
 			RefreshDerivedState();
-			StatusMessage = $"Imported {selectedCandidates.Count} game{((selectedCandidates.Count == 1) ? string.Empty : "s")} into Cirra.";
+			StatusMessage = $"Imported {selectedCandidates.Count} game{((selectedCandidates.Count == 1) ? string.Empty : "s")} into Cirra." +
+				(duplicatesPrevented > 0 ? $" Prevented {duplicatesPrevented} duplicate import{(duplicatesPrevented == 1 ? string.Empty : "s")}." : string.Empty);
 		}
 		catch (Exception ex)
 		{
+			foreach (GameEntryViewModel game in addedGames)
+			{
+				game.PropertyChanged -= OnGamePropertyChanged;
+				Games.Remove(game);
+			}
+			foreach (ImportCandidateViewModel candidate in removedCandidates)
+			{
+				if (!ImportCandidates.Contains(candidate))
+				{
+					AddCandidateInternal(candidate);
+				}
+			}
+			SelectedGame = Games.FirstOrDefault();
+			SelectedCandidate = ImportCandidates.FirstOrDefault();
+			RefreshDerivedState();
 			_diagnostics.WriteException("import", ex);
-			StatusMessage = "Cirra couldn't import the selected games.";
+			StatusMessage = "Cirra couldn't commit that import. The library and review list were restored.";
 		}
 	}
 
@@ -7192,54 +7317,100 @@ public sealed class MainViewModel : ViewModelBase
 		SelectedLaunchPreflight = _launchPreflightService.Check(SelectedGame.ToModel(), configuredEmulator);
 	}
 
-	public Task LaunchGameAsync(GameEntryViewModel? game)
+	public async Task LaunchGameAsync(GameEntryViewModel? game)
 	{
 		if (game == null)
 		{
 			StatusMessage = "Pick a game before launching it.";
-			return Task.CompletedTask;
+			return;
 		}
-		try
+		if (_activeSessions.ContainsKey(game.Id))
 		{
-			if (_activeSessions.ContainsKey(game.Id))
+			StatusMessage = game.Title + " is already being tracked as running.";
+			return;
+		}
+
+		var configuredEmulator = string.IsNullOrWhiteSpace(game.EmulatorPath)
+			? _settings.Emulators.Resolve(game.Platform)
+			: game.EmulatorPath;
+		EmbeddedLaunchResult? embeddedResult = null;
+		ActivityOperationHandle activity = _activityCenter.Begin(
+			"game.launch",
+			"Launch " + game.Title,
+			canCancel: true);
+		var progress = new Progress<LaunchOperationUpdate>(update =>
+		{
+			if (update.State is LaunchOperationState.Checking or LaunchOperationState.Preparing or LaunchOperationState.Starting)
 			{
-				StatusMessage = game.Title + " is already being tracked as running.";
-				return Task.CompletedTask;
+				activity.Report(null, update.Message);
 			}
-			var configuredEmulator = string.IsNullOrWhiteSpace(game.EmulatorPath)
-				? _settings.Emulators.Resolve(game.Platform)
-				: game.EmulatorPath;
-			var preflight = _launchPreflightService.Check(game.ToModel(), configuredEmulator);
-			if (ReferenceEquals(game, SelectedGame))
+			else if (update.State == LaunchOperationState.Returning)
 			{
-				SelectedLaunchPreflight = preflight;
+				StatusMessage = update.Message;
 			}
-			if (!preflight.CanLaunch)
+		});
+
+		LaunchOrchestrationResult launch = await _launchOrchestrator.ExecuteAsync(
+			game.ToModel(),
+			configuredEmulator,
+			_ =>
 			{
-				var blocker = preflight.Checks.First(check => check.Readiness == LaunchReadiness.Blocked);
-				StatusMessage = $"{game.Title} is not ready: {blocker.Detail} {blocker.ActionLabel}.".Trim();
-				AppendRecentActivity("launch.preflight-blocked", game, blocker.Detail);
-				return Task.CompletedTask;
-			}
-			GameLaunchSession val;
 			if (GameLauncher.IsRomFile(game.InstallPath))
 			{
-				string text = ((!string.IsNullOrWhiteSpace(game.EmulatorPath)) ? game.EmulatorPath : _settings.Emulators.Resolve(game.Platform));
-				EmbeddedLaunchResult embeddedResult = _gameLauncher.LaunchWithEmulatorEmbedded(text, game.InstallPath);
-				val = embeddedResult.Session;
-				if (embeddedResult.IsEmbeddingCandidate && _settings.Emulators.EnableEmbeddedPlayForRetroArch && val.IsTrackingAvailable)
-				{
-					AttemptEmbeddedPlay(game, val, embeddedResult.TempConfigPath);
-				}
-				else
-				{
-					TryDeleteEmbeddedTempConfig(embeddedResult.TempConfigPath);
-				}
+				string emulator = !string.IsNullOrWhiteSpace(game.EmulatorPath)
+					? game.EmulatorPath
+					: _settings.Emulators.Resolve(game.Platform);
+				embeddedResult = _gameLauncher.LaunchWithEmulatorEmbedded(emulator, game.InstallPath);
+				return Task.FromResult(embeddedResult.Session);
+			}
+
+			return Task.FromResult(_gameLauncher.Launch(game.InstallPath));
+			},
+			progress,
+			activity.CancellationToken);
+
+		if (ReferenceEquals(game, SelectedGame))
+		{
+			SelectedLaunchPreflight = launch.Preflight;
+		}
+		if (launch.State == LaunchOperationState.RepairRequired)
+		{
+			var blocker = launch.Preflight.Checks.First(check => check.Readiness == LaunchReadiness.Blocked);
+			StatusMessage = $"{game.Title} is not ready: {blocker.Detail} {blocker.ActionLabel}.".Trim();
+			AppendRecentActivity("launch.preflight-blocked", game, blocker.Detail);
+			activity.Fail(blocker.Detail);
+			return;
+		}
+		if (launch.State == LaunchOperationState.Cancelled)
+		{
+			StatusMessage = "Launch cancelled before " + game.Title + " started.";
+			activity.Cancelled(StatusMessage);
+			return;
+		}
+		if (launch.State == LaunchOperationState.Failed || launch.Session is null)
+		{
+			Exception error = launch.Error ?? new InvalidOperationException("The launch process did not return a session.");
+			_diagnostics.WriteException("launch", error);
+			StatusMessage = BuildLaunchErrorMessage(game, error);
+			activity.Fail(StatusMessage);
+			return;
+		}
+
+		GameLaunchSession val = launch.Session;
+		if (embeddedResult is not null)
+		{
+			if (embeddedResult.IsEmbeddingCandidate && _settings.Emulators.EnableEmbeddedPlayForRetroArch && val.IsTrackingAvailable)
+			{
+				AttemptEmbeddedPlay(game, val, embeddedResult.TempConfigPath);
 			}
 			else
 			{
-				val = _gameLauncher.Launch(game.InstallPath);
+				TryDeleteEmbeddedTempConfig(embeddedResult.TempConfigPath);
 			}
+		}
+
+		try
+		{
 			SetGamePerformanceMode(isActive: true);
 			SelectedGame = game;
 			game.MarkSessionStarted();
@@ -7266,13 +7437,14 @@ public sealed class MainViewModel : ViewModelBase
 			RefreshDerivedState();
 			AppendRecentActivity("launch", game, val.IsTrackingAvailable ? "Launched with active session tracking." : "Launched without process tracking.");
 			StatusMessage = (val.IsTrackingAvailable ? ("Launched " + game.Title + ". Cirra will track this session when the process exits.") : ("Launched " + game.Title + ". This target opened successfully, but session tracking is unavailable for it."));
+			activity.Complete(StatusMessage);
 		}
 		catch (Exception ex)
 		{
 			_diagnostics.WriteException("launch", ex);
 			StatusMessage = BuildLaunchErrorMessage(game, ex);
+			activity.Fail(StatusMessage);
 		}
-		return Task.CompletedTask;
 	}
 
 	/// <summary>
@@ -7749,6 +7921,80 @@ public sealed class MainViewModel : ViewModelBase
 			select key).ToHashSet<string>(StringComparer.OrdinalIgnoreCase);
 	}
 
+	private HashSet<string> BuildExistingImportIdentitySet()
+	{
+		return Games
+			.Select(game => _gameScanner.GetImportIdentity(game.InstallPath))
+			.Where(key => !string.IsNullOrWhiteSpace(key))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+	}
+
+	private async Task<IReadOnlyDictionary<string, ArtifactReconciliationResult>> ReconcileArtifactsAsync(
+		IEnumerable<ImportCandidate> candidates)
+	{
+		var paths = candidates
+			.Select(candidate => candidate.InstallPath)
+			.Where(path => !string.IsNullOrWhiteSpace(path))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		if (paths.Count == 0)
+		{
+			return new Dictionary<string, ArtifactReconciliationResult>(StringComparer.OrdinalIgnoreCase);
+		}
+
+		try
+		{
+			var results = await _artifactReconciliation.ReconcileAsync(paths);
+			return results
+				.GroupBy(result => result.InputPath, StringComparer.OrdinalIgnoreCase)
+				.ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("artifact-reconciliation", ex);
+			return new Dictionary<string, ArtifactReconciliationResult>(StringComparer.OrdinalIgnoreCase);
+		}
+	}
+
+	private async Task<ScanReport> ScanWithActivityAsync(string folderPath, string title)
+	{
+		ActivityOperationHandle activity = _activityCenter.Begin(
+			"library.scan",
+			title,
+			canCancel: true);
+		try
+		{
+			activity.Report(null, "Discovering launchable games and checking artifact identity...");
+			ScanReport report = await _gameScanner.ScanFolderAsync(folderPath, activity.CancellationToken);
+			activity.Complete(report.IntakeSummary);
+			return report;
+		}
+		catch (OperationCanceledException) when (activity.CancellationToken.IsCancellationRequested)
+		{
+			activity.Cancelled("Library scan cancelled. No games were imported.");
+			throw;
+		}
+		catch
+		{
+			activity.Fail("Library scan could not be completed.");
+			throw;
+		}
+	}
+
+	private static string ResolveReconciliationReason(
+		bool alreadyExists,
+		ArtifactReconciliationResult? artifactMatch)
+	{
+		if (artifactMatch is not null)
+		{
+			return artifactMatch.Explanation;
+		}
+
+		return alreadyExists
+			? "Cirra matched this candidate to an existing launch target or import identity."
+			: "This candidate is not currently represented in the library.";
+	}
+
 	internal static bool IsKnownLaunchTarget(string installPath, ISet<string> existingLaunchKeys)
 	{
 		string text = NormalizeLaunchTargetKey(installPath);
@@ -7757,6 +8003,16 @@ public sealed class MainViewModel : ViewModelBase
 			return existingLaunchKeys.Contains(text);
 		}
 		return false;
+	}
+
+	internal static bool IsKnownImportIdentity(string identityKey, ISet<string> existingIdentityKeys)
+	{
+		return !string.IsNullOrWhiteSpace(identityKey) && existingIdentityKeys.Contains(identityKey);
+	}
+
+	private string ResolveCandidateIdentity(string identityKey, string installPath)
+	{
+		return string.IsNullOrWhiteSpace(identityKey) ? _gameScanner.GetImportIdentity(installPath) : identityKey;
 	}
 
 	private static bool ShouldAutoSelectDesktopCandidate(ImportCandidate candidate, ISet<string> existingPaths)
@@ -9128,6 +9384,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private void SchedulePersist()
 	{
+		InvalidateIndexedSearch();
 		_persistDebounce.Stop();
 		_persistDebounce.Start();
 	}
@@ -9138,7 +9395,9 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			ApplySettingsFromFields();
 			_dashboardState = BuildDashboardSnapshotState();
-			await _libraryStore.SaveAsync(BuildCurrentLibrarySnapshot(), default(CancellationToken));
+			LibrarySnapshot snapshot = BuildCurrentLibrarySnapshot();
+			await _libraryStore.SaveAsync(snapshot, default(CancellationToken));
+			ScheduleLibraryIndexRefresh(snapshot);
 		}
 		catch (Exception ex)
 		{
@@ -9163,11 +9422,21 @@ public sealed class MainViewModel : ViewModelBase
 
 	private async Task PersistWithHistoryAsync(LibraryHistoryContext context)
 	{
+		InvalidateIndexedSearch();
 		_persistDebounce.Stop();
 		ApplySettingsFromFields();
 		_dashboardState = BuildDashboardSnapshotState();
-		await _libraryStore.SaveWithHistoryAsync(BuildCurrentLibrarySnapshot(), context, default(CancellationToken));
-		await RefreshLibraryHistoryAsync();
+		LibrarySnapshot snapshot = BuildCurrentLibrarySnapshot();
+		await _libraryStore.SaveWithHistoryAsync(snapshot, context, default(CancellationToken));
+		ScheduleLibraryIndexRefresh(snapshot);
+		try
+		{
+			await RefreshLibraryHistoryAsync();
+		}
+		catch (Exception ex)
+		{
+			_diagnostics.WriteException("library-history-refresh", ex);
+		}
 	}
 
 	private void OnActivityOperationChanged(ActivityOperation operation)
@@ -9438,6 +9707,12 @@ public sealed class MainViewModel : ViewModelBase
 		if (!string.IsNullOrWhiteSpace(SearchText))
 		{
 			string value = SearchText.Trim();
+			if (_indexedSearchMatches != null &&
+				string.Equals(_indexedSearchQuery, value, StringComparison.Ordinal) &&
+				!_indexedSearchMatches.Contains(gameEntryViewModel.Id))
+			{
+				return false;
+			}
 			if (!$"{gameEntryViewModel.Title} {gameEntryViewModel.Platform} {gameEntryViewModel.Status} {gameEntryViewModel.TagsText} {gameEntryViewModel.SourceKind} {gameEntryViewModel.Summary} {gameEntryViewModel.GenresText} {gameEntryViewModel.DevelopersText} {gameEntryViewModel.PublishersText}".Contains(value, StringComparison.OrdinalIgnoreCase))
 			{
 				return false;
@@ -10065,6 +10340,159 @@ public sealed class MainViewModel : ViewModelBase
 		OnPropertyChanged("HasActiveLibraryFilters");
 		OnPropertyChanged("IsLibraryTrulyEmpty");
 		OnPropertyChanged("HasNoFilterMatches");
+	}
+
+	private void ScheduleLibraryIndexRefresh(LibrarySnapshot snapshot)
+	{
+		InvalidateIndexedSearch();
+		lock (_libraryIndexSyncGate)
+		{
+			_isLibraryIndexReady = false;
+			_pendingLibraryIndexSnapshot = snapshot;
+			if (_libraryIndexSyncTask is not { IsCompleted: false })
+			{
+				_libraryIndexSyncTask = Task.Run(ProcessLibraryIndexQueueAsync);
+			}
+		}
+	}
+
+	public async Task FlushLibraryIndexAsync()
+	{
+		while (true)
+		{
+			Task? active;
+			lock (_libraryIndexSyncGate)
+			{
+				active = _libraryIndexSyncTask;
+			}
+
+			if (active is null)
+			{
+				return;
+			}
+
+			await active.ConfigureAwait(false);
+		}
+	}
+
+	private async Task ProcessLibraryIndexQueueAsync()
+	{
+		while (true)
+		{
+			LibrarySnapshot? snapshot;
+			lock (_libraryIndexSyncGate)
+			{
+				snapshot = _pendingLibraryIndexSnapshot;
+				_pendingLibraryIndexSnapshot = null;
+				if (snapshot == null)
+				{
+					_libraryIndexSyncTask = null;
+					return;
+				}
+			}
+
+			try
+			{
+				if (snapshot.Games.Count == 0 && !File.Exists(_libraryStore.FilePath) &&
+					await _indexedLibraryProjection.CountAsync().ConfigureAwait(false) > 0)
+				{
+					_diagnostics.WriteWarning(
+						"library-index",
+						"The JSON library source is unavailable, so Cirra preserved the existing index instead of applying an empty snapshot.");
+				}
+				else
+				{
+					await _libraryIndexMigration.MigrateAsync(snapshot, _libraryStore.FilePath).ConfigureAwait(false);
+				}
+
+				bool isCurrent;
+				lock (_libraryIndexSyncGate)
+				{
+					isCurrent = _pendingLibraryIndexSnapshot == null;
+					if (isCurrent)
+					{
+						_isLibraryIndexReady = true;
+					}
+				}
+
+				if (isCurrent)
+				{
+					var dispatcher = Application.Current?.Dispatcher;
+					if (dispatcher != null && !string.IsNullOrWhiteSpace(SearchText))
+					{
+						_ = dispatcher.BeginInvoke((Action)(() => QueueIndexedSearch(SearchText)), DispatcherPriority.Background);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				_isLibraryIndexReady = false;
+				_diagnostics.WriteException("library-index", ex);
+			}
+		}
+	}
+
+	private void QueueIndexedSearch(string? query)
+	{
+		_indexedSearchCancellation?.Cancel();
+		_indexedSearchCancellation?.Dispose();
+		_indexedSearchCancellation = null;
+
+		var normalized = query?.Trim() ?? string.Empty;
+		if (!_isLibraryIndexReady || normalized.Length == 0 || normalized.Any(character => character > 127))
+		{
+			_indexedSearchMatches = null;
+			_indexedSearchQuery = string.Empty;
+			return;
+		}
+
+		var cancellation = new CancellationTokenSource();
+		_indexedSearchCancellation = cancellation;
+		_ = RefreshIndexedSearchAsync(normalized, cancellation.Token);
+	}
+
+	private async Task RefreshIndexedSearchAsync(string query, CancellationToken cancellationToken)
+	{
+		try
+		{
+			await Task.Delay(120, cancellationToken).ConfigureAwait(false);
+			IReadOnlySet<Guid> matches = await _indexedLibraryProjection.SearchIdsAsync(query, cancellationToken).ConfigureAwait(false);
+			var dispatcher = Application.Current?.Dispatcher;
+			if (dispatcher == null)
+			{
+				return;
+			}
+
+			await dispatcher.InvokeAsync(() =>
+			{
+				if (cancellationToken.IsCancellationRequested ||
+					!string.Equals(SearchText.Trim(), query, StringComparison.Ordinal))
+				{
+					return;
+				}
+
+				_indexedSearchMatches = matches;
+				_indexedSearchQuery = query;
+				RefreshLibraryView();
+			}, DispatcherPriority.Background, cancellationToken);
+		}
+		catch (OperationCanceledException)
+		{
+		}
+		catch (Exception ex)
+		{
+			InvalidateIndexedSearch();
+			_diagnostics.WriteException("library-index-search", ex);
+		}
+	}
+
+	private void InvalidateIndexedSearch()
+	{
+		_indexedSearchCancellation?.Cancel();
+		_indexedSearchCancellation?.Dispose();
+		_indexedSearchCancellation = null;
+		_indexedSearchMatches = null;
+		_indexedSearchQuery = string.Empty;
 	}
 
 	private void RefreshHomeDeck(bool refreshRandomPick = false)
@@ -10764,7 +11192,7 @@ public sealed class MainViewModel : ViewModelBase
 	private void OnCandidatePropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
 		string? propertyName = e.PropertyName;
-		if (propertyName == "IsSelected" || propertyName == "AlreadyExists")
+		if (propertyName == "IsSelected" || propertyName == "AlreadyExists" || propertyName == "NeedsReconciliationReview")
 		{
 			RefreshDerivedState();
 		}
@@ -11911,18 +12339,17 @@ public sealed class MainViewModel : ViewModelBase
 
 	public IReadOnlyList<string> GetSteamAutoScanFolders()
 	{
-		return _gameScanner.DiscoverSteamLibraryRoots();
+		return _gameScanner.NormalizeScanRoots(_gameScanner.DiscoverSteamLibraryRoots());
 	}
 
 	public IReadOnlyList<string> GetLauncherAutoScanFolders()
 	{
-		return _gameScanner.DiscoverLauncherLibraryRoots();
+		return _gameScanner.NormalizeScanRoots(_gameScanner.DiscoverLauncherLibraryRoots());
 	}
 
 	public IReadOnlyList<string> GetAllAutoScanFolders()
 	{
-		return GetSteamAutoScanFolders().Concat(GetLauncherAutoScanFolders()).Distinct<string>(StringComparer.OrdinalIgnoreCase).OrderBy<string, string>((string path) => path, StringComparer.OrdinalIgnoreCase)
-			.ToList();
+		return _gameScanner.NormalizeScanRoots(GetSteamAutoScanFolders().Concat(GetLauncherAutoScanFolders()));
 	}
 
 	private async Task<List<GameMetadataRecord>> SearchMetadataCandidatesAsync(string title, string platform, int maxResults)
@@ -12259,16 +12686,30 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task<IReadOnlyList<ImportCandidateViewModel>> GetScanCandidatesAsync(string folderPath, bool romsOnly)
 	{
-		IEnumerable<ImportCandidate> source = (await _gameScanner.ScanFolderAsync(folderPath, default(CancellationToken))).Candidates ?? new List<ImportCandidate>();
+		IEnumerable<ImportCandidate> source = (await ScanWithActivityAsync(
+			folderPath,
+			romsOnly ? "Preview ROM import" : "Preview game import")).Candidates ?? new List<ImportCandidate>();
 		source = ((!romsOnly) ? source.Where((ImportCandidate c) => !GameLauncher.IsRomFile(c.InstallPath)) : source.Where((ImportCandidate c) => GameLauncher.IsRomFile(c.InstallPath)));
+		List<ImportCandidate> candidates = source
+			.DistinctBy(candidate => candidate.InstallPath, StringComparer.OrdinalIgnoreCase)
+			.ToList();
 		HashSet<string> existingLaunchKeys = BuildExistingLaunchKeySet();
-		return source.Select(delegate(ImportCandidate candidate)
+		HashSet<string> existingIdentityKeys = BuildExistingImportIdentitySet();
+		IReadOnlyDictionary<string, ArtifactReconciliationResult> artifactMatches =
+			await ReconcileArtifactsAsync(candidates);
+		return candidates.Select(delegate(ImportCandidate candidate)
 		{
-			bool flag = IsKnownLaunchTarget(candidate.InstallPath, existingLaunchKeys);
+			artifactMatches.TryGetValue(candidate.InstallPath, out ArtifactReconciliationResult? artifactMatch);
+			bool needsReview = artifactMatch?.Kind == ArtifactReconciliationKind.ProbableMovedArtifact;
+			bool flag = IsKnownLaunchTarget(candidate.InstallPath, existingLaunchKeys) ||
+				IsKnownImportIdentity(candidate.DeduplicationKey, existingIdentityKeys) ||
+				artifactMatch?.AlreadyIndexed == true;
 			return new ImportCandidateViewModel(candidate)
 			{
 				AlreadyExists = flag,
-				IsSelected = (candidate.Confidence >= 0.62 && !flag)
+				NeedsReconciliationReview = needsReview,
+				ReconciliationReason = ResolveReconciliationReason(flag, artifactMatch),
+				IsSelected = (candidate.Confidence >= 0.62 && !flag && !needsReview)
 			};
 		}).ToList();
 	}

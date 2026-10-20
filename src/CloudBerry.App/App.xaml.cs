@@ -52,20 +52,6 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         base.OnStartup(e);
 
-        // Private testing gate: blocks the app from ever reaching the splash/main window
-        // until this Windows account has redeemed a valid personal key. See
-        // AccessGateService for the one-time, machine/account-bound redemption logic.
-        if (!AccessGateService.HasValidAccess())
-        {
-            var gate = new AccessGateWindow();
-            var accepted = gate.ShowDialog();
-            if (accepted != true || !gate.AccessGranted)
-            {
-                Shutdown();
-                return;
-            }
-        }
-
         var splashViewModel = new SplashViewModel();
         var splashWindow = new SplashWindow
         {

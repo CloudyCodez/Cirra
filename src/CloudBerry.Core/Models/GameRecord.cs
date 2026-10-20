@@ -64,6 +64,8 @@ public sealed class GameRecord
 
     public string MetadataItemUrl { get; set; } = string.Empty;
 
+    public List<MetadataFieldProvenance> MetadataFields { get; set; } = [];
+
     public double? CommunityRating { get; set; }
 
     public List<string> Genres { get; set; } = [];

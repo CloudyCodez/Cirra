@@ -12,6 +12,7 @@
   <Var name="SkipSpecialName" value="true" />
   <Var name="SkipGenerated" value="true" />
   <Module file="$(InPath)\CloudBerry.Core.dll" />
+  <Module file="$(InPath)\CloudBerry.Data.dll" />
   <Module file="$(InPath)\Cirra.dll">
     <SkipType name="CloudBerry.App.App" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" skipStringHiding="true" />
     <SkipType name="CloudBerry.App.*Window" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" skipStringHiding="true" />

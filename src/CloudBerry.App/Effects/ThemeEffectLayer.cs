@@ -28,6 +28,7 @@ public sealed class ThemeEffectLayer : FrameworkElement
     private readonly Dictionary<string, DrawingGroup> _compositions = new();
     private ThemeVisualProfile _profile = ThemeVisualProfile.Resolve(null);
     private Pen? _highlightPen;
+    private Pen? _flowPen;
     private Window? _host;
     private TimeSpan _lastFrame;
     private Size _cachedSize;
@@ -63,6 +64,7 @@ public sealed class ThemeEffectLayer : FrameworkElement
         layer._profile = ThemeVisualProfile.Resolve(layer.ThemeKey);
         layer._compositions.Clear();
         layer._highlightPen = null;
+        layer._flowPen = null;
         layer._pointerX = layer._pointerY = layer._targetX = layer._targetY = 0;
         layer.UpdateSubscription();
     }
@@ -169,7 +171,10 @@ public sealed class ThemeEffectLayer : FrameworkElement
             }
             if (_profile.Key == "Signal Rain" && !chrome) DrawSignalHeads(dc, size, time, compact);
             if (CanAnimate && Quality == "Full" && !compact && !chrome && _profile.Key != "Signal Rain")
+            {
                 DrawTravelingHighlights(dc, size, time);
+                DrawAmbientFlow(dc, size, time);
+            }
         }
         finally { dc.Pop(); }
     }
@@ -236,6 +241,44 @@ public sealed class ThemeEffectLayer : FrameworkElement
                         double x = phase * 1100 - 50;
                         double y = (_profile.Key == "Tidal Glass" ? 555 : 40) + Math.Sin(x / 180 + index * 0.2) * 15 + index * 7;
                         dc.DrawLine(_highlightPen, new Point(x, y), new Point(x + 16, y + Math.Cos(x / 180 + index * 0.2) * 1.3));
+                    }
+                }
+                finally { dc.Pop(); }
+            }
+        }
+        finally { dc.Pop(); }
+    }
+
+    // A restrained, theme-aware circulation layer gives broad surfaces a sense of depth without
+    // allocating particles or placing motion over controls. It is omitted in efficient and
+    // reduced-motion modes along with the existing highlight pass.
+    private void DrawAmbientFlow(DrawingContext dc, Size size, double time)
+    {
+        _flowPen ??= MakePen(_profile.Accent, 0.24, 0.75);
+        dc.PushTransform(new ScaleTransform(size.Width / 1000, size.Height / 600));
+        try
+        {
+            for (var index = 0; index < 2; index++)
+            {
+                var phase = (time / 31d + index * 0.47) % 1d;
+                var opacity = Math.Pow(Math.Sin(phase * Math.PI), 2) * Math.Min(Intensity, 1) * 0.72;
+                dc.PushOpacity(opacity);
+                try
+                {
+                    if (_profile.Key is "Verdant Glass" or "Impact Noir" or "Arcade Static")
+                    {
+                        var x = 150 + phase * 760;
+                        var y = 520 - index * 120;
+                        dc.DrawLine(_flowPen, new Point(x, y), new Point(x + 28, y - 4));
+                        dc.DrawLine(_flowPen, new Point(x + 28, y - 4), new Point(x + 46, y - 16));
+                    }
+                    else
+                    {
+                        var x = phase * 1080 - 40;
+                        var baseline = _profile.Key == "Tidal Glass" ? 505 : 104 + index * 48;
+                        var rise = Math.Sin(x / 130 + index * 1.7) * 7;
+                        dc.DrawLine(_flowPen, new Point(x, baseline + rise), new Point(x + 26, baseline + Math.Sin((x + 26) / 130 + index * 1.7) * 7));
+                        dc.DrawLine(_flowPen, new Point(x + 26, baseline + Math.Sin((x + 26) / 130 + index * 1.7) * 7), new Point(x + 50, baseline + Math.Sin((x + 50) / 130 + index * 1.7) * 7));
                     }
                 }
                 finally { dc.Pop(); }

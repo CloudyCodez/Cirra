@@ -115,6 +115,72 @@ public sealed class GameScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task ScanFolderAsync_UsesCueInsteadOfSameDiscBinPayload()
+    {
+        var root = Path.Combine(_rootPath, "ROMs", "PlayStation");
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Castlevania Symphony of the Night.cue"), "FILE \"Castlevania Symphony of the Night.bin\" BINARY");
+        await File.WriteAllTextAsync(Path.Combine(root, "Castlevania Symphony of the Night.bin"), "payload");
+
+        var scanner = new GameScanner();
+        var report = await scanner.ScanFolderAsync(_rootPath);
+
+        var candidate = Assert.Single(report.Candidates);
+        Assert.EndsWith(".cue", candidate.InstallPath, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, report.CompanionFilesCollapsed);
+    }
+
+    [Fact]
+    public async Task ScanFolderAsync_UsesPlaylistForMultiDiscSetWithoutDroppingOtherGames()
+    {
+        var root = Path.Combine(_rootPath, "ROMs", "PlayStation");
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Final Fantasy IX.m3u"), "Final Fantasy IX (Disc 1).cue\nFinal Fantasy IX (Disc 2).cue");
+        await File.WriteAllTextAsync(Path.Combine(root, "Final Fantasy IX (Disc 1).cue"), "disc one");
+        await File.WriteAllTextAsync(Path.Combine(root, "Final Fantasy IX (Disc 2).cue"), "disc two");
+        await File.WriteAllTextAsync(Path.Combine(root, "Chrono Cross.cue"), "another game");
+
+        var scanner = new GameScanner();
+        var report = await scanner.ScanFolderAsync(_rootPath);
+
+        Assert.Equal(2, report.Candidates.Count);
+        Assert.Contains(report.Candidates, candidate => candidate.InstallPath.EndsWith("Final Fantasy IX.m3u", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(report.Candidates, candidate => candidate.InstallPath.EndsWith("Chrono Cross.cue", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(2, report.CompanionFilesCollapsed);
+    }
+
+    [Fact]
+    public async Task ScanFolderAsync_PreservesSeparateDiscsWhenNoPlaylistExists()
+    {
+        var root = Path.Combine(_rootPath, "ROMs", "PlayStation");
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Final Fantasy VII (Disc 1).cue"), "disc one");
+        await File.WriteAllTextAsync(Path.Combine(root, "Final Fantasy VII (Disc 2).cue"), "disc two");
+
+        var scanner = new GameScanner();
+        var report = await scanner.ScanFolderAsync(_rootPath);
+
+        Assert.Equal(2, report.Candidates.Count);
+        Assert.Equal(0, report.CompanionFilesCollapsed);
+    }
+
+    [Fact]
+    public void NormalizeScanRoots_RemovesNestedRootsAndKeepsSeparateLibraries()
+    {
+        var parent = Path.Combine(_rootPath, "Libraries");
+        var nested = Path.Combine(parent, "Steam", "steamapps", "common");
+        var separate = Path.Combine(_rootPath, "ROMs");
+        Directory.CreateDirectory(nested);
+        Directory.CreateDirectory(separate);
+
+        var roots = new GameScanner().NormalizeScanRoots([nested, separate, parent, parent]);
+
+        Assert.Equal(2, roots.Count);
+        Assert.Contains(Path.GetFullPath(parent), roots, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(Path.GetFullPath(separate), roots, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void NormalizeTitleFromPath_RemovesNoiseTokensAndBrackets()
     {
         var title = GameNameNormalizer.NormalizeTitleFromPath(@"C:\ROMs\SNES\Chrono_Trigger_(USA)_[v1.0].sfc");

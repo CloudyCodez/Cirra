@@ -4265,6 +4265,12 @@
                                                                                    Text="{Binding SignalsPreview}"
                                                                                    TextWrapping="Wrap"/>
 
+															<TextBlock Margin="0,0,0,10"
+															           FontSize="{DynamicResource FontSizeCaption}"
+															           Foreground="{DynamicResource MintBrush}"
+															           Text="{Binding ReconciliationReason}"
+															           TextWrapping="Wrap"/>
+
                                                                         <ProgressBar Height="6"
                                                                                      Maximum="100"
                                                                                      Value="{Binding ConfidencePercent}"/>

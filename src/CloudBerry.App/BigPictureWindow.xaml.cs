@@ -28,6 +28,13 @@ public partial class BigPictureWindow : Window
     private const double ShelfDragThreshold = 22;
     private readonly SoundDesignService _sound;
     private readonly AppDiagnostics _diagnostics = new();
+	private readonly HorizonImageCache _imageCache = new();
+	private CancellationTokenSource? _heroImageLoadCancellation;
+	private CancellationTokenSource? _detailImageLoadCancellation;
+	private CancellationTokenSource? _attractImageLoadCancellation;
+	private int _heroImageGeneration;
+	private int _detailImageGeneration;
+	private int _attractImageGeneration;
     private readonly DispatcherTimer _trailerPreviewTimer;
     private DispatcherTimer? _trailerBlankTimer;
     private bool _windowClosed;
@@ -124,7 +131,7 @@ public partial class BigPictureWindow : Window
         _verticalMomentumTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         _verticalMomentumTimer.Tick += VerticalMomentumTick;
         // Seed the first hero background so selection changes can crossfade cleanly.
-        UpdateHeroBg(HeroBgA, ViewModel.BigPictureHeroGame?.DisplayBackgroundImagePath);
+		_ = LoadInitialHeroBackgroundAsync(ViewModel.BigPictureHeroGame?.DisplayBackgroundImagePath);
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         _ = InitializeTheatreBrowserAsync();
         StartTrailerServer();
@@ -692,10 +699,29 @@ p {
         CloudTheatreBrowser.NavigateToString(placeholderHtml);
     }
 
-    private void CrossfadeHeroBg()
+    private async void CrossfadeHeroBg()
     {
         var path = ViewModel.BigPictureHeroGame?.DisplayBackgroundImagePath;
-        UpdateHeroBg(HeroBgB, path);
+		_heroImageLoadCancellation?.Cancel();
+		_heroImageLoadCancellation?.Dispose();
+		var cancellation = new CancellationTokenSource();
+		_heroImageLoadCancellation = cancellation;
+		var generation = ++_heroImageGeneration;
+		BitmapImage? image;
+		try
+		{
+			image = await _imageCache.LoadAsync(path, 1920, cancellation.Token);
+		}
+		catch (OperationCanceledException)
+		{
+			return;
+		}
+
+		if (_windowClosed || cancellation.IsCancellationRequested || generation != _heroImageGeneration || image is null)
+		{
+			return;
+		}
+		HeroBgB.Source = image;
 
         var motion = ResolveThemeMotionPack();
         var dur = new Duration(TimeSpan.FromMilliseconds(motion.HeroCrossfadeMs));
@@ -705,6 +731,7 @@ p {
 
         fadeIn.Completed += (_, _) =>
         {
+			if (_windowClosed || generation != _heroImageGeneration) return;
             HeroBgA.Source  = HeroBgB.Source;
             HeroBgA.Opacity = motion.BackgroundOpacity;
             HeroBgB.Opacity = 0;
@@ -714,12 +741,24 @@ p {
         HeroBgA.BeginAnimation(UIElement.OpacityProperty, fadeOut);
     }
 
-    private static void UpdateHeroBg(System.Windows.Controls.Image img, string? path)
-    {
-        if (string.IsNullOrEmpty(path)) { img.Source = null; return; }
-        try { img.Source = new BitmapImage(new Uri(path, UriKind.Absolute)); }
-        catch { img.Source = null; }
-    }
+	private async Task LoadInitialHeroBackgroundAsync(string? path)
+	{
+		var cancellation = new CancellationTokenSource();
+		_heroImageLoadCancellation = cancellation;
+		var generation = ++_heroImageGeneration;
+		try
+		{
+			var image = await _imageCache.LoadAsync(path, 1920, cancellation.Token);
+			if (!_windowClosed && !cancellation.IsCancellationRequested &&
+				generation == _heroImageGeneration && image is not null)
+			{
+				HeroBgA.Source = image;
+			}
+		}
+		catch (OperationCanceledException)
+		{
+		}
+	}
     // ─────────────────────────────────────────────────────────────────────
     private async void LaunchHeroGameClick(object sender, RoutedEventArgs e)
     {
@@ -2085,36 +2124,30 @@ p {
     }
 
     /// <summary>Off-thread image load mirroring LoadDetailBgAsync's safety pattern — a bad/missing path never crashes the dispatcher, it just leaves the layer blank.</summary>
-    private async void LoadAttractImageAsync(System.Windows.Controls.Image target, string? path)
+	private async void LoadAttractImageAsync(System.Windows.Controls.Image target, string? path)
     {
-        if (string.IsNullOrWhiteSpace(path)) { target.Source = null; return; }
+		_attractImageLoadCancellation?.Cancel();
+		_attractImageLoadCancellation?.Dispose();
+		if (string.IsNullOrWhiteSpace(path)) { target.Source = null; return; }
+		var cancellation = new CancellationTokenSource();
+		_attractImageLoadCancellation = cancellation;
+		var generation = ++_attractImageGeneration;
         BitmapImage? bmp = null;
         try
         {
-            bmp = await Task.Run(() =>
-            {
-                var img = new BitmapImage();
-                img.BeginInit();
-                img.UriSource = path.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                    ? new Uri(path)
-                    : new Uri(path, UriKind.RelativeOrAbsolute);
-                img.DecodePixelWidth = 1920;
-                img.CacheOption = BitmapCacheOption.OnLoad;
-                img.EndInit();
-                img.Freeze();
-                return img;
-            });
+			bmp = await _imageCache.LoadAsync(path, 1920, cancellation.Token);
         }
-        catch { /* bad path, unsupported format, or network error — leave source null */ }
+		catch (OperationCanceledException) { return; }
 
         // Attract mode may have been exited mid-load; only apply if still active.
-        if (!_windowClosed && ViewModel.IsAttractModeActive)
+		if (!_windowClosed && ViewModel.IsAttractModeActive && generation == _attractImageGeneration)
             target.Source = bmp;
     }
 
     private void ExitAttractMode()
     {
         if (_windowClosed) return;
+		_attractImageLoadCancellation?.Cancel();
         ResetAttractIdleTimer();
         if (!ViewModel.IsAttractModeActive) return;
         try
@@ -2786,6 +2819,9 @@ p {
     protected override void OnClosed(EventArgs e)
     {
         _windowClosed = true;
+		_heroImageLoadCancellation?.Cancel();
+		_detailImageLoadCancellation?.Cancel();
+		_attractImageLoadCancellation?.Cancel();
         // Detach shared view-model subscriptions when Big Picture closes.
         // Stop the hide timer FIRST so its tick can't race and re-hide after we restore.
         _cursorHideTimer?.Stop();
@@ -2806,6 +2842,7 @@ p {
         ViewModel.IsAttractModeActive = false;
         AttractBgA.Source = null;
         AttractBgB.Source = null;
+		_imageCache.Clear();
         CleanupHorizonResource("trailer-listener", () => _trailerServer?.Close());
         _trailerServer = null;
         CleanupHorizonResource("theatre-browser", () => CloudTheatreBrowser.Dispose());
@@ -2922,9 +2959,14 @@ p {
         // never blocks the UI or throws an unhandled dispatcher exception.
         DetailBgImage.Source = null;
         var bgPath = game.DisplayBackgroundImagePath;
+		_detailImageLoadCancellation?.Cancel();
+		_detailImageLoadCancellation?.Dispose();
+		_detailImageLoadCancellation = null;
+		var detailGeneration = ++_detailImageGeneration;
         if (!string.IsNullOrWhiteSpace(bgPath))
         {
-            LoadDetailBgAsync(bgPath);
+			_detailImageLoadCancellation = new CancellationTokenSource();
+			_ = LoadDetailBgAsync(bgPath, detailGeneration, _detailImageLoadCancellation.Token);
         }
 
         // Slide in from the right.
@@ -2939,31 +2981,19 @@ p {
         _sound.PlayMenuOpen();
     }
 
-    private async void LoadDetailBgAsync(string bgPath)
+	private async Task LoadDetailBgAsync(string bgPath, int generation, CancellationToken cancellationToken)
     {
         // Decode on a thread-pool thread so network/disk latency and format
         // failures (e.g. .webp with no native decoder) never crash the dispatcher.
         BitmapImage? bmp = null;
         try
         {
-            bmp = await Task.Run(() =>
-            {
-                var img = new BitmapImage();
-                img.BeginInit();
-                img.UriSource = bgPath.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                    ? new Uri(bgPath)
-                    : new Uri(bgPath, UriKind.RelativeOrAbsolute);
-                img.DecodePixelWidth = 960;
-                img.CacheOption = BitmapCacheOption.OnLoad;
-                img.EndInit();
-                img.Freeze(); // must Freeze before crossing thread boundary
-                return img;
-            });
+			bmp = await _imageCache.LoadAsync(bgPath, 960, cancellationToken);
         }
-        catch { /* bad path, unsupported format, or network error — leave source null */ }
+		catch (OperationCanceledException) { return; }
 
         // Overlay may have been closed while we were loading; only apply if still open.
-        if (_isDetailOpen)
+		if (_isDetailOpen && !_windowClosed && generation == _detailImageGeneration)
             DetailBgImage.Source = bmp;
     }
 
@@ -2971,6 +3001,7 @@ p {
     {
         if (!_isDetailOpen) return;
         _isDetailOpen = false;
+		_detailImageLoadCancellation?.Cancel();
 
         var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
         var fadeOut = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(180)) { EasingFunction = ease };

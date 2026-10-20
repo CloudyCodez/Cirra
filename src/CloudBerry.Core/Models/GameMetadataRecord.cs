@@ -10,6 +10,9 @@ public sealed class GameMetadataRecord
 
     public string RemoteSlug { get; set; } = string.Empty;
 
+	/// <summary>Normalized 0-1 match confidence. Zero means the result has not been scored.</summary>
+    public double MatchConfidence { get; set; }
+
     public string Title { get; set; } = string.Empty;
 
     public string Summary { get; set; } = string.Empty;

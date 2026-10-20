@@ -22,6 +22,8 @@ Built with WPF on .NET 10.
 - **Backlog debt tracker** - turns "$40 game, 0 hours played" into an actual number
   instead of a guilty feeling you ignore.
 - **Horizon mode** for couch use, plus a set of distinct visual, motion, and audio themes.
+- **Safer collection maintenance** with persistent artifact identity, duplicate explanations,
+  moved-file review, cancellable scans, and protected player-edited metadata fields.
 
 Longer-term plans and half-baked ideas live in `ROADMAP.md` and `DIFFERENTIATORS.md`.
 
@@ -32,7 +34,9 @@ src/
   CloudBerry.App/    WPF front end (windows, view models, themes, effects)
   CloudBerry.Core/   Everything else - scanning, metadata providers, achievements,
                       library storage, emulator detection
+	CloudBerry.Data/   Versioned SQLite index, artifact registry, and metadata provenance
 tests/
+	CloudBerry.App.Tests/
   CloudBerry.Core.Tests/
 ```
 
@@ -58,6 +62,14 @@ publish.bat
 
 This drops `Cirra.exe` in `publish\win-x64` - no .NET runtime install required on
 the machine running it.
+
+To produce the protected Windows x64 closed-beta ZIP, checksum, and audited tester package:
+
+```
+powershell -ExecutionPolicy Bypass -File tools\release\build-closed-beta.ps1
+```
+
+That release path runs the full test suite, excludes source and debug artifacts, protects Cirra's managed assemblies, and writes the final assets under `artifacts\`.
 
 ## Contributing
 

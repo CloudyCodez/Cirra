@@ -294,6 +294,10 @@ public sealed class MetadataSearchResultViewModel : ViewModelBase
         ProviderName = metadata.ProviderName;
         RemoteId = metadata.RemoteId;
         RemoteSlug = metadata.RemoteSlug;
+		if (metadata.MatchConfidence > 0)
+		{
+			MatchScore = metadata.MatchConfidence;
+		}
         Title = metadata.Title;
         Summary = metadata.Summary;
         ReleaseDate = metadata.ReleaseDate;
@@ -323,6 +327,7 @@ public sealed class MetadataSearchResultViewModel : ViewModelBase
             ProviderName = ProviderName,
             RemoteId = RemoteId,
             RemoteSlug = RemoteSlug,
+			MatchConfidence = MatchScore <= 0 ? 1 : Math.Clamp(MatchScore, 0, 1),
             Title = Title,
             Summary = Summary,
             ReleaseDate = ReleaseDate,

@@ -1,7 +1,7 @@
 # Cirra Premium Roadmap
 
-**Status: Approved. P01 in progress; interaction, Horizon entry, guide activity, and controller-routing slices delivered.**
-**Prepared: September 9, 2026. Updated: September 13, 2026.**
+**Status: Active. P01 and P11 are in progress; interaction, Horizon entry, guide activity, controller-routing, and intake reliability slices are delivered.**
+**Prepared: September 9, 2026. Updated: October 19, 2026.**
 
 ## The Product Standard
 
@@ -58,8 +58,30 @@ Approval starts P01, now in progress. P02-P10 remain unstarted as dedicated pass
 | P08 | P1 | Personal dashboard and Tonight queue | P04, P06, P07 |
 | P09 | P2 | Household and local co-op experiences | P02, P06, P08 |
 | P10 | P0 release gate | Installed-product assurance | Continuous; final gate after approved scope |
+| P11 | P0 | Trusted library intake and surface readiness | P01 foundations |
 
 P0 defects discovered in any later pass interrupt feature expansion. Release assurance runs throughout, not only at the end. Each pass can be divided into small reviewed changes; do not turn this into one application-wide rewrite.
+
+## P11 - Trusted Library Intake And Surface Readiness
+
+**Outcome:** A scan is fast, explainable, and safe to run repeatedly. It should find the player's games once, never turn multi-file media into a row of false games, and never make the interface feel slower as the collection grows.
+
+- [x] Normalize automatically discovered roots so a parent library and its nested launcher path are never scanned twice in the same intake pass.
+- [x] Collapse alternate desktop executables, exact CUE/GDI-to-payload pairs, and playlist-backed multi-disc sets while preserving independently launchable discs when a playlist is absent.
+- [x] Carry an install identity through scan, preview, and import; revalidate it with the launch target at commit time so a second path cannot create a duplicate record.
+- [x] Return candidate-collapse counts in scan diagnostics instead of silently hiding decisions.
+- [x] Make artwork downloads shared, atomic, bounded, and cancellation-safe. A dismissed view may stop awaiting an asset without cancelling another active consumer.
+- [x] Bound the on-disk media cache and evict the least-recently-used assets after a successful write.
+- [x] Add a low-allocation full-quality ambient flow layer to Horizon and Cloudscape themes, disabled automatically with reduced-motion or efficient effects.
+- [ ] Add a scan-operation summary to every preview surface: inspected roots, candidates accepted, already-owned identities, companion media suppressed, and recoverable errors.
+- [ ] Replace one-folder-at-a-time automatic discovery with one cancellable operation that collects launch manifests before heuristic executable scanning.
+- [ ] Add deterministic fixture libraries for store installs, ROM sets, playlists, moved drives, symlink/junction loops, and repeated scan/import passes.
+- [ ] Prewarm the selected Horizon card's small artwork set off the interaction path, with cancellation and a measured memory budget.
+- [ ] Audit each desktop and Horizon surface against the hierarchy contract: one page-level task, stable selection, focused actions, readable empty/loading/error states, and no redundant framed containers.
+
+**Acceptance:** Repeating the same automatic scan produces no new preview candidates after the first import. A CUE/BIN pair, an M3U-backed multi-disc game, and an alternate desktop executable each produce exactly one importable game. Two distinct discs without a playlist remain available. A cancelled artwork request leaves no partial file and does not interrupt another caller awaiting the same remote asset.
+
+**Evidence:** Scanner and cache regression tests cover the current cases. Installed-library validation, full Horizon visual capture, and hardware performance traces remain required before this pass is considered complete.
 
 ## P01 - Reliable Interaction And Loading
 
@@ -96,13 +118,13 @@ P0 defects discovered in any later pass interrupt feature expansion. Release ass
 - One entry operation owns the splash and destination, coalesces repeated requests, and reports preparing/presenting/ready/cancelled/failed. Ownership transfers only after the destination is shown. Closing the splash or destination cancels the handoff; a failure closes partial windows and allows retry. Desktop shutdown cancels entry without resurrecting its window.
 - Added Cancel and Escape on the Horizon splash, cancellation-aware first-frame waits and fade-out, and separate log timings for the loading frame, dashboard frame, and completed handoff. Removed the obsolete second loading-overlay implementation. Artwork-ready timing and synchronous preparation optimization remain open.
 - Horizon closes its momentum, attract, trailer, gamepad, session, and cursor timers, disposes both WebView2 controls, closes the local trailer listener, releases captured mouse input, and unsubscribes shared state. Late browser/image work checks closure. Delayed trailer blanking cannot blank a newly active preview. Embedded-session subscriptions are detached; native embedded-game detach/return behavior still needs its own audit.
-- Added the three owner-supplied beta invitations as hash-only allowlist entries, preserved previous activations, clarified the offline gate's limitations, and prevented Enter from attempting redemption twice. `CLOSED_BETA.md` defines the three-person cohort, safety boundaries, test matrix, feedback template, update isolation, and release gates. A local unsigned Windows x64 candidate is prepared separately from the installed app; nothing is uploaded or published to the shared update feed.
+- The private beta originally used a local invitation gate. That gate was retired in v0.4.1: Cirra now opens directly, and private-test access is controlled only through distribution of the build. `CLOSED_BETA.md` retains the cohort safety, test matrix, feedback, update-isolation, and release guidance.
 
-**Verification:** The full solution passes 109 app + 144 core tests (253 total). Fourteen new entry cases cover duplicate/reentrant requests, immediate and stage-specific cancellation, desktop shutdown, failures, retry, ordered milestones, and twenty lightweight handoffs. Eleven access-gate cases cover invalid input, compatibility, encrypted persistence, invalid markers, and write failure. An isolated probe also redeemed all three actual supplied keys and verified each encrypted grant, without writing the user's activation marker or storing plaintext keys in source.
+**Historical verification:** That slice passed 109 app + 144 core tests (253 total), including the then-active gate. The gate implementation and its dedicated tests were removed in v0.4.1.
 
 **Window evidence:** Twenty offscreen cycles through actual Horizon and splash windows at 1280x720 with an isolated fixture library completed. Each returned to one desktop window, with every Horizon dispatcher-timer field stopped and the listener released. Nineteen of twenty closed Horizon windows were collected; the final completed entry still retains its result until the next entry. This is bounded retention, not zero retained objects. The Cancel splash was rendered and inspected at 760x460 (`tmp_probe/horizon-entry-cancel.png`). Release publish completed without compiler warnings. Native helper-process counts, installed-build behavior, large-library memory/frame-time measurements, and physical input were not established by this probe.
 
-**Next in P01:** Remaining operation callers, PDF/native embedded-window lifecycle, and shutdown audit; artwork-ready timings and preparation performance; provider-refresh/overlay soak coverage and installed-product resource measurements. `CLOSED_BETA.md` also records future server-backed invitation limits/revocation as a separate decision, not a feature of the current local gate.
+**Next in P01:** Remaining operation callers, PDF/native embedded-window lifecycle, and shutdown audit; artwork-ready timings and preparation performance; provider-refresh/overlay soak coverage and installed-product resource measurements.
 
 ### P01/P02 Delivery Log - September 13, 2026
 
@@ -198,7 +220,7 @@ P0 defects discovered in any later pass interrupt feature expansion. Release ass
 
 - [ ] Complete readiness checks and guided repair routing for executable/URI/ROM/core/BIOS/configuration problems. Distinguish detected from configured, compatible, and successfully tested.
 - [ ] Introduce per-game installation profiles for vanilla, modded, VR, alternate executable, and emulator overrides. Preview the chosen target and keep save scope explicit.
-- [ ] Build a reusable launch/return state model for immediate exit, launcher handoff, long sessions, crashes, and uncertain process tracking. Do not fabricate playtime when tracking is unavailable.
+- [x] Build a reusable launch/return state model for immediate exit, launcher handoff, long sessions, crashes, and uncertain process tracking. Do not fabricate playtime when tracking is unavailable.
 - [ ] Finish supported save discovery, per-game backup timelines, integrity validation, conflict/restore previews, retention, and rollback. Never infer that the newest timestamp is the right save without showing the choice.
 - [ ] Extend Next Time into a session return sheet: optional note, objective, verified save reference, duration correction, and pause/finished decision. Quiet by default; no mandatory post-game form.
 - [ ] Add opt-in after-exit save backups only once operation cancellation, retention, and failure reporting are reliable.
@@ -209,7 +231,7 @@ P0 defects discovered in any later pass interrupt feature expansion. Release ass
 
 **Outcome:** Large collections become easier to maintain without risking years of personal edits.
 
-- [ ] Add field-level metadata provenance, confidence, user locks, and side-by-side conflict review. Refresh only the approved fields.
+- [x] Add field-level metadata provenance, confidence, and automatic user locks. Refresh only approved fields. Side-by-side conflict review remains a later UI expansion.
 - [ ] Make import/merge/repair changes previewable with additions, exclusions, duplicate sources, revision/region groupings, and an explicit commit step.
 - [ ] Expand Time Machine with field-level differences, selective restore, retention controls, storage usage, and linked operation context.
 - [ ] Add composable smart collections with live counts, manual pins/exclusions, custom ordering, and an explanation of why a game belongs.
@@ -244,7 +266,7 @@ P0 defects discovered in any later pass interrupt feature expansion. Release ass
 
 ## P10 - Release Assurance
 
-- [ ] Use representative fixture libraries: empty, 100, 1,000, and 10,000 titles; long names; missing art; mixed ROM/store entries; offline drives; large PDFs.
+- [x] Use deterministic 1,000 and 10,000-title indexed-library fixtures plus existing empty/mixed scan, missing-art, guide, and PDF fixtures. Installed-build offline-drive coverage remains part of release validation.
 - [ ] Run the full application on clean installs and upgrades, not only standalone control harnesses. Verify executable, installer, update-feed and displayed versions agree.
 - [ ] Review native/browser/PDF dependencies, licenses and advisories. Record unavailable audit services as missing evidence, not a clean security result.
 - [ ] Verify backup-before-migration, atomic data writes, failed-update recovery, and rollback compatibility. Confirm portable/self-contained packaging includes required native assets.
@@ -287,6 +309,17 @@ Keep the WPF/.NET application and existing service conventions. Introduce abstra
 | Launch and context | Launch preflight/launcher services, `MainViewModel`, `GameEntryViewModel`, session/profile models |
 
 Paths above are ownership pointers under `src/CloudBerry.App` or `src/CloudBerry.Core`, not a mandate to edit every listed file. Persisted changes require migration tests and rollback consideration. Provider fixtures belong in deterministic tests; network smoke checks are separate and rate-limited.
+
+## Competitive Architecture Research
+
+The premium roadmap now has an evidence-backed platform companion:
+
+- [PLAYNITE_REA_REPORT.md](PLAYNITE_REA_REPORT.md) records the local Playnite 10.63 architecture, primary artifact identities, extension/theme/fullscreen contracts, evidence IDs, and explicit unknowns.
+- [CIRRA_PLATFORM_BLUEPRINT.md](CIRRA_PLATFORM_BLUEPRINT.md) combines those findings with the prior LaunchBox/Big Box pass and maps them to Cirra's current .NET 10 codebase.
+
+The blueprint does not authorize copying competitor code, assets, or visual identity. It prioritizes an indexed library, evidence-first scanning, metadata provenance, launch/session orchestration, normalized input, a bounded Horizon shell, a versioned Cirra theme API, recovery, and a deliberately scoped extension contract. Its delivery sequence extends this roadmap; the acceptance and pass-completion contracts in this document still apply.
+
+The platform slice now includes domain identities, a versioned SQLite sidecar, dry-run/idempotent migration, exact and moved-artifact reconciliation, cancellable scan operations, synchronized indexed search, field-level metadata provenance and locks, shared launch orchestration, bounded Horizon artwork loading, schema-backup recovery, and 10,000-title fixtures. `library.json` intentionally remains authoritative while the indexed store proves itself through beta upgrades. Delivery evidence and the next boundary are recorded in `CIRRA_PLATFORM_BLUEPRINT.md`.
 
 ## Pass Completion Contract
 

@@ -44,13 +44,13 @@ public sealed class ScanPreviewViewModel : ViewModelBase
             return "No games found in that folder.";
         }
 
-        var newCount = Candidates.Count - AlreadyOwnedCount;
-        if (AlreadyOwnedCount == 0)
+        var newCount = Candidates.Count - AlreadyOwnedCount - NeedsReviewCount;
+        if (AlreadyOwnedCount == 0 && NeedsReviewCount == 0)
         {
             return $"Found {Candidates.Count} game{(Candidates.Count == 1 ? "" : "s")}. Review the list, then import the ones you want.";
         }
 
-        return $"Found {Candidates.Count} game{(Candidates.Count == 1 ? "" : "s")} \u2014 {newCount} new, {AlreadyOwnedCount} already in your library (unchecked automatically).";
+        return $"Found {Candidates.Count} game{(Candidates.Count == 1 ? "" : "s")} - {newCount} new, {AlreadyOwnedCount} already indexed, {NeedsReviewCount} possible moved or copied {Pluralize(NeedsReviewCount, "file", "files")}.";
     }
 
     public ObservableCollection<ImportCandidateViewModel> Candidates { get; } = [];
@@ -83,6 +83,8 @@ public sealed class ScanPreviewViewModel : ViewModelBase
     public int CandidatesPrepared => Candidates.Count(candidate => candidate.HasStagedMetadata && !candidate.AlreadyExists);
 
     public int AlreadyOwnedCount => Candidates.Count(candidate => candidate.AlreadyExists);
+
+    public int NeedsReviewCount => Candidates.Count(candidate => candidate.NeedsReconciliationReview);
 
     public string PreparationSummary => CandidatesPrepared == 0
         ? "No import metadata staged yet"
@@ -375,7 +377,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
     {
         foreach (var candidate in Candidates)
         {
-            if (!candidate.AlreadyExists)
+            if (!candidate.AlreadyExists && !candidate.NeedsReconciliationReview)
             {
                 candidate.IsSelected = candidate.Confidence >= 0.62;
             }
@@ -386,7 +388,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
 
     public void SelectAll()
     {
-        foreach (var candidate in Candidates.Where(candidate => !candidate.AlreadyExists))
+        foreach (var candidate in Candidates.Where(candidate => !candidate.AlreadyExists && !candidate.NeedsReconciliationReview))
         {
             candidate.IsSelected = true;
         }

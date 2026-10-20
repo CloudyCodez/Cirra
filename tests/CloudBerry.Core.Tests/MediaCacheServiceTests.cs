@@ -40,6 +40,33 @@ public sealed class MediaCacheServiceTests : IDisposable
         Assert.Equal(Path.GetFullPath(localFile), cachedPath);
     }
 
+    [Fact]
+    public async Task CacheImageAsync_ReusesCachedAssetWithoutASecondRequest()
+    {
+        var handler = new CountingHttpMessageHandler("first response", "image/png");
+        var service = new MediaCacheService(new HttpClient(handler), _mediaRootPath);
+
+        var first = await service.CacheImageAsync("https://images.example/covers/hades", "hades", "cover");
+        var second = await service.CacheImageAsync("https://images.example/covers/hades", "hades", "cover");
+
+        Assert.Equal(first, second);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task CacheImageAsync_TrimsOldAssetsWhenCacheExceedsBudget()
+    {
+        var handler = new CountingHttpMessageHandler("1234567890", "image/png");
+        var service = new MediaCacheService(new HttpClient(handler), _mediaRootPath, cacheBudgetBytes: 12, maximumAssetBytes: 32);
+
+        await service.CacheImageAsync("https://images.example/covers/one", "one", "cover");
+        await Task.Delay(20);
+        var newest = await service.CacheImageAsync("https://images.example/covers/two", "two", "cover");
+
+        Assert.True(File.Exists(newest));
+        Assert.False(File.Exists(Path.Combine(_mediaRootPath, "one", "cover.png")));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_mediaRootPath))
@@ -52,6 +79,20 @@ public sealed class MediaCacheServiceTests : IDisposable
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(content, Encoding.UTF8, contentType)
+            });
+        }
+    }
+
+    private sealed class CountingHttpMessageHandler(string content, string contentType) : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(content, Encoding.UTF8, contentType)

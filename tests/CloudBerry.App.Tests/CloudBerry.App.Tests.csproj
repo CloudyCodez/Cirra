@@ -18,6 +18,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Content Include="../../src/CloudBerry.App/MainWindow.xaml" Link="Fixtures/MainWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/CloudBerry.App/Resources/Icons/cirra_app_icon_256.png" Link="Fixtures/cirra_app_icon_256.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

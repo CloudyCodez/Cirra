@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CloudBerry.Core\CloudBerry.Core.csproj" />
+    <ProjectReference Include="..\..\src\CloudBerry.Data\CloudBerry.Data.csproj" />
   </ItemGroup>
 
 </Project>

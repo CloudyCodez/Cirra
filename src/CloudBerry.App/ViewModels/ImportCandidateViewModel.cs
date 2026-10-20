@@ -11,10 +11,13 @@ public sealed class ImportCandidateViewModel : ViewModelBase
     private string _platform = "Unknown";
     private string _sourceKind = "Folder Scan";
     private string _installPath = string.Empty;
+    private string _deduplicationKey = string.Empty;
     private double _confidence;
     private string _signalsText = string.Empty;
     private bool _isSelected;
     private bool _alreadyExists;
+    private bool _needsReconciliationReview;
+    private string _reconciliationReason = string.Empty;
 
     public ImportCandidateViewModel()
     {
@@ -26,6 +29,7 @@ public sealed class ImportCandidateViewModel : ViewModelBase
         _platform = model.Platform;
         _sourceKind = model.SourceKind;
         _installPath = model.InstallPath;
+        _deduplicationKey = model.DeduplicationKey;
         _confidence = model.Confidence;
         _signalsText = string.Join(" | ", model.Signals);
         RefreshFileSize();
@@ -70,6 +74,12 @@ public sealed class ImportCandidateViewModel : ViewModelBase
                 RefreshFileSize();
             }
         }
+    }
+
+    public string DeduplicationKey
+    {
+        get => _deduplicationKey;
+        set => SetProperty(ref _deduplicationKey, value);
     }
 
     private long _fileSizeBytes = -1;
@@ -171,6 +181,25 @@ public sealed class ImportCandidateViewModel : ViewModelBase
         }
     }
 
+    public string ReconciliationReason
+    {
+        get => _reconciliationReason;
+        set => SetProperty(ref _reconciliationReason, value);
+    }
+
+    public bool NeedsReconciliationReview
+    {
+        get => _needsReconciliationReview;
+        set
+        {
+            if (SetProperty(ref _needsReconciliationReview, value))
+            {
+                OnPropertyChanged(nameof(ReviewState));
+                OnPropertyChanged(nameof(ReviewAccentLabel));
+            }
+        }
+    }
+
     public double ConfidencePercent => Math.Round(Confidence * 100);
 
     public string ConfidenceLabel => $"{ConfidencePercent:0}% confidence";
@@ -183,10 +212,16 @@ public sealed class ImportCandidateViewModel : ViewModelBase
         _ => "Needs review"
     };
 
-    public string ReviewState => AlreadyExists ? "Already in library" : "Ready for review";
+    public string ReviewState => AlreadyExists
+        ? "Already in library"
+        : NeedsReconciliationReview
+            ? "Possible moved or copied file"
+            : "Ready for review";
 
     public string ReviewAccentLabel => AlreadyExists
         ? "Already in library"
+        : NeedsReconciliationReview
+            ? "Check possible duplicate"
         : IsRom
             ? "ROM candidate"
             : "Desktop candidate";
@@ -366,6 +401,7 @@ public sealed class ImportCandidateViewModel : ViewModelBase
             ProviderName = metadata.ProviderName,
             RemoteId = metadata.RemoteId,
             RemoteSlug = metadata.RemoteSlug,
+			MatchConfidence = metadata.MatchConfidence,
             Title = metadata.Title,
             Summary = metadata.Summary,
             ReleaseDate = metadata.ReleaseDate,

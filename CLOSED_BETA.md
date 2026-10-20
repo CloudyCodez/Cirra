@@ -4,24 +4,16 @@ Prepared September 9, 2026. First cohort: three invited testers.
 
 ## What Is Ready
 
-Five closed-beta invitation keys are registered as Beta 01 through Beta 05, alongside three pre-existing legacy keys. Only normalized SHA-256 hashes are stored in the app. The plaintext keys are deliberately absent from this document and the distribution package. Send each person their own key privately.
+Cirra no longer contains an invitation-key gate. Starting with v0.4.1, the app opens directly and does not read or create activation markers. Private beta access is controlled by where the build is distributed, not by a client-side allowlist.
 
-The keys require a build produced after this change. They do not become valid in an older installed executable. Previously accepted keys and existing encrypted activation markers remain valid.
-
-Local distribution candidate: `artifacts/Cirra-closed-beta-2026-09-09-r1-win-x64.zip`, with its adjacent `.sha256` checksum. The ZIP includes `START_HERE.md`, build evidence, and the self-contained app. All nine archived files were hash-compared with the published source files. It has not yet passed a fresh-account packaged-executable launch; do that before inviting the cohort.
-
-**Current distribution:** use `artifacts/Cirra-closed-beta-2026-09-09-r4-protected-tester-win-x64.zip` and its adjacent checksum. It supersedes r1 and r3, includes all eight active keys, and excludes readable companion scripts, PDBs, obfuscation mappings, and source directories; private code symbols and strings in Cirra/Core are obfuscated. `START_HERE.md` and `TESTING_GUIDE.md` are tester-facing. `OWNER_BUILD_NOTES.md` is a concise release record, not required reading for testers.
-
-**Important limitation:** this is an offline invitation gate, not an activation server. The app remembers a successful grant using Windows CurrentUser DPAPI. It has no global one-device limit, expiration, activation dashboard, or remote revocation. A shared key can unlock another install. Removing a hash from a future build does not invalidate existing grants or older builds. Do not promise tighter enforcement than this. If a key leaks, restrict access to the download and assess whether server-backed activation is needed before a larger cohort.
-
-Keys are trimmed and case-insensitive for compatibility; punctuation remains significant. Copy the entire string, without surrounding quotation marks.
+Build the current protected tester package with `tools\release\build-closed-beta.ps1`. The resulting ZIP and adjacent SHA-256 file are written under `artifacts\`. The package excludes readable companion scripts, PDBs, obfuscation mappings, and source directories; private managed symbols and strings are processed with the repository protection profile. `START_HERE.md`, `TESTING_GUIDE.md`, and `RELEASE_NOTES.md` are tester-facing.
 
 ## Before Inviting Anyone
 
 1. Freeze one build for the cohort. Use a unique identifier, keep its ZIP and SHA-256 checksum, and never replace a file under the same identifier. This package is `2026-09-09-r1`, Windows x64, informational version `0.2.0.1-beta.20260909.1`.
-2. Run the packaged executable on a separate Windows test account or clean test machine. Confirm the access gate, first launch, library import, Horizon entry/exit, PDF reading, and ordinary shutdown. An offscreen source-level test is not an installation test.
-3. Inspect the package for personal libraries, settings, cached documents, browser profiles, credentials, saves, and plaintext invitation keys. Never share the workspace or your installed app-data folder.
-4. Share through a private, access-controlled download with the assigned testers. Send each key separately in a direct message. Keep a private roster of tester name, Beta 01-05 or legacy-key assignment, build ID, device summary, and completion status. Do not store passwords or full keys in bug tickets.
+2. Run the packaged executable on a separate Windows test account or clean test machine. Confirm first launch, library import, Horizon entry/exit, PDF reading, and ordinary shutdown. An offscreen source-level test is not an installation test.
+3. Inspect the package for personal libraries, settings, cached documents, browser profiles, credentials, saves, and source or debug artifacts. Never share the workspace or your installed app-data folder.
+4. Share through a private, access-controlled download with the assigned testers. Keep a private roster of tester name, build ID, device summary, and completion status. Do not store passwords or personal paths in bug tickets.
 5. Include the tester quick start, known issues, a contact method, the checksum, and an honest signing status. This ZIP is a locally built, unsigned candidate, not a production release or an automatically installed update. Its executable was checked and reports `NotSigned`.
 
 Prefer a signed distribution. Signing identifies the publisher but does not guarantee that a new build will avoid reputation warnings. Do not ask testers to disable Defender, SmartScreen, Smart App Control, or add broad antivirus exclusions. Ask them to report a block and pause installation instead. See [Microsoft's app reputation guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
@@ -63,7 +55,7 @@ For emulator failures, compare the same game launched directly through its confi
 ## Common Smoke Test
 
 1. Record build ID, Windows version, CPU/GPU/RAM, resolution and scale, number of monitors, library count, and controller model/connection. No serial numbers or account credentials needed.
-2. Enter the assigned key. A deliberately incorrect entry should show a recoverable error. Restart normally and confirm that a successful activation is remembered.
+2. Launch Cirra directly, close it normally, and launch it again. No key or activation step should appear.
 3. Add a small library. Select a game, hover several other covers, sort/filter, and return. Covers should stay visible and the intended selection should remain understandable.
 4. Enter Horizon, return to desktop, and enter again. Try a repeated entry click, Cancel/Escape on the loading screen, and closing during entry. There should be one dashboard or a clean return, never a stranded splash. Record a failure once rather than forcing shutdown repeatedly.
 5. Leave a selected title in place through two spotlight changes. Confirm its working selection is preserved; test spotlight pause and resume. Open and close a detail overlay.
@@ -75,7 +67,7 @@ Tester B additionally performs 20 enter/exit cycles and records Task Manager obs
 
 ## One Week, Small Feedback Loops
 
-- Day 1: 20-30 minutes of onboarding and common smoke testing. Fix installation/access/data-safety blockers before asking for deeper feedback.
+- Day 1: 20-30 minutes of onboarding and common smoke testing. Fix installation and data-safety blockers before asking for deeper feedback.
 - Days 2-4: two normal play sessions each, plus the assigned specialty. Ask what felt confusing or slow, not just whether they liked the visuals.
 - Day 5: triage the reports, reproduce them, and issue one focused candidate if needed. Keep new feature requests separate from defects.
 - Days 6-7: retest fixed bugs with the original reporter and run the common smoke test again. End with: best part, biggest frustration, and what stops them using Cirra daily.
@@ -117,8 +109,8 @@ Do not expand the cohort until all three people complete the core journey, no un
 
 ## Invitation Message
 
-> Hey! I'd love your help testing Cirra privately for about a week. It's an early build, so start with a few games and back up anything important. I'll send your download and personal key separately. Please keep the build and key private, and tell me what breaks, feels confusing, or slows you down. A short description with steps and a screenshot is perfect. No need to share passwords or your game files. If Windows blocks the build or anything touches saves unexpectedly, stop and message me.
+> Hey! I'd love your help testing Cirra privately for about a week. It's an early build, so start with a few games and back up anything important. I'll send the download privately. Please keep the build private, and tell me what breaks, feels confusing, or slows you down. A short description with steps and a screenshot is perfect. No need to share passwords or your game files. If Windows blocks the build or anything touches saves unexpectedly, stop and message me.
 
-## Next Access-System Work
+## Distribution Access
 
-For a larger beta, decide whether to add server-backed invite redemption, explicit device limits, expiry/revocation, an offline grace policy, and privacy-conscious activation records. Those features are not implemented by adding these three hashes. Preserve legitimate testers' offline access when designing that policy.
+Cirra intentionally has no client-side activation system. For a private cohort, use an access-controlled download and replace the archive with a newly versioned, newly checksummed build when needed. Do not describe download privacy as DRM or guaranteed leak prevention.

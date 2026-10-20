@@ -67,6 +67,8 @@ public sealed class GameEntryViewModel : ViewModelBase
     private string _emulatorPath = string.Empty;
     private string _saveLocationsText = string.Empty;
     private GameRecord.PlaySession? _currentSession;
+    private readonly Dictionary<string, MetadataFieldProvenance> _metadataFields = new(StringComparer.OrdinalIgnoreCase);
+    private bool _isApplyingMetadata;
 
     // ── Computed-value cache ─────────────────────────────────────────────────
     // These properties are accessed by WPF bindings on every layout pass for
@@ -137,6 +139,13 @@ public sealed class GameEntryViewModel : ViewModelBase
         _metadataProviderId = model.MetadataProviderId;
         _metadataProviderName = model.MetadataProviderName;
         _metadataItemUrl = model.MetadataItemUrl;
+		foreach (var provenance in model.MetadataFields ?? [])
+		{
+			if (!string.IsNullOrWhiteSpace(provenance.Field))
+			{
+				_metadataFields[provenance.Field] = provenance.Clone();
+			}
+		}
         _communityRating = model.CommunityRating;
         _genresText = string.Join(", ", model.Genres);
         _developersText = string.Join(", ", model.Developers);
@@ -172,6 +181,47 @@ public sealed class GameEntryViewModel : ViewModelBase
     }
 
     public ObservableCollection<AchievementEntryViewModel> Achievements { get; } = [];
+
+	public IReadOnlyCollection<MetadataFieldProvenance> MetadataFields => _metadataFields.Values;
+
+	public int LockedMetadataFieldCount => _metadataFields.Values.Count(entry => entry.IsUserLocked);
+
+	public string MetadataTrustLabel => LockedMetadataFieldCount == 0
+		? "Provider fields can refresh independently"
+		: LockedMetadataFieldCount == 1
+			? "1 player-edited field is protected"
+			: $"{LockedMetadataFieldCount} player-edited fields are protected";
+
+	public bool IsMetadataFieldLocked(string field) =>
+		!string.IsNullOrWhiteSpace(field) &&
+		_metadataFields.TryGetValue(field, out var provenance) &&
+		provenance.IsUserLocked;
+
+	public void SetMetadataFieldLock(string field, bool isLocked)
+	{
+		if (string.IsNullOrWhiteSpace(field))
+		{
+			return;
+		}
+
+		if (!_metadataFields.TryGetValue(field, out var provenance))
+		{
+			provenance = new MetadataFieldProvenance
+			{
+				Field = field.Trim(),
+				SourceId = isLocked ? "user" : string.Empty,
+				SourceName = isLocked ? "Player edit" : string.Empty
+			};
+			_metadataFields[field] = provenance;
+		}
+
+		provenance.IsUserLocked = isLocked;
+		provenance.Revision++;
+		provenance.AcquiredAtUtc = DateTimeOffset.UtcNow;
+		OnPropertyChanged(nameof(MetadataFields));
+		OnPropertyChanged(nameof(LockedMetadataFieldCount));
+		OnPropertyChanged(nameof(MetadataTrustLabel));
+	}
 
     public ObservableCollection<GameGuidebook> Guidebooks { get; } = [];
 
@@ -217,6 +267,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _screenshotUrls, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.ScreenshotUrls));
                 OnPropertyChanged(nameof(HasScreenshots));
             }
         }
@@ -229,6 +280,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _trailerUrl, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.TrailerUrl));
                 OnPropertyChanged(nameof(HasTrailer));
                 OnPropertyChanged(nameof(CanOpenTrailer));
                 OnPropertyChanged(nameof(HasDirectVideoTrailer));
@@ -270,6 +322,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _criticRating, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.CriticRating));
                 OnPropertyChanged(nameof(CriticRatingLabel));
                 OnPropertyChanged(nameof(CriticRatingStars));
                 OnPropertyChanged(nameof(HasCriticRating));
@@ -433,6 +486,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _title, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.Title));
                 RefreshPalette();
                 OnPropertyChanged(nameof(Initials));
                 OnPropertyChanged(nameof(Subtitle));
@@ -447,6 +501,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _platform, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.Platform));
                 OnPropertyChanged(nameof(Subtitle));
                 OnPropertyChanged(nameof(CaseProfile));
             }
@@ -656,7 +711,13 @@ public sealed class GameEntryViewModel : ViewModelBase
     public string TagsText
     {
         get => _tagsText;
-        set => SetProperty(ref _tagsText, value);
+        set
+		{
+			if (SetProperty(ref _tagsText, value))
+			{
+				MarkMetadataFieldEdited(nameof(GameRecord.Tags));
+			}
+		}
     }
 
     public string Summary
@@ -666,6 +727,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _summary, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.Summary));
                 OnPropertyChanged(nameof(SummaryOrPlaceholder));
                 OnPropertyChanged(nameof(NeedsMetadataRefresh));
                 OnPropertyChanged(nameof(MetadataCoverageLabel));
@@ -680,6 +742,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _releaseDate, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.ReleaseDate));
                 OnPropertyChanged(nameof(ReleaseDateLabel));
             }
         }
@@ -692,6 +755,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _coverImageUrl, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.CoverImageUrl));
                 OnPropertyChanged(nameof(DisplayCoverImagePath));
                 OnPropertyChanged(nameof(HasCoverImage));
                 OnPropertyChanged(nameof(NeedsMetadataRefresh));
@@ -707,6 +771,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _backgroundImageUrl, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.BackgroundImageUrl));
                 OnPropertyChanged(nameof(DisplayBackgroundImagePath));
                 OnPropertyChanged(nameof(HasBackgroundImage));
                 OnPropertyChanged(nameof(NeedsMetadataRefresh));
@@ -722,6 +787,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _bannerImageUrl, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.BannerImageUrl));
                 OnPropertyChanged(nameof(DisplayBannerImagePath));
                 OnPropertyChanged(nameof(DisplayBackgroundImagePath));
                 OnPropertyChanged(nameof(HasBannerImage));
@@ -739,6 +805,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _iconImageUrl, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.IconImageUrl));
                 OnPropertyChanged(nameof(DisplayIconImagePath));
                 OnPropertyChanged(nameof(HasIconImage));
             }
@@ -812,6 +879,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _websiteUrl, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.WebsiteUrl));
                 OnPropertyChanged(nameof(CanOpenWebsite));
             }
         }
@@ -854,6 +922,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _communityRating, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.CommunityRating));
                 OnPropertyChanged(nameof(RatingLabel));
             }
         }
@@ -866,6 +935,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _genresText, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.Genres));
                 OnPropertyChanged(nameof(HasGenres));
                 OnPropertyChanged(nameof(GenreList));
             }
@@ -879,6 +949,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _developersText, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.Developers));
                 OnPropertyChanged(nameof(DevelopersLabel));
             }
         }
@@ -891,6 +962,7 @@ public sealed class GameEntryViewModel : ViewModelBase
         {
             if (SetProperty(ref _publishersText, value))
             {
+				MarkMetadataFieldEdited(nameof(GameRecord.Publishers));
                 OnPropertyChanged(nameof(PublishersLabel));
             }
         }
@@ -1246,6 +1318,55 @@ public sealed class GameEntryViewModel : ViewModelBase
         }
     }
 
+    private bool CanApplyMetadataField(string field) => !IsMetadataFieldLocked(field);
+
+	private void MarkMetadataFieldEdited(string field)
+	{
+		if (_isApplyingMetadata)
+		{
+			return;
+		}
+
+		if (!_metadataFields.TryGetValue(field, out var provenance))
+		{
+			provenance = new MetadataFieldProvenance { Field = field };
+			_metadataFields[field] = provenance;
+		}
+
+		provenance.SourceId = "user";
+		provenance.SourceName = "Player edit";
+		provenance.Confidence = 1;
+		provenance.AcquiredAtUtc = DateTimeOffset.UtcNow;
+		provenance.IsUserLocked = true;
+		provenance.Revision++;
+		OnPropertyChanged(nameof(MetadataFields));
+		OnPropertyChanged(nameof(LockedMetadataFieldCount));
+		OnPropertyChanged(nameof(MetadataTrustLabel));
+	}
+
+	private void RecordMetadataSource(string field, GameMetadataRecord metadata)
+	{
+		if (!CanApplyMetadataField(field))
+		{
+			return;
+		}
+
+		if (!_metadataFields.TryGetValue(field, out var provenance))
+		{
+			provenance = new MetadataFieldProvenance { Field = field, Revision = 0 };
+			_metadataFields[field] = provenance;
+		}
+
+		provenance.SourceId = metadata.ProviderId?.Trim() ?? string.Empty;
+		provenance.SourceName = metadata.ProviderName?.Trim() ?? string.Empty;
+		provenance.Confidence = metadata.MatchConfidence > 0
+			? Math.Clamp(metadata.MatchConfidence, 0, 1)
+			: 1;
+		provenance.AcquiredAtUtc = DateTimeOffset.UtcNow;
+		provenance.IsUserLocked = false;
+		provenance.Revision++;
+	}
+
     public void ApplyMetadata(GameMetadataRecord metadata, MetadataMergeMode mergeMode = MetadataMergeMode.PreserveExisting)
     {
         var platforms = metadata.Platforms ?? [];
@@ -1256,75 +1377,138 @@ public sealed class GameEntryViewModel : ViewModelBase
         var screenshots = metadata.Screenshots ?? [];
         var guidebooks = metadata.Guidebooks ?? [];
 
-        if (!string.IsNullOrWhiteSpace(metadata.Title))
+		_isApplyingMetadata = true;
+		try
+		{
+        if (CanApplyMetadataField(nameof(GameRecord.Title)) && !string.IsNullOrWhiteSpace(metadata.Title))
         {
             Title = metadata.Title.Trim();
+			RecordMetadataSource(nameof(GameRecord.Title), metadata);
         }
 
-        if ((Platform.Equals("Unknown", StringComparison.OrdinalIgnoreCase) ||
+        if (CanApplyMetadataField(nameof(GameRecord.Platform)) &&
+			(Platform.Equals("Unknown", StringComparison.OrdinalIgnoreCase) ||
              Platform.Equals("Emulation", StringComparison.OrdinalIgnoreCase)) &&
             platforms.Count > 0)
         {
             Platform = platforms[0];
+			RecordMetadataSource(nameof(GameRecord.Platform), metadata);
         }
 
         var incomingSummary = metadata.Summary?.Trim() ?? string.Empty;
-        Summary = mergeMode == MetadataMergeMode.PreferIncoming
-            ? CoalesceNonEmpty(incomingSummary, Summary)
-            : CoalesceNonEmpty(Summary, incomingSummary);
+		if (CanApplyMetadataField(nameof(GameRecord.Summary)))
+		{
+			Summary = mergeMode == MetadataMergeMode.PreferIncoming
+				? CoalesceNonEmpty(incomingSummary, Summary)
+				: CoalesceNonEmpty(Summary, incomingSummary);
+			if (!string.IsNullOrWhiteSpace(incomingSummary)) RecordMetadataSource(nameof(GameRecord.Summary), metadata);
+		}
 
-        ReleaseDate = mergeMode == MetadataMergeMode.PreferIncoming
-            ? metadata.ReleaseDate ?? ReleaseDate
-            : ReleaseDate ?? metadata.ReleaseDate;
+		if (CanApplyMetadataField(nameof(GameRecord.ReleaseDate)))
+		{
+			ReleaseDate = mergeMode == MetadataMergeMode.PreferIncoming
+				? metadata.ReleaseDate ?? ReleaseDate
+				: ReleaseDate ?? metadata.ReleaseDate;
+			if (metadata.ReleaseDate is not null) RecordMetadataSource(nameof(GameRecord.ReleaseDate), metadata);
+		}
 
-        CoverImageUrl = MergeUrl(CoverImageUrl, metadata.CoverImageUrl, mergeMode);
-        BackgroundImageUrl = MergeUrl(BackgroundImageUrl, metadata.BackgroundImageUrl, mergeMode);
-        BannerImageUrl = MergeUrl(BannerImageUrl, metadata.BannerImageUrl, mergeMode);
-        IconImageUrl = MergeUrl(IconImageUrl, metadata.IconImageUrl, mergeMode);
-        WebsiteUrl = MergeUrl(WebsiteUrl, metadata.WebsiteUrl, mergeMode);
+		if (CanApplyMetadataField(nameof(GameRecord.CoverImageUrl)))
+		{
+			CoverImageUrl = MergeUrl(CoverImageUrl, metadata.CoverImageUrl, mergeMode);
+			if (!string.IsNullOrWhiteSpace(metadata.CoverImageUrl)) RecordMetadataSource(nameof(GameRecord.CoverImageUrl), metadata);
+		}
+		if (CanApplyMetadataField(nameof(GameRecord.BackgroundImageUrl)))
+		{
+			BackgroundImageUrl = MergeUrl(BackgroundImageUrl, metadata.BackgroundImageUrl, mergeMode);
+			if (!string.IsNullOrWhiteSpace(metadata.BackgroundImageUrl)) RecordMetadataSource(nameof(GameRecord.BackgroundImageUrl), metadata);
+		}
+		if (CanApplyMetadataField(nameof(GameRecord.BannerImageUrl)))
+		{
+			BannerImageUrl = MergeUrl(BannerImageUrl, metadata.BannerImageUrl, mergeMode);
+			if (!string.IsNullOrWhiteSpace(metadata.BannerImageUrl)) RecordMetadataSource(nameof(GameRecord.BannerImageUrl), metadata);
+		}
+		if (CanApplyMetadataField(nameof(GameRecord.IconImageUrl)))
+		{
+			IconImageUrl = MergeUrl(IconImageUrl, metadata.IconImageUrl, mergeMode);
+			if (!string.IsNullOrWhiteSpace(metadata.IconImageUrl)) RecordMetadataSource(nameof(GameRecord.IconImageUrl), metadata);
+		}
+		if (CanApplyMetadataField(nameof(GameRecord.WebsiteUrl)))
+		{
+			WebsiteUrl = MergeUrl(WebsiteUrl, metadata.WebsiteUrl, mergeMode);
+			if (!string.IsNullOrWhiteSpace(metadata.WebsiteUrl)) RecordMetadataSource(nameof(GameRecord.WebsiteUrl), metadata);
+		}
 
         MetadataProviderId = CoalesceNonEmpty(metadata.ProviderId, MetadataProviderId);
         MetadataProviderName = CoalesceNonEmpty(metadata.ProviderName, MetadataProviderName);
         MetadataItemUrl = MergeUrl(MetadataItemUrl, metadata.ProviderItemUrl, mergeMode);
 
-        if (mergeMode == MetadataMergeMode.PreferIncoming)
+		if (CanApplyMetadataField(nameof(GameRecord.CommunityRating)) && mergeMode == MetadataMergeMode.PreferIncoming)
         {
             CommunityRating = metadata.CommunityRating ?? CommunityRating;
-            if (metadata.CommunityRating is not null)
-            {
-                CriticRating = metadata.CommunityRating;
-            }
+			if (metadata.CommunityRating is not null) RecordMetadataSource(nameof(GameRecord.CommunityRating), metadata);
         }
-        else if (CommunityRating is null)
+		else if (CanApplyMetadataField(nameof(GameRecord.CommunityRating)) && CommunityRating is null)
         {
             CommunityRating = metadata.CommunityRating;
-            if (metadata.CommunityRating is not null && CriticRating is null)
-            {
-                CriticRating = metadata.CommunityRating;
-            }
+			if (metadata.CommunityRating is not null) RecordMetadataSource(nameof(GameRecord.CommunityRating), metadata);
         }
+		if (CanApplyMetadataField(nameof(GameRecord.CriticRating)) && metadata.CommunityRating is not null &&
+			(mergeMode == MetadataMergeMode.PreferIncoming || CriticRating is null))
+		{
+			CriticRating = metadata.CommunityRating;
+			RecordMetadataSource(nameof(GameRecord.CriticRating), metadata);
+		}
 
-        GenresText = MergeCsvValues(GenresText, genres, mergeMode);
-        DevelopersText = MergeCsvValues(DevelopersText, developers, mergeMode);
-        PublishersText = MergeCsvValues(PublishersText, publishers, mergeMode);
+		if (CanApplyMetadataField(nameof(GameRecord.Genres)))
+		{
+			GenresText = MergeCsvValues(GenresText, genres, mergeMode);
+			if (genres.Count > 0) RecordMetadataSource(nameof(GameRecord.Genres), metadata);
+		}
+		if (CanApplyMetadataField(nameof(GameRecord.Developers)))
+		{
+			DevelopersText = MergeCsvValues(DevelopersText, developers, mergeMode);
+			if (developers.Count > 0) RecordMetadataSource(nameof(GameRecord.Developers), metadata);
+		}
+		if (CanApplyMetadataField(nameof(GameRecord.Publishers)))
+		{
+			PublishersText = MergeCsvValues(PublishersText, publishers, mergeMode);
+			if (publishers.Count > 0) RecordMetadataSource(nameof(GameRecord.Publishers), metadata);
+		}
 
-        if (screenshots.Count > 0 && (mergeMode == MetadataMergeMode.PreferIncoming || ScreenshotUrls.Count == 0))
+		if (CanApplyMetadataField(nameof(GameRecord.ScreenshotUrls)) && screenshots.Count > 0 &&
+			(mergeMode == MetadataMergeMode.PreferIncoming || ScreenshotUrls.Count == 0))
         {
             ScreenshotUrls = new List<string>(screenshots);
+			RecordMetadataSource(nameof(GameRecord.ScreenshotUrls), metadata);
         }
 
-        TrailerUrl = MergeUrl(TrailerUrl, metadata.TrailerUrl, mergeMode);
+		if (CanApplyMetadataField(nameof(GameRecord.TrailerUrl)))
+		{
+			TrailerUrl = MergeUrl(TrailerUrl, metadata.TrailerUrl, mergeMode);
+			if (!string.IsNullOrWhiteSpace(metadata.TrailerUrl)) RecordMetadataSource(nameof(GameRecord.TrailerUrl), metadata);
+		}
 
         foreach (var guidebook in guidebooks)
         {
             AddGuidebook(guidebook);
         }
 
-        var mergedTags = BuildMergedValues(TagsText, tags.Concat(genres), mergeMode);
-
-        TagsText = string.Join(", ", mergedTags);
+		if (CanApplyMetadataField(nameof(GameRecord.Tags)))
+		{
+			var mergedTags = BuildMergedValues(TagsText, tags.Concat(genres), mergeMode);
+			TagsText = string.Join(", ", mergedTags);
+			if (tags.Count > 0 || genres.Count > 0) RecordMetadataSource(nameof(GameRecord.Tags), metadata);
+		}
         var providerName = string.IsNullOrWhiteSpace(metadata.ProviderName) ? "metadata provider" : metadata.ProviderName.Trim();
         SignalsText = $"Metadata downloaded from {providerName}.";
+		}
+		finally
+		{
+			_isApplyingMetadata = false;
+			OnPropertyChanged(nameof(MetadataFields));
+			OnPropertyChanged(nameof(LockedMetadataFieldCount));
+			OnPropertyChanged(nameof(MetadataTrustLabel));
+		}
     }
 
     private static string MergeUrl(string currentValue, string incomingValue, MetadataMergeMode mergeMode)
@@ -1586,6 +1770,7 @@ public sealed class GameEntryViewModel : ViewModelBase
             MetadataProviderId       = MetadataProviderId,
             MetadataProviderName     = MetadataProviderName,
             MetadataItemUrl          = MetadataItemUrl,
+			MetadataFields           = MetadataFields.Select(field => field.Clone()).ToList(),
             CommunityRating          = CommunityRating,
             Genres                   = Split(GenresText),
             Developers               = Split(DevelopersText),

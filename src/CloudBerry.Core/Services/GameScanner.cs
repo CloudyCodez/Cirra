@@ -207,11 +207,51 @@ public sealed class GameScanner
         "benchmark"
     };
 
+    private static readonly HashSet<string> DiscDescriptorExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".m3u",
+        ".cue",
+        ".gdi"
+    };
+
+    private static readonly HashSet<string> DiscPayloadExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".bin",
+        ".iso"
+    };
+
     public async Task<ScanReport> ScanFolderAsync(
         string folderPath,
         CancellationToken cancellationToken = default)
     {
         return await Task.Run(() => ScanFolder(folderPath, cancellationToken), cancellationToken);
+    }
+
+    /// <summary>
+    /// Removes duplicate and nested scan roots before a multi-library import starts. Scanning a
+    /// parent and one of its children is both slower and a common source of duplicate candidates.
+    /// </summary>
+    public IReadOnlyList<string> NormalizeScanRoots(IEnumerable<string> folderPaths)
+    {
+        var normalized = (folderPaths ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(TryNormalizeDirectoryPath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path!.Length)
+            .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var roots = new List<string>(normalized.Count);
+        foreach (var path in normalized)
+        {
+            if (!roots.Any(root => IsSameOrAncestorDirectory(root, path!)))
+            {
+                roots.Add(path!);
+            }
+        }
+
+        return roots;
     }
 
     public IReadOnlyList<string> DiscoverSteamLibraryRoots()
@@ -331,6 +371,25 @@ public sealed class GameScanner
         return candidate;
     }
 
+    public string GetImportIdentity(string launchTarget)
+    {
+        if (string.IsNullOrWhiteSpace(launchTarget))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return BuildEvaluatedCandidate(launchTarget, Path.GetPathRoot(launchTarget) ?? string.Empty)
+                .Candidate
+                .DeduplicationKey;
+        }
+        catch
+        {
+            return NormalizeFileIdentity(launchTarget);
+        }
+    }
+
     private ScanReport ScanFolder(string folderPath, CancellationToken cancellationToken)
     {
         var report = new ScanReport();
@@ -356,6 +415,7 @@ public sealed class GameScanner
         {
             cancellationToken.ThrowIfCancellationRequested();
             var currentDirectory = pendingDirectories.Dequeue();
+            report.DirectoriesInspected++;
 
             foreach (var subDirectory in EnumerateDirectoriesSafely(currentDirectory, report))
             {
@@ -364,6 +424,7 @@ public sealed class GameScanner
                 if (ShouldSkipDirectory(subDirectory))
                 {
                     report.FilesSkipped++;
+                    report.DirectoriesSkipped++;
                     continue;
                 }
 
@@ -394,6 +455,7 @@ public sealed class GameScanner
                     if (candidate.Candidate.Confidence < 0.42)
                     {
                         report.FilesSkipped++;
+                        report.LowConfidenceCandidatesSkipped++;
                         continue;
                     }
 
@@ -407,7 +469,7 @@ public sealed class GameScanner
             }
         }
 
-        report.Candidates = CollapseCandidates(rawCandidates)
+        report.Candidates = CollapseCandidates(rawCandidates, report)
             .OrderByDescending(candidate => candidate.Confidence)
             .ThenBy(candidate => candidate.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -415,7 +477,7 @@ public sealed class GameScanner
         return report;
     }
 
-    private static IEnumerable<ImportCandidate> CollapseCandidates(IEnumerable<EvaluatedCandidate> rawCandidates)
+    private static IEnumerable<ImportCandidate> CollapseCandidates(IEnumerable<EvaluatedCandidate> rawCandidates, ScanReport report)
     {
         var collapsed = new List<ImportCandidate>();
 
@@ -433,16 +495,95 @@ public sealed class GameScanner
             if (ordered.Count > 1)
             {
                 best.Signals.Add($"Collapsed {ordered.Count - 1} alternate executable(s) from the same install.");
+                report.DuplicateCandidatesCollapsed += ordered.Count - 1;
             }
 
             collapsed.Add(best);
         }
 
-        collapsed.AddRange(rawCandidates
-            .Where(candidate => !candidate.IsDesktopLaunchable)
-            .Select(candidate => candidate.Candidate));
+        collapsed.AddRange(CollapseRomCandidates(rawCandidates.Where(candidate => !candidate.IsDesktopLaunchable), report));
 
         return collapsed;
+    }
+
+    private static IEnumerable<ImportCandidate> CollapseRomCandidates(
+        IEnumerable<EvaluatedCandidate> evaluatedCandidates,
+        ScanReport report)
+    {
+        var candidates = evaluatedCandidates.ToList();
+        var suppressed = new HashSet<EvaluatedCandidate>();
+
+        // A playlist is the authoritative launch target for a multi-disc set. Only collapse
+        // matching sibling files when a playlist explicitly exists, so separate discs remain
+        // selectable when no playlist is present.
+        foreach (var group in candidates
+                     .Where(candidate => HasExtension(candidate.Candidate.InstallPath, ".m3u"))
+                     .GroupBy(candidate => BuildDiscSetKey(candidate.Candidate.InstallPath, candidate.Candidate.Platform), StringComparer.OrdinalIgnoreCase))
+        {
+            var ordered = group.OrderByDescending(candidate => candidate.Candidate.Confidence).ToList();
+            var primary = ordered[0];
+            var related = candidates.Where(candidate =>
+                !ReferenceEquals(candidate, primary) &&
+                BuildDiscSetKey(candidate.Candidate.InstallPath, candidate.Candidate.Platform)
+                    .Equals(group.Key, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (related.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var candidate in related)
+            {
+                suppressed.Add(candidate);
+            }
+
+            primary.Candidate.Signals.Add($"Playlist selected as the launch target; {related.Count} companion file{(related.Count == 1 ? string.Empty : "s")} folded into this set.");
+            report.CompanionFilesCollapsed += related.Count;
+        }
+
+        // A CUE/GDI descriptor and its same-stem BIN/ISO payload describe one disc, never two
+        // games. This is deliberately exact-stem only to avoid dropping separately named discs.
+        foreach (var descriptor in candidates.Where(candidate =>
+                     DiscDescriptorExtensions.Contains(Path.GetExtension(candidate.Candidate.InstallPath)) &&
+                     !suppressed.Contains(candidate)))
+        {
+            var descriptorStem = BuildExactDiscStemKey(descriptor.Candidate.InstallPath);
+            var payloads = candidates.Where(candidate =>
+                    !suppressed.Contains(candidate) &&
+                    DiscPayloadExtensions.Contains(Path.GetExtension(candidate.Candidate.InstallPath)) &&
+                    BuildExactDiscStemKey(candidate.Candidate.InstallPath)
+                        .Equals(descriptorStem, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (payloads.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var payload in payloads)
+            {
+                suppressed.Add(payload);
+            }
+
+            descriptor.Candidate.Signals.Add($"Disc descriptor selected; {payloads.Count} same-disc payload file{(payloads.Count == 1 ? string.Empty : "s")} ignored.");
+            report.CompanionFilesCollapsed += payloads.Count;
+        }
+
+        foreach (var group in candidates
+                     .Where(candidate => !suppressed.Contains(candidate))
+                     .GroupBy(candidate => candidate.Candidate.DeduplicationKey, StringComparer.OrdinalIgnoreCase))
+        {
+            var ordered = group.OrderByDescending(candidate => candidate.Candidate.Confidence).ToList();
+            var primary = ordered[0].Candidate;
+            if (ordered.Count > 1)
+            {
+                primary.Signals.Add($"Collapsed {ordered.Count - 1} duplicate file candidate{(ordered.Count == 2 ? string.Empty : "s")}.");
+                report.DuplicateCandidatesCollapsed += ordered.Count - 1;
+            }
+
+            yield return primary;
+        }
     }
 
     private static IEnumerable<string> EnumerateDirectoriesSafely(string directory, ScanReport report)
@@ -477,6 +618,40 @@ public sealed class GameScanner
         {
             roots.Add(Path.GetFullPath(path));
         }
+    }
+
+    private static string? TryNormalizeDirectoryPath(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path))
+            {
+                return null;
+            }
+
+            var fullPath = Path.GetFullPath(path);
+            var root = Path.GetPathRoot(fullPath);
+            return !string.IsNullOrWhiteSpace(root) && fullPath.Equals(root, StringComparison.OrdinalIgnoreCase)
+                ? root
+                : fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch (Exception exception) when (IsExpectedScanException(exception) || exception is ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsSameOrAncestorDirectory(string ancestor, string candidate)
+    {
+        if (ancestor.Equals(candidate, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var prefix = ancestor.EndsWith(Path.DirectorySeparatorChar) || ancestor.EndsWith(Path.AltDirectorySeparatorChar)
+            ? ancestor
+            : ancestor + Path.DirectorySeparatorChar;
+        return candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
     private static IEnumerable<string> FindSteamInstallRoots()
@@ -1021,6 +1196,7 @@ public sealed class GameScanner
                 Platform = platform,
                 SourceKind = "Folder Scan",
                 InstallPath = filePath,
+                DeduplicationKey = BuildImportIdentity(productRootKey, isDesktopLaunchable, filePath, platform),
                 Confidence = confidence,
                 Signals = signals
             }
@@ -1109,6 +1285,65 @@ public sealed class GameScanner
                extension.Equals(".bat", StringComparison.OrdinalIgnoreCase) ||
                extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase) ||
                extension.Equals(".url", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildImportIdentity(string productRootKey, bool isDesktopLaunchable, string filePath, string platform)
+    {
+        if (isDesktopLaunchable)
+        {
+            var root = NormalizeFileIdentity(productRootKey);
+            return string.IsNullOrWhiteSpace(root) ? NormalizeFileIdentity(filePath) : "desktop:" + root;
+        }
+
+        return "file:" + NormalizeFileIdentity(filePath);
+    }
+
+    private static string NormalizeFileIdentity(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path.Trim().Trim('"'));
+            var root = Path.GetPathRoot(fullPath);
+            var normalizedPath = !string.IsNullOrWhiteSpace(root) && fullPath.Equals(root, StringComparison.OrdinalIgnoreCase)
+                ? root
+                : fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return normalizedPath
+                .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+                .ToLowerInvariant();
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return path.Trim().Trim('"').Replace('\\', '/').ToLowerInvariant();
+        }
+    }
+
+    private static bool HasExtension(string path, string extension)
+    {
+        return Path.GetExtension(path).Equals(extension, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildDiscSetKey(string path, string platform)
+    {
+        var parent = Path.GetDirectoryName(path) ?? string.Empty;
+        return $"{NormalizeFileIdentity(parent)}|{platform}|{NormalizeDiscStem(Path.GetFileNameWithoutExtension(path))}";
+    }
+
+    private static string BuildExactDiscStemKey(string path)
+    {
+        var parent = Path.GetDirectoryName(path) ?? string.Empty;
+        return $"{NormalizeFileIdentity(parent)}|{Path.GetFileNameWithoutExtension(path).Trim().ToLowerInvariant()}";
+    }
+
+    private static string NormalizeDiscStem(string value)
+    {
+        return Regex.Replace(value, @"(?:[\s._-]*\(?\s*(?:disc|disk|cd|track)\s*\d+\s*\)?)$", string.Empty, RegexOptions.IgnoreCase)
+            .Trim()
+            .ToLowerInvariant();
     }
 
     private static string GuessPlatform(string filePath)

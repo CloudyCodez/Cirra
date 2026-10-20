@@ -373,6 +373,7 @@ public partial class MainWindow : Window
         try
         {
             await ViewModel.FlushPendingChangesAsync();
+			await ViewModel.FlushLibraryIndexAsync();
         }
         catch (Exception ex)
         {
@@ -817,13 +818,16 @@ public partial class MainWindow : Window
         try
         {
             var merged = new List<ImportCandidateViewModel>();
-            var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var folderPath in folderPaths.Where(path => !string.IsNullOrWhiteSpace(path)))
             {
                 var candidates = await ViewModel.GetScanCandidatesAsync(folderPath, romsOnly);
                 foreach (var candidate in candidates)
                 {
-                    if (seenPaths.Add(candidate.InstallPath))
+                    var identity = string.IsNullOrWhiteSpace(candidate.DeduplicationKey)
+                        ? candidate.InstallPath
+                        : candidate.DeduplicationKey;
+                    if (seenIdentities.Add(identity))
                     {
                         if (!string.IsNullOrEmpty(sourceKindOverride) && !candidate.IsRom)
                         {

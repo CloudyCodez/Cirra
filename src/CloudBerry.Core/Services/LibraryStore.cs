@@ -184,7 +184,19 @@ public sealed class LibraryStore
                 : new LibrarySnapshot();
 
             await SaveCoreAsync(snapshot, cancellationToken);
-            return await History.RecordAsync(before, snapshot, context, cancellationToken);
+			try
+			{
+				return await History.RecordAsync(before, snapshot, context, cancellationToken);
+			}
+			catch (Exception ex)
+			{
+				// The atomic library commit is authoritative. A secondary history failure must not
+				// make callers roll a successfully saved import back only in memory.
+				System.Diagnostics.Trace.TraceError(
+					"Cirra saved the library, but could not record history: {0}",
+					ex);
+				return null;
+			}
         }
         finally
         {

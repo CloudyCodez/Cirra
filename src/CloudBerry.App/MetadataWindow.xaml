@@ -155,6 +155,12 @@
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        Text="{Binding SelectedGame.MetadataCoverageLabel, TargetNullValue='Metadata target not selected'}"
                                        TextTrimming="CharacterEllipsis"/>
+							<TextBlock Margin="0,3,0,0"
+							           FontSize="10"
+							           Foreground="{DynamicResource MintBrush}"
+							           Text="{Binding SelectedGame.MetadataTrustLabel, TargetNullValue='No field provenance yet'}"
+							           TextTrimming="CharacterEllipsis"
+							           ToolTip="Manual edits are protected from provider refreshes."/>
                         </StackPanel>
                     </Grid>
                 </Border>
