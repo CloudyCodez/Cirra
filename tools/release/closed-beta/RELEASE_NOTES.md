@@ -1,8 +1,14 @@
-## Cirra v0.4.1 Closed Beta
+## Cirra v0.4.2 Closed Beta
 
 This is a prerelease for invited Windows testers. It is not a general public build.
 
 ### Included
+
+- Launcher-first discovery for installed Steam, Epic, and Xbox games, with filesystem scanning retained as a fallback and review layer.
+- Stable storefront and install-root identities carried through preview, import, persistence, and later rescans.
+- Steam protocol launching by App ID, plus Epic and Xbox manifest launch-target support for games whose executables use internal names.
+- Duplicate cleanup that recognizes shared game identities even when stored launch paths differ, while leaving unrelated same-title games separate.
+- Better direct-folder scans and regression coverage for codenamed executables, overlapping roots, Xbox launch proxies, and identity persistence.
 
 - A new indexed library engine with schema backups, transactional reconciliation, and fast large-library search.
 - Persistent exact-artifact duplicate protection plus moved/copied-file review using bounded content fingerprints.
@@ -26,6 +32,6 @@ This is a prerelease for invited Windows testers. It is not a general public bui
 
 ### Verification
 
-SHA-256 for the ZIP is included as a separate `.sha256` release asset. All 275 automated tests pass: 108 application tests and 167 Core/Data tests. The eleven retired access-gate tests were removed with the gate. With no activation marker present, the protected packaged executable opened a responsive Cirra window, created no replacement marker, closed normally with exit code 0, and produced no new diagnostic errors.
+SHA-256 for the ZIP is included as a separate `.sha256` release asset. All 288 automated tests pass: 110 application tests and 178 Core/Data tests. The protected package excludes readable source and debugging artifacts; it does not include an invitation-key gate.
 
 Please report issues with reproducible steps, your Windows version, and the affected game/platform or controller where relevant.

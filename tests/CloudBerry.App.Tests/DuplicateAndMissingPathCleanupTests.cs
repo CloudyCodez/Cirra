@@ -248,4 +248,39 @@ public sealed class DuplicateAndMissingPathCleanupTests : IDisposable
         Assert.Equal(2, roundTripped.SaveLocations.Count);
         Assert.Equal(model.SaveLocations, roundTripped.SaveLocations);
     }
+
+    [Fact]
+    public void GameEntryViewModel_RoundTripsStableImportIdentities()
+    {
+        var model = new GameRecord
+        {
+            ImportIdentityKeys =
+            [
+                "source:steam:2369900",
+                @"desktop:c:\games\castlevania dominus collection"
+            ]
+        };
+
+        var roundTripped = new GameEntryViewModel(model).ToModel();
+
+        Assert.Equal(model.ImportIdentityKeys, roundTripped.ImportIdentityKeys);
+    }
+
+    [Fact]
+    public void ImportCandidateViewModel_PreservesSteamIdentityOnImportedGame()
+    {
+        var candidate = new ImportCandidate
+        {
+            Title = "Castlevania Dominus Collection",
+            InstallPath = "steam://rungameid/2369900",
+            DeduplicationKey = "source:steam:2369900",
+            IdentityKeys = ["source:steam:2369900", @"desktop:c:\games\castlevania"],
+            Confidence = 1
+        };
+
+        var game = new ImportCandidateViewModel(candidate).ToGameEntry();
+
+        Assert.Equal("2369900", game.SteamAppId);
+        Assert.Equal(candidate.IdentityKeys, game.ImportIdentityKeys);
+    }
 }

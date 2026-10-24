@@ -5142,7 +5142,7 @@ public sealed class MainViewModel : ViewModelBase
 				artifactMatches.TryGetValue(item.InstallPath, out ArtifactReconciliationResult? artifactMatch);
 				bool needsReview = artifactMatch?.Kind == ArtifactReconciliationKind.ProbableMovedArtifact;
 				bool alreadyExists = IsKnownLaunchTarget(item.InstallPath, existingLaunchKeys) ||
-					IsKnownImportIdentity(item.DeduplicationKey, existingIdentityKeys) ||
+					HasKnownImportIdentity(GetCandidateIdentityKeys(item), existingIdentityKeys) ||
 					artifactMatch?.AlreadyIndexed == true;
 				AddCandidateInternal(new ImportCandidateViewModel(item)
 				{
@@ -5196,7 +5196,7 @@ public sealed class MainViewModel : ViewModelBase
 				artifactMatches.TryGetValue(item.InstallPath, out ArtifactReconciliationResult? artifactMatch);
 				bool needsReview = artifactMatch?.Kind == ArtifactReconciliationKind.ProbableMovedArtifact;
 				bool flag = IsKnownLaunchTarget(item.InstallPath, existingLaunchKeys) ||
-					IsKnownImportIdentity(item.DeduplicationKey, existingIdentityKeys) ||
+					HasKnownImportIdentity(GetCandidateIdentityKeys(item), existingIdentityKeys) ||
 					artifactMatch?.AlreadyIndexed == true;
 				AddCandidateInternal(new ImportCandidateViewModel(item)
 				{
@@ -5308,10 +5308,10 @@ public sealed class MainViewModel : ViewModelBase
 			foreach (ImportCandidateViewModel candidate in requestedCandidates)
 			{
 				string launchKey = NormalizeLaunchTargetKey(candidate.InstallPath);
-				string identityKey = ResolveCandidateIdentity(candidate.DeduplicationKey, candidate.InstallPath);
+				List<string> identityKeys = GetCandidateIdentityKeys(candidate);
 				if (indexedPaths.Contains(candidate.InstallPath) ||
 					(!string.IsNullOrWhiteSpace(launchKey) && !existingLaunchKeys.Add(launchKey)) ||
-					(!string.IsNullOrWhiteSpace(identityKey) && !existingIdentityKeys.Add(identityKey)))
+					identityKeys.Any(existingIdentityKeys.Contains))
 				{
 					candidate.AlreadyExists = true;
 					candidate.IsSelected = false;
@@ -5320,6 +5320,10 @@ public sealed class MainViewModel : ViewModelBase
 				}
 
 				selectedCandidates.Add(candidate);
+				foreach (string identityKey in identityKeys)
+				{
+					existingIdentityKeys.Add(identityKey);
+				}
 			}
 			if (selectedCandidates.Count == 0)
 			{
@@ -7970,7 +7974,11 @@ public sealed class MainViewModel : ViewModelBase
 	private HashSet<string> BuildExistingImportIdentitySet()
 	{
 		return Games
-			.Select(game => _gameScanner.GetImportIdentity(game.InstallPath))
+			.SelectMany(game => game.ImportIdentityKeys
+				.Append(_gameScanner.GetImportIdentity(game.InstallPath))
+				.Concat(string.IsNullOrWhiteSpace(game.SteamAppId)
+					? []
+					: [$"source:steam:{game.SteamAppId.Trim().ToLowerInvariant()}"]))
 			.Where(key => !string.IsNullOrWhiteSpace(key))
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 	}
@@ -8054,6 +8062,29 @@ public sealed class MainViewModel : ViewModelBase
 	internal static bool IsKnownImportIdentity(string identityKey, ISet<string> existingIdentityKeys)
 	{
 		return !string.IsNullOrWhiteSpace(identityKey) && existingIdentityKeys.Contains(identityKey);
+	}
+
+	private static bool HasKnownImportIdentity(IEnumerable<string> identityKeys, ISet<string> existingIdentityKeys)
+	{
+		return identityKeys.Any(existingIdentityKeys.Contains);
+	}
+
+	private List<string> GetCandidateIdentityKeys(ImportCandidate candidate)
+	{
+		return (candidate.IdentityKeys ?? [])
+			.Append(ResolveCandidateIdentity(candidate.DeduplicationKey, candidate.InstallPath))
+			.Where(key => !string.IsNullOrWhiteSpace(key))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+	}
+
+	private List<string> GetCandidateIdentityKeys(ImportCandidateViewModel candidate)
+	{
+		return candidate.IdentityKeys
+			.Append(ResolveCandidateIdentity(candidate.DeduplicationKey, candidate.InstallPath))
+			.Where(key => !string.IsNullOrWhiteSpace(key))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
 	}
 
 	private string ResolveCandidateIdentity(string identityKey, string installPath)
@@ -12053,17 +12084,70 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task<int> RemoveDuplicateLibraryEntriesAsync()
 	{
-		List<GameEntryViewModel> duplicates = (from @group in Games.Where((GameEntryViewModel game) => !string.IsNullOrWhiteSpace(game.InstallPath)).GroupBy<GameEntryViewModel, string>((GameEntryViewModel game) => NormalizeLaunchTargetKey(game.InstallPath), StringComparer.OrdinalIgnoreCase)
-			where !string.IsNullOrWhiteSpace(@group.Key) && @group.Count() > 1
-			select @group).SelectMany(delegate(IGrouping<string, GameEntryViewModel> group)
+		var parent = Games.ToDictionary(game => game.Id, game => game.Id);
+		var ownerByIdentity = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+
+		Guid Find(Guid id)
 		{
-			GameEntryViewModel keep = group.OrderByDescending(GetLibraryRecordQualityScore).ThenByDescending((GameEntryViewModel game) => game.LastPlayedOn ?? DateTime.MinValue).ThenByDescending((GameEntryViewModel game) => game.AddedOn)
-				.First();
-			return group.Where((GameEntryViewModel game) => game.Id != keep.Id);
-		}).ToList();
+			while (parent[id] != id)
+			{
+				parent[id] = parent[parent[id]];
+				id = parent[id];
+			}
+			return id;
+		}
+
+		void Union(Guid left, Guid right)
+		{
+			Guid leftRoot = Find(left);
+			Guid rightRoot = Find(right);
+			if (leftRoot != rightRoot)
+			{
+				parent[rightRoot] = leftRoot;
+			}
+		}
+
+		foreach (GameEntryViewModel game in Games)
+		{
+			IEnumerable<string> identities = game.ImportIdentityKeys
+				.Append(_gameScanner.GetImportIdentity(game.InstallPath))
+				.Append(NormalizeLaunchTargetKey(game.InstallPath))
+				.Concat(string.IsNullOrWhiteSpace(game.SteamAppId)
+					? []
+					: [$"source:steam:{game.SteamAppId.Trim().ToLowerInvariant()}"])
+				.Where(identity => !string.IsNullOrWhiteSpace(identity))
+				.Distinct(StringComparer.OrdinalIgnoreCase);
+
+			foreach (string identity in identities)
+			{
+				if (ownerByIdentity.TryGetValue(identity, out Guid owner))
+				{
+					Union(game.Id, owner);
+				}
+				else
+				{
+					ownerByIdentity[identity] = game.Id;
+				}
+			}
+		}
+
+		List<GameEntryViewModel> duplicates = Games
+			.GroupBy(game => Find(game.Id))
+			.Where(group => group.Count() > 1)
+			.SelectMany(group =>
+			{
+				GameEntryViewModel keep = group
+					.OrderByDescending(GetLibraryRecordQualityScore)
+					.ThenByDescending(game => game.LastPlayedOn ?? DateTime.MinValue)
+					.ThenByDescending(game => game.AddedOn)
+					.First();
+				return group.Where(game => game.Id != keep.Id);
+			})
+			.DistinctBy(game => game.Id)
+			.ToList();
 		if (duplicates.Count == 0)
 		{
-			StatusMessage = "Duplicate cleanup finished. No duplicate launch paths were found.";
+			StatusMessage = "Duplicate cleanup finished. No duplicate game identities were found.";
 			return 0;
 		}
 		await RemoveGamesAsync(duplicates);
@@ -12748,7 +12832,7 @@ public sealed class MainViewModel : ViewModelBase
 			artifactMatches.TryGetValue(candidate.InstallPath, out ArtifactReconciliationResult? artifactMatch);
 			bool needsReview = artifactMatch?.Kind == ArtifactReconciliationKind.ProbableMovedArtifact;
 			bool flag = IsKnownLaunchTarget(candidate.InstallPath, existingLaunchKeys) ||
-				IsKnownImportIdentity(candidate.DeduplicationKey, existingIdentityKeys) ||
+				HasKnownImportIdentity(GetCandidateIdentityKeys(candidate), existingIdentityKeys) ||
 				artifactMatch?.AlreadyIndexed == true;
 			return new ImportCandidateViewModel(candidate)
 			{
@@ -12756,6 +12840,35 @@ public sealed class MainViewModel : ViewModelBase
 				NeedsReconciliationReview = needsReview,
 				ReconciliationReason = ResolveReconciliationReason(flag, artifactMatch),
 				IsSelected = (candidate.Confidence >= 0.62 && !flag && !needsReview)
+			};
+		}).ToList();
+	}
+
+	public async Task<IReadOnlyList<ImportCandidateViewModel>> GetLauncherManifestCandidatesAsync(string? provider = null)
+	{
+		List<ImportCandidate> candidates = (await Task.Run(_gameScanner.DiscoverLauncherCandidates))
+			.Where(candidate => string.IsNullOrWhiteSpace(provider) ||
+				candidate.SourceKind.Equals(provider, StringComparison.OrdinalIgnoreCase))
+			.DistinctBy(candidate => candidate.DeduplicationKey, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		HashSet<string> existingLaunchKeys = BuildExistingLaunchKeySet();
+		HashSet<string> existingIdentityKeys = BuildExistingImportIdentitySet();
+		IReadOnlyDictionary<string, ArtifactReconciliationResult> artifactMatches =
+			await ReconcileArtifactsAsync(candidates.Where(candidate => !candidate.InstallPath.Contains("://", StringComparison.Ordinal)));
+
+		return candidates.Select(candidate =>
+		{
+			artifactMatches.TryGetValue(candidate.InstallPath, out ArtifactReconciliationResult? artifactMatch);
+			bool needsReview = artifactMatch?.Kind == ArtifactReconciliationKind.ProbableMovedArtifact;
+			bool alreadyExists = IsKnownLaunchTarget(candidate.InstallPath, existingLaunchKeys) ||
+				HasKnownImportIdentity(GetCandidateIdentityKeys(candidate), existingIdentityKeys) ||
+				artifactMatch?.AlreadyIndexed == true;
+			return new ImportCandidateViewModel(candidate)
+			{
+				AlreadyExists = alreadyExists,
+				NeedsReconciliationReview = needsReview,
+				ReconciliationReason = ResolveReconciliationReason(alreadyExists, artifactMatch),
+				IsSelected = !alreadyExists && !needsReview
 			};
 		}).ToList();
 	}

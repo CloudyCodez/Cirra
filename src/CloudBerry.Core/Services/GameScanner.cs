@@ -1,6 +1,7 @@
 using CloudBerry.Core.Models;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace CloudBerry.Core.Services;
 
@@ -228,6 +229,69 @@ public sealed class GameScanner
     }
 
     /// <summary>
+    /// Reads authoritative storefront manifests before the broader filesystem scan. Storefront
+    /// identity and title are treated as primary evidence, so a game is not lost merely because its
+    /// executable uses an internal codename or lives below a technical directory.
+    /// </summary>
+    public IReadOnlyList<ImportCandidate> DiscoverLauncherCandidates()
+    {
+        var candidates = new List<ImportCandidate>();
+        candidates.AddRange(ReadInstalledSteamGames().Select(game => CreateLauncherCandidate(new LauncherGameInfo(
+            "Steam",
+            game.AppId,
+            game.Title,
+            game.InstallPath,
+            $"steam://rungameid/{game.AppId}"))));
+        candidates.AddRange(ReadInstalledEpicGames().Select(CreateLauncherCandidate));
+        candidates.AddRange(ReadInstalledXboxGames().Select(CreateLauncherCandidate));
+
+        return candidates
+            .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Title) &&
+                                !string.IsNullOrWhiteSpace(candidate.InstallPath))
+            .GroupBy(candidate => candidate.DeduplicationKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(candidate => candidate.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public ImportCandidate CreateLauncherCandidate(LauncherGameInfo game)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+
+        var provider = string.IsNullOrWhiteSpace(game.Provider) ? "Launcher" : game.Provider.Trim();
+        var title = string.IsNullOrWhiteSpace(game.Title)
+            ? GameNameNormalizer.NormalizeTitleFromPath(game.InstallPath)
+            : game.Title.Trim();
+        var installRoot = TryNormalizeDirectoryPath(game.InstallPath) ?? game.InstallPath.Trim();
+        var launchTarget = ResolveManifestLaunchTarget(installRoot, game.LaunchTarget);
+        var sourceIdentity = BuildSourceIdentity(provider, game.ExternalId);
+        var rootIdentity = BuildImportIdentity(installRoot, true, launchTarget, "Windows PC");
+        var identities = new[] { sourceIdentity, rootIdentity }
+            .Where(identity => !string.IsNullOrWhiteSpace(identity))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new ImportCandidate
+        {
+            Title = title,
+            Platform = "Windows PC",
+            SourceKind = provider,
+            InstallPath = launchTarget,
+            DeduplicationKey = identities.FirstOrDefault() ?? rootIdentity,
+            IdentityKeys = identities,
+            Confidence = 1,
+            Signals =
+            [
+                $"Verified by the {provider} install manifest.",
+                "Storefront identity retained for future duplicate prevention.",
+                launchTarget.Contains("://", StringComparison.Ordinal)
+                    ? "Uses the storefront launch protocol instead of guessing an executable."
+                    : "Launch target resolved from the installed game record."
+            ]
+        };
+    }
+
+    /// <summary>
     /// Removes duplicate and nested scan roots before a multi-library import starts. Scanning a
     /// parent and one of its children is both slower and a common source of duplicate candidates.
     /// </summary>
@@ -452,7 +516,7 @@ public sealed class GameScanner
                     }
 
                     var candidate = BuildEvaluatedCandidate(filePath, normalizedScanRoot);
-                    if (candidate.Candidate.Confidence < 0.42)
+                    if (candidate.Candidate.Confidence < 0.35)
                     {
                         report.FilesSkipped++;
                         report.LowConfidenceCandidatesSkipped++;
@@ -707,6 +771,13 @@ public sealed class GameScanner
     /// <summary>
     /// Represents a single installed Steam game parsed from its appmanifest ACF file.
     /// </summary>
+    public sealed record LauncherGameInfo(
+        string Provider,
+        string ExternalId,
+        string Title,
+        string InstallPath,
+        string LaunchTarget);
+
     public sealed record SteamGameInfo(
         string AppId,
         string Title,
@@ -795,6 +866,11 @@ public sealed class GameScanner
 
     private static IEnumerable<string> ParseEpicManifestInstallLocations()
     {
+        return ReadInstalledEpicGames().Select(game => game.InstallPath);
+    }
+
+    public static IReadOnlyList<LauncherGameInfo> ReadInstalledEpicGames()
+    {
         var manifestDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "Epic",
@@ -807,20 +883,35 @@ public sealed class GameScanner
             return [];
         }
 
-        var installs = new List<string>();
+        var installs = new List<LauncherGameInfo>();
         foreach (var manifestPath in Directory.EnumerateFiles(manifestDirectory, "*.item", SearchOption.TopDirectoryOnly))
         {
             try
             {
                 using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
-                if (document.RootElement.TryGetProperty("InstallLocation", out var installLocation) &&
-                    installLocation.ValueKind == JsonValueKind.String)
+                var root = document.RootElement;
+                if (root.TryGetProperty("bIsApplication", out var isApplication) &&
+                    isApplication.ValueKind == JsonValueKind.False)
                 {
-                    var path = installLocation.GetString();
-                    if (!string.IsNullOrWhiteSpace(path))
-                    {
-                        installs.Add(path);
-                    }
+                    continue;
+                }
+                var installPath = GetJsonString(root, "InstallLocation");
+                if (!string.IsNullOrWhiteSpace(installPath) && Directory.Exists(installPath))
+                {
+                    var appName = GetJsonString(root, "AppName");
+                    var catalogId = GetJsonString(root, "CatalogItemId");
+                    var externalId = !string.IsNullOrWhiteSpace(appName)
+                        ? appName
+                        : !string.IsNullOrWhiteSpace(catalogId)
+                            ? catalogId
+                            : Path.GetFileNameWithoutExtension(manifestPath);
+                    var displayName = GetJsonString(root, "DisplayName");
+                    installs.Add(new LauncherGameInfo(
+                        "Epic",
+                        externalId,
+                        string.IsNullOrWhiteSpace(displayName) ? Path.GetFileName(installPath) : displayName,
+                        installPath,
+                        GetJsonString(root, "LaunchExecutable")));
                 }
             }
             catch
@@ -830,6 +921,67 @@ public sealed class GameScanner
         }
 
         return installs;
+    }
+
+    public static IReadOnlyList<LauncherGameInfo> ReadInstalledXboxGames(IEnumerable<string>? libraryRoots = null)
+    {
+        var roots = libraryRoots?.ToList() ?? DriveInfo.GetDrives()
+            .Where(drive => drive.IsReady && drive.DriveType == DriveType.Fixed)
+            .Select(drive => Path.Combine(drive.RootDirectory.FullName, "XboxGames"))
+            .Where(Directory.Exists)
+            .ToList();
+        var games = new List<LauncherGameInfo>();
+
+        foreach (var libraryRoot in roots.Where(Directory.Exists))
+        {
+            foreach (var gameDirectory in EnumerateDirectoriesSafe(libraryRoot))
+            {
+                var contentDirectory = Path.Combine(gameDirectory, "Content");
+                var configPath = new[]
+                {
+                    Path.Combine(contentDirectory, "MicrosoftGame.Config"),
+                    Path.Combine(contentDirectory, "MicrosoftGame.config"),
+                    Path.Combine(gameDirectory, "MicrosoftGame.Config"),
+                    Path.Combine(gameDirectory, "MicrosoftGame.config")
+                }.FirstOrDefault(File.Exists);
+                if (configPath is null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var document = XDocument.Load(configPath, LoadOptions.None);
+                    var identity = document.Descendants()
+                        .FirstOrDefault(element => element.Name.LocalName.Equals("Identity", StringComparison.OrdinalIgnoreCase));
+                    var executable = document.Descendants()
+                        .FirstOrDefault(element => element.Name.LocalName.Equals("Executable", StringComparison.OrdinalIgnoreCase));
+                    var externalId = identity?.Attributes()
+                        .FirstOrDefault(attribute => attribute.Name.LocalName.Equals("Name", StringComparison.OrdinalIgnoreCase))?.Value;
+                    var executableName = executable?.Attributes()
+                        .FirstOrDefault(attribute => attribute.Name.LocalName.Equals("Name", StringComparison.OrdinalIgnoreCase))?.Value;
+                    games.Add(new LauncherGameInfo(
+                        "Xbox",
+                        string.IsNullOrWhiteSpace(externalId) ? Path.GetFileName(gameDirectory) : externalId,
+                        Path.GetFileName(gameDirectory),
+                        Directory.Exists(contentDirectory) ? contentDirectory : gameDirectory,
+                        executableName ?? string.Empty));
+                }
+                catch
+                {
+                    // A partial or locked package should not prevent other installed games loading.
+                }
+            }
+        }
+
+        return games;
+    }
+
+    private static string GetJsonString(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()?.Trim() ?? string.Empty
+            : string.Empty;
     }
 
     private static IEnumerable<string> ParseBattleNetProductDbInstallLocations()
@@ -1113,6 +1265,12 @@ public sealed class GameScanner
             normalizedPath.Contains("/emulation/") ||
             normalizedPath.Contains("/steamapps/") ||
             normalizedPath.Contains("/gog games/") ||
+            normalizedPath.Contains("/epic games/") ||
+            normalizedPath.Contains("/xboxgames/") ||
+            normalizedPath.Contains("/battle.net/") ||
+            normalizedPath.Contains("/ea games/") ||
+            normalizedPath.Contains("/ubisoft game launcher/") ||
+            normalizedPath.Contains("/rockstar games/") ||
             normalizedPath.Contains("/launchbox/"))
         {
             score += 0.14;
@@ -1197,6 +1355,7 @@ public sealed class GameScanner
                 SourceKind = "Folder Scan",
                 InstallPath = filePath,
                 DeduplicationKey = BuildImportIdentity(productRootKey, isDesktopLaunchable, filePath, platform),
+                IdentityKeys = [BuildImportIdentity(productRootKey, isDesktopLaunchable, filePath, platform)],
                 Confidence = confidence,
                 Signals = signals
             }
@@ -1219,7 +1378,9 @@ public sealed class GameScanner
             if (!string.IsNullOrWhiteSpace(scanRootFullPath) &&
                 currentPath.Equals(scanRootFullPath, StringComparison.OrdinalIgnoreCase))
             {
-                break;
+                return CollectionDirectoryNames.Contains(directoryName) || TechnicalDirectoryNames.Contains(directoryName)
+                    ? string.Empty
+                    : current.FullName;
             }
 
             if (CollectionDirectoryNames.Contains(directoryName))
@@ -1296,6 +1457,39 @@ public sealed class GameScanner
         }
 
         return "file:" + NormalizeFileIdentity(filePath);
+    }
+
+    private static string BuildSourceIdentity(string provider, string externalId)
+    {
+        if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(externalId))
+        {
+            return string.Empty;
+        }
+
+        var normalizedProvider = Regex.Replace(provider.Trim().ToLowerInvariant(), @"\s+", string.Empty);
+        return $"source:{normalizedProvider}:{externalId.Trim().ToLowerInvariant()}";
+    }
+
+    private static string ResolveManifestLaunchTarget(string installRoot, string launchTarget)
+    {
+        if (!string.IsNullOrWhiteSpace(launchTarget))
+        {
+            var trimmed = launchTarget.Trim().Trim('"');
+            if (trimmed.Contains("://", StringComparison.Ordinal))
+            {
+                return trimmed;
+            }
+
+            var resolved = Path.IsPathFullyQualified(trimmed)
+                ? trimmed
+                : Path.Combine(installRoot, trimmed.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(resolved) || Directory.Exists(resolved))
+            {
+                return Path.GetFullPath(resolved);
+            }
+        }
+
+        return installRoot;
     }
 
     private static string NormalizeFileIdentity(string path)

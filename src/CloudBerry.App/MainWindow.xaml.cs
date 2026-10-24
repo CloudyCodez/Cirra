@@ -682,7 +682,7 @@ public partial class MainWindow : Window
         }
 
         _sound.PlaySoftClick();
-        await OpenScanPreviewForFoldersAsync(steamFolders, romsOnly: false, scanLabel: "Steam libraries", sourceKindOverride: "Steam");
+        await OpenScanPreviewForFoldersAsync(steamFolders, romsOnly: false, scanLabel: "Steam libraries", sourceKindOverride: "Steam", manifestProvider: "Steam");
     }
 
     private async void ImportSteamGamesClick(object sender, RoutedEventArgs e)
@@ -813,29 +813,56 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task OpenScanPreviewForFoldersAsync(IReadOnlyList<string> folderPaths, bool romsOnly, string scanLabel, string? sourceKindOverride = null)
+    private async Task OpenScanPreviewForFoldersAsync(
+        IReadOnlyList<string> folderPaths,
+        bool romsOnly,
+        string scanLabel,
+        string? sourceKindOverride = null,
+        string? manifestProvider = null)
     {
         try
         {
             var merged = new List<ImportCandidateViewModel>();
             var seenIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void MergeCandidate(ImportCandidateViewModel candidate)
+            {
+                var identities = candidate.IdentityKeys
+                    .Append(candidate.DeduplicationKey)
+                    .Append(candidate.InstallPath)
+                    .Where(identity => !string.IsNullOrWhiteSpace(identity))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (identities.Any(seenIdentities.Contains))
+                {
+                    return;
+                }
+
+                foreach (var identity in identities)
+                {
+                    seenIdentities.Add(identity);
+                }
+
+                if (!string.IsNullOrEmpty(sourceKindOverride) && !candidate.IsRom &&
+                    candidate.SourceKind.Equals("Folder Scan", StringComparison.OrdinalIgnoreCase))
+                {
+                    candidate.SourceKind = sourceKindOverride;
+                }
+
+                merged.Add(candidate);
+            }
+
+            foreach (var candidate in await ViewModel.GetLauncherManifestCandidatesAsync(manifestProvider))
+            {
+                MergeCandidate(candidate);
+            }
+
             foreach (var folderPath in folderPaths.Where(path => !string.IsNullOrWhiteSpace(path)))
             {
                 var candidates = await ViewModel.GetScanCandidatesAsync(folderPath, romsOnly);
                 foreach (var candidate in candidates)
                 {
-                    var identity = string.IsNullOrWhiteSpace(candidate.DeduplicationKey)
-                        ? candidate.InstallPath
-                        : candidate.DeduplicationKey;
-                    if (seenIdentities.Add(identity))
-                    {
-                        if (!string.IsNullOrEmpty(sourceKindOverride) && !candidate.IsRom)
-                        {
-                            candidate.SourceKind = sourceKindOverride;
-                        }
-
-                        merged.Add(candidate);
-                    }
+                    MergeCandidate(candidate);
                 }
             }
 

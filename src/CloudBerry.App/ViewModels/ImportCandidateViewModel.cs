@@ -12,6 +12,7 @@ public sealed class ImportCandidateViewModel : ViewModelBase
     private string _sourceKind = "Folder Scan";
     private string _installPath = string.Empty;
     private string _deduplicationKey = string.Empty;
+    private readonly List<string> _identityKeys = [];
     private double _confidence;
     private string _signalsText = string.Empty;
     private bool _isSelected;
@@ -30,6 +31,9 @@ public sealed class ImportCandidateViewModel : ViewModelBase
         _sourceKind = model.SourceKind;
         _installPath = model.InstallPath;
         _deduplicationKey = model.DeduplicationKey;
+        _identityKeys.AddRange((model.IdentityKeys ?? [])
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase));
         _confidence = model.Confidence;
         _signalsText = string.Join(" | ", model.Signals);
         RefreshFileSize();
@@ -81,6 +85,8 @@ public sealed class ImportCandidateViewModel : ViewModelBase
         get => _deduplicationKey;
         set => SetProperty(ref _deduplicationKey, value);
     }
+
+    public IReadOnlyList<string> IdentityKeys => _identityKeys;
 
     private long _fileSizeBytes = -1;
 
@@ -347,6 +353,8 @@ public sealed class ImportCandidateViewModel : ViewModelBase
     public GameEntryViewModel ToGameEntry()
     {
         var palette = CloudBerryPalette.CreateGradient(Title);
+        var steamIdentity = IdentityKeys.FirstOrDefault(identity =>
+            identity.StartsWith("source:steam:", StringComparison.OrdinalIgnoreCase));
         var game = new GameEntryViewModel
         {
             Id = Guid.NewGuid(),
@@ -364,6 +372,8 @@ public sealed class ImportCandidateViewModel : ViewModelBase
             TagsText = Platform == "Windows PC" ? "PC" : "Emulation",
             ImportConfidence = Confidence,
             SignalsText = SignalsText,
+            ImportIdentityKeys = IdentityKeys.ToList(),
+            SteamAppId = steamIdentity?["source:steam:".Length..] ?? string.Empty,
             AccentStart = palette.Start,
             AccentEnd = palette.End
         };

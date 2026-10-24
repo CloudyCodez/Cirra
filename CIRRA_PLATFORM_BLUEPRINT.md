@@ -398,6 +398,18 @@ The second vertical slice is implemented in source and automated tests:
 - Cirra now proceeds directly through its normal splash and startup pipeline for every user.
 - Updated the closed-beta playbook and tester documents to use private distribution rather than client-side activation.
 
+## Scanner Reliability Update - October 24, 2026
+
+- Launcher scans now begin with authoritative provider records instead of discarding manifest identity and rescanning only raw folders. Steam ACF records, Epic `.item` manifests, and Xbox `MicrosoftGame.Config` packages produce trusted candidates with provider titles and launch targets.
+- Steam candidates launch through `steam://rungameid/{appId}` so internal or renamed executables do not make an installed title disappear or select the wrong binary. Epic and Xbox candidates use their declared relative executable when it exists.
+- Candidates carry multiple stable identities through preview, import, JSON persistence, and later rescans: provider/application identity plus normalized install-root identity. Overlapping roots and manifest-plus-filesystem discovery merge when any identity overlaps.
+- Existing Steam App IDs participate in identity matching for libraries created before this update. New Steam imports retain the App ID directly from the manifest identity.
+- Duplicate cleanup now joins records by connected identity rather than launch path alone, while keeping the richest/most recently useful record. Same-title games with unrelated paths and provider IDs remain separate.
+- Directly scanning a game's install directory now retains that directory as the product root instead of losing its title and deduplication signal at the scan boundary.
+- Filesystem confidence remains a review signal, not storefront truth. Unusual candidates may appear at lower confidence, but the existing auto-selection threshold remains unchanged; exact generic helpers are still filtered unless a provider manifest identifies them as the launch target.
+
+**Verification:** 110 application tests and 178 core/data tests pass (288 total). Coverage includes codename executables, Steam protocol identity, Epic relative launch targets, Xbox launch proxies, direct-root scans, and identity persistence.
+
 ## Research Evidence
 
 Playnite findings and exact evidence IDs are in [PLAYNITE_REA_REPORT.md](PLAYNITE_REA_REPORT.md). The retained combined evidence bundle is `C:\Users\conno\AppData\Local\Temp\cirra-competitor-rea-evidence-2026-10-19.json`. The prior LaunchBox bundle is `C:\Users\conno\AppData\Local\Temp\launchbox-phase1-rea-evidence.json`.

@@ -48,6 +48,7 @@ public sealed class GameEntryViewModel : ViewModelBase
     private string _publishersText = string.Empty;
     private double _importConfidence = 1;
     private string _signalsText = string.Empty;
+    private List<string> _importIdentityKeys = [];
     private string _accentStart = "#D94B65";
     private string _accentEnd = "#6E8DD8";
     private string _steamAppId = string.Empty;
@@ -152,6 +153,10 @@ public sealed class GameEntryViewModel : ViewModelBase
         _publishersText = string.Join(", ", model.Publishers);
         _importConfidence = model.ImportConfidence;
         _signalsText = string.Join(" | ", model.ImportSignals);
+        _importIdentityKeys = (model.ImportIdentityKeys ?? [])
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         _accentStart = model.AccentStart;
         _accentEnd = model.AccentEnd;
         _steamAppId = model.SteamAppId;
@@ -987,6 +992,15 @@ public sealed class GameEntryViewModel : ViewModelBase
         set => SetProperty(ref _signalsText, value);
     }
 
+    public List<string> ImportIdentityKeys
+    {
+        get => _importIdentityKeys;
+        set => _importIdentityKeys = (value ?? [])
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public string AccentStart
     {
         get => _accentStart;
@@ -1776,6 +1790,8 @@ public sealed class GameEntryViewModel : ViewModelBase
             Developers               = Split(DevelopersText),
             Publishers               = Split(PublishersText),
             ImportConfidence         = ImportConfidence,
+            ImportSignals            = SignalsText.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
+            ImportIdentityKeys       = ImportIdentityKeys.ToList(),
             AccentStart              = AccentStart,
             AccentEnd                = AccentEnd,
             SteamAppId               = SteamAppId,

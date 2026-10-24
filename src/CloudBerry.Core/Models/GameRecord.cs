@@ -78,6 +78,12 @@ public sealed class GameRecord
 
     public List<string> ImportSignals { get; set; } = [];
 
+    /// <summary>
+    /// Stable scanner and storefront identities retained after import. These prevent a later scan
+    /// from adding the same install again through another executable, root, or provider surface.
+    /// </summary>
+    public List<string> ImportIdentityKeys { get; set; } = [];
+
     public string AccentStart { get; set; } = "#D94B65";
 
     public string AccentEnd { get; set; } = "#6E8DD8";

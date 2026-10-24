@@ -85,6 +85,107 @@ public sealed class GameScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task ScanFolderAsync_WhenInstallFolderIsTheScanRoot_RetainsInstallRootIdentity()
+    {
+        var installRoot = Path.Combine(_rootPath, "Castlevania Dominus Collection");
+        Directory.CreateDirectory(installRoot);
+        var executable = Path.Combine(installRoot, "M2Game.exe");
+        await File.WriteAllTextAsync(executable, "test");
+
+        var scanner = new GameScanner();
+        var report = await scanner.ScanFolderAsync(installRoot);
+
+        var candidate = Assert.Single(report.Candidates);
+        Assert.Equal(executable, candidate.InstallPath);
+        Assert.Contains("castlevania dominus collection", candidate.DeduplicationKey, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadInstalledXboxGames_UsesPackageManifestForUnusualLaunchProxy()
+    {
+        var libraryRoot = Path.Combine(_rootPath, "XboxGames");
+        var installRoot = Path.Combine(libraryRoot, "Castlevania", "Content");
+        Directory.CreateDirectory(installRoot);
+        var executable = Path.Combine(installRoot, "GameLaunchHelper.exe");
+        await File.WriteAllTextAsync(executable, "test");
+        await File.WriteAllTextAsync(Path.Combine(installRoot, "MicrosoftGame.Config"), """
+            <Game>
+              <Identity Name="Konami.Castlevania" />
+              <ExecutableList><Executable Name="GameLaunchHelper.exe" /></ExecutableList>
+            </Game>
+            """);
+
+        var game = Assert.Single(GameScanner.ReadInstalledXboxGames([libraryRoot]));
+        var candidate = new GameScanner().CreateLauncherCandidate(game);
+
+        Assert.Equal(executable, candidate.InstallPath);
+        Assert.Equal("source:xbox:konami.castlevania", candidate.DeduplicationKey);
+        Assert.Equal("Castlevania", candidate.Title);
+        Assert.Equal(1, candidate.Confidence);
+    }
+
+    [Fact]
+    public void CreateLauncherCandidate_SteamUsesStableProtocolAndBothProviderAndRootIdentities()
+    {
+        var installRoot = Path.Combine(_rootPath, "SteamLibrary", "steamapps", "common", "Castlevania Dominus Collection");
+        Directory.CreateDirectory(installRoot);
+
+        var candidate = new GameScanner().CreateLauncherCandidate(new GameScanner.LauncherGameInfo(
+            "Steam",
+            "2369900",
+            "Castlevania Dominus Collection",
+            installRoot,
+            "steam://rungameid/2369900"));
+
+        Assert.Equal("Castlevania Dominus Collection", candidate.Title);
+        Assert.Equal("steam://rungameid/2369900", candidate.InstallPath);
+        Assert.Equal("source:steam:2369900", candidate.DeduplicationKey);
+        Assert.Contains("source:steam:2369900", candidate.IdentityKeys, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(candidate.IdentityKeys, key => key.StartsWith("desktop:", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(1, candidate.Confidence);
+    }
+
+    [Fact]
+    public async Task LauncherAndFolderDiscovery_ShareInstallRootIdentity()
+    {
+        var libraryRoot = Path.Combine(_rootPath, "SteamLibrary", "steamapps", "common");
+        var installRoot = Path.Combine(libraryRoot, "Castlevania Dominus Collection");
+        Directory.CreateDirectory(installRoot);
+        await File.WriteAllTextAsync(Path.Combine(installRoot, "M2Game.exe"), "test");
+        var scanner = new GameScanner();
+
+        var folderCandidate = Assert.Single((await scanner.ScanFolderAsync(libraryRoot)).Candidates);
+        var manifestCandidate = scanner.CreateLauncherCandidate(new GameScanner.LauncherGameInfo(
+            "Steam",
+            "2369900",
+            "Castlevania Dominus Collection",
+            installRoot,
+            "steam://rungameid/2369900"));
+
+        Assert.Contains(folderCandidate.DeduplicationKey, manifestCandidate.IdentityKeys, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CreateLauncherCandidate_EpicResolvesDeclaredRelativeExecutable()
+    {
+        var installRoot = Path.Combine(_rootPath, "Epic Games", "Castlevania");
+        var executable = Path.Combine(installRoot, "Binaries", "Win64", "ProjectC.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "test");
+
+        var candidate = new GameScanner().CreateLauncherCandidate(new GameScanner.LauncherGameInfo(
+            "Epic",
+            "catalog-castlevania",
+            "Castlevania",
+            installRoot,
+            @"Binaries\Win64\ProjectC.exe"));
+
+        Assert.Equal(executable, candidate.InstallPath);
+        Assert.Equal("source:epic:catalog-castlevania", candidate.DeduplicationKey);
+        Assert.Contains(candidate.Signals, signal => signal.Contains("manifest", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task ScanFolderAsync_MissingFolder_ReturnsWarningInsteadOfThrowing()
     {
         var scanner = new GameScanner();

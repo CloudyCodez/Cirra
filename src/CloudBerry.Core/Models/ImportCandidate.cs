@@ -17,6 +17,12 @@ public sealed class ImportCandidate
     /// </summary>
     public string DeduplicationKey { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Every stable identity discovered for this candidate. A storefront id survives moves, while
+    /// an install-root identity also matches the same game found by a plain folder scan.
+    /// </summary>
+    public List<string> IdentityKeys { get; set; } = [];
+
     public double Confidence { get; set; }
 
     public List<string> Signals { get; set; } = [];

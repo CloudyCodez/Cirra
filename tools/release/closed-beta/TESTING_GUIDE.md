@@ -7,6 +7,7 @@ Thank you for taking the time. We are looking for honest friction, not a perfect
 - Confirm Cirra opens directly and returns normally after restarting.
 - Add one game or folder you are comfortable using for testing.
 - Scan the same folder a second time. Existing games should be identified instead of offered as new imports. If you move or copy one scanned file, Cirra should leave it unchecked and explain the possible match.
+- Run the launcher-library scan if you use Steam, Epic, or Xbox. Check that games with unusual executable names are still found and that a manifest result does not appear again as a separate folder-scan result.
 - Select a game, open its details, and return to the Library without losing your selection.
 - Enter and exit Horizon. Check that loading feels smooth and the selected game remains stable while the dashboard rotates content.
 
@@ -24,7 +25,7 @@ Thank you for taking the time. We are looking for honest friction, not a perfect
 Send one report per issue when possible:
 
 ```
-Build: v0.4.1 Closed Beta
+Build: v0.4.2 Closed Beta
 Windows version:
 What I was doing:
 Steps to reproduce:
