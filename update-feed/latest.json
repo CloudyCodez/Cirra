@@ -1,8 +1,8 @@
 {
-  "version": "0.4.2",
-  "installerUrl": "https://github.com/CloudyCodez/Cirra/releases/download/v0.4.2/Cirra-Setup-v0.4.2.exe",
-  "notes": "Cirra 0.4.2 improves Steam, Epic, and Xbox discovery with stable game identities, stronger duplicate prevention, and more reliable rescans.",
-  "publishedAtUtc": "2026-10-24T19:14:19.5657415Z",
-  "sha256": "537978646cf7a556f5801ebf1adb84b20d24ea1409600c036f164dc3466ef1cd",
-  "packageSizeBytes": 58092424
+  "version": "0.4.3",
+  "installerUrl": "https://github.com/CloudyCodez/Cirra/releases/download/v0.4.3/Cirra-Setup-v0.4.3.exe",
+  "notes": "Cirra 0.4.3 fixes discovery of new Steam games, including Castlevania: Belmont's Curse, when Steam is installed outside Program Files.",
+  "publishedAtUtc": "2026-10-25T05:39:18.3919859Z",
+  "sha256": "a713f1052516150d822a1bee7591b83176af734f1978f714cfff208e60f45869",
+  "packageSizeBytes": 58092680
 }

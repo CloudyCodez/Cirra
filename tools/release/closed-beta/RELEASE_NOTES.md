@@ -1,9 +1,13 @@
-## Cirra v0.4.2 Closed Beta
+## Cirra v0.4.3 Closed Beta
 
 This is a prerelease for invited Windows testers. It is not a general public build.
 
 ### Included
 
+- Steam's registered Windows install path is now honored, including clients installed on another drive or under a custom nested folder.
+- Newly installed games are read from authoritative Steam manifests by App ID and title even when the executable uses an internal codename.
+- Castlevania: Belmont's Curse (`4231820`) now has dedicated discovery regression coverage.
+- A locked or temporarily unavailable Steam library no longer prevents other healthy libraries from being scanned.
 - Launcher-first discovery for installed Steam, Epic, and Xbox games, with filesystem scanning retained as a fallback and review layer.
 - Stable storefront and install-root identities carried through preview, import, persistence, and later rescans.
 - Steam protocol launching by App ID, plus Epic and Xbox manifest launch-target support for games whose executables use internal names.
@@ -32,6 +36,6 @@ This is a prerelease for invited Windows testers. It is not a general public bui
 
 ### Verification
 
-SHA-256 for the ZIP is included as a separate `.sha256` release asset. All 288 automated tests pass: 110 application tests and 178 Core/Data tests. The protected package excludes readable source and debugging artifacts; it does not include an invitation-key gate.
+SHA-256 for the ZIP is included as a separate `.sha256` release asset. All 289 automated tests pass: 110 application tests and 179 Core/Data tests. The protected package excludes readable source and debugging artifacts; it does not include an invitation-key gate.
 
 Please report issues with reproducible steps, your Windows version, and the affected game/platform or controller where relevant.

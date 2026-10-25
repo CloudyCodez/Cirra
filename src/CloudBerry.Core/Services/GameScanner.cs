@@ -1,4 +1,6 @@
 using CloudBerry.Core.Models;
+using Microsoft.Win32;
+using System.Security;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -729,9 +731,34 @@ public sealed class GameScanner
 
         foreach (var candidate in candidates)
         {
-            if (Directory.Exists(candidate))
+            TryAddIfExists(roots, candidate);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            string[] registryKeys =
+            [
+                @"HKEY_CURRENT_USER\Software\Valve\Steam",
+                @"HKEY_LOCAL_MACHINE\SOFTWARE\Valve\Steam",
+                @"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Valve\Steam"
+            ];
+
+            foreach (var key in registryKeys)
             {
-                roots.Add(candidate);
+                foreach (var valueName in new[] { "SteamPath", "InstallPath" })
+                {
+                    try
+                    {
+                        if (Registry.GetValue(key, valueName, null) is string path)
+                        {
+                            TryAddIfExists(roots, path.Replace('/', Path.DirectorySeparatorChar));
+                        }
+                    }
+                    catch (Exception exception) when (exception is SecurityException or UnauthorizedAccessException or IOException)
+                    {
+                        // Registry access can be restricted by policy. Default roots and folder discovery remain available.
+                    }
+                }
             }
         }
 
@@ -788,30 +815,44 @@ public sealed class GameScanner
     /// Reads every appmanifest_*.acf file across all Steam library roots and returns
     /// a clean list of installed Steam games with title, install path, and playtime.
     /// </summary>
-    public IReadOnlyList<SteamGameInfo> ReadInstalledSteamGames()
+    public IReadOnlyList<SteamGameInfo> ReadInstalledSteamGames(IEnumerable<string>? steamInstallRoots = null)
     {
         var results = new List<SteamGameInfo>();
+        var acfDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var steamRoot in FindSteamInstallRoots())
+        foreach (var steamRoot in steamInstallRoots ?? FindSteamInstallRoots())
         {
             var steamAppsDir = Path.Combine(steamRoot, "steamapps");
             var libraryFoldersPath = Path.Combine(steamAppsDir, "libraryfolders.vdf");
 
-            // Collect all library roots including extra library folders
-            var acfDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { steamAppsDir };
+            acfDirs.Add(steamAppsDir);
             foreach (var libPath in ParseSteamLibraryFolders(libraryFoldersPath))
-                acfDirs.Add(Path.Combine(libPath, "steamapps"));
-
-            foreach (var acfDir in acfDirs)
             {
-                if (!Directory.Exists(acfDir)) continue;
+                acfDirs.Add(Path.Combine(libPath, "steamapps"));
+            }
+        }
 
+        foreach (var acfDir in acfDirs)
+        {
+            if (!Directory.Exists(acfDir))
+            {
+                continue;
+            }
+
+            try
+            {
                 foreach (var acfPath in Directory.EnumerateFiles(acfDir, "appmanifest_*.acf", SearchOption.TopDirectoryOnly))
                 {
                     var info = TryParseAcf(acfPath, acfDir);
                     if (info != null)
+                    {
                         results.Add(info);
+                    }
                 }
+            }
+            catch (Exception exception) when (IsExpectedScanException(exception))
+            {
+                // A locked or transient Steam library should not hide healthy libraries on other drives.
             }
         }
 

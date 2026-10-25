@@ -125,6 +125,31 @@ public sealed class GameScannerTests : IDisposable
     }
 
     [Fact]
+    public void ReadInstalledSteamGames_FindsBelmontsCurseInCustomSteamInstall()
+    {
+        var steamRoot = Path.Combine(_rootPath, "Custom Steam");
+        var steamApps = Path.Combine(steamRoot, "steamapps");
+        var installRoot = Path.Combine(steamApps, "common", "Castlevania Belmont's Curse");
+        Directory.CreateDirectory(installRoot);
+        File.WriteAllText(Path.Combine(steamApps, "appmanifest_4231820.acf"), """
+            "AppState"
+            {
+                "appid"             "4231820"
+                "name"              "Castlevania: Belmont's Curse"
+                "installdir"        "Castlevania Belmont's Curse"
+                "playtime_forever"  "37"
+            }
+            """);
+
+        var game = Assert.Single(new GameScanner().ReadInstalledSteamGames([steamRoot]));
+
+        Assert.Equal("4231820", game.AppId);
+        Assert.Equal("Castlevania: Belmont's Curse", game.Title);
+        Assert.Equal(installRoot, game.InstallPath);
+        Assert.Equal(37, game.PlaytimeMinutes);
+    }
+
+    [Fact]
     public void CreateLauncherCandidate_SteamUsesStableProtocolAndBothProviderAndRootIdentities()
     {
         var installRoot = Path.Combine(_rootPath, "SteamLibrary", "steamapps", "common", "Castlevania Dominus Collection");

@@ -1,4 +1,4 @@
-# Cirra v0.4.2 Closed Beta
+# Cirra v0.4.3 Closed Beta
 
 Thank you for helping test Cirra. This build is a portable Windows x64 beta: it does not install itself, and it keeps its library data under your local Cirra profile.
 
@@ -8,7 +8,7 @@ Thank you for helping test Cirra. This build is a portable Windows x64 beta: it 
 2. Open the `app` folder and run `Cirra.exe`.
 3. Begin with the short checks in `TESTING_GUIDE.md`.
 
-This update focuses on library scanning. Steam, Epic, and Xbox installs now use launcher manifests before Cirra falls back to filesystem detection, and imported games retain stable identities to stop the same installation returning as a duplicate.
+This update fixes Steam discovery for custom client locations. Fresh releases such as Castlevania: Belmont's Curse are now read directly from Steam's authoritative install manifest even when Steam itself is installed outside Program Files.
 
 This build creates a local indexed library beside the portable JSON library. The JSON file remains the source of truth and can still be backed up or moved normally. The index is rebuilt automatically and should not be shared in bug reports unless the test coordinator specifically asks for it.
 
