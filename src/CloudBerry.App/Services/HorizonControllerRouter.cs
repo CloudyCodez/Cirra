@@ -64,7 +64,9 @@ public sealed class HorizonControllerRouter
         var state = states[ActiveSlot];
         if (_suppressNextInput)
         {
-            _suppressNextInput = false;
+            // Returning from a game must wait for neutral controls, including the stick.
+            _suppressNextInput = state.Buttons != ControllerButtons.None ||
+                Math.Max(Math.Abs((int)state.LeftThumbX), Math.Abs((int)state.LeftThumbY)) >= 9000;
             _previousButtons[ActiveSlot] = state.Buttons;
             _directions[ActiveSlot].Reset();
             return new ControllerInputFrame(true, connectedSlots.Count, ActiveSlot, state,

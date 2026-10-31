@@ -1,4 +1,4 @@
-# Cirra v0.4.3 Closed Beta
+# Cirra v0.4.4 Closed Beta
 
 Thank you for helping test Cirra. This build is a portable Windows x64 beta: it does not install itself, and it keeps its library data under your local Cirra profile.
 
@@ -8,7 +8,7 @@ Thank you for helping test Cirra. This build is a portable Windows x64 beta: it 
 2. Open the `app` folder and run `Cirra.exe`.
 3. Begin with the short checks in `TESTING_GUIDE.md`.
 
-This update fixes Steam discovery for custom client locations. Fresh releases such as Castlevania: Belmont's Curse are now read directly from Steam's authoritative install manifest even when Steam itself is installed outside Program Files.
+This update improves library scanning and reports, prevents overlapping imports and repeat launches, and adds clearer search controls and a Help guide. Horizon navigation is steadier near stick diagonals, and the PDF manual reader now supports controller page turns and back navigation. Open Help or press F1 for the controls and setup tips.
 
 This build creates a local indexed library beside the portable JSON library. The JSON file remains the source of truth and can still be backed up or moved normally. The index is rebuilt automatically and should not be shared in bug reports unless the test coordinator specifically asks for it.
 

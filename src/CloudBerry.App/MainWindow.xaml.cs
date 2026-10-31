@@ -372,6 +372,7 @@ public partial class MainWindow : Window
         CaptureWindowBoundsForPersist();
         try
         {
+            ViewModel.PrepareForShutdown();
             await ViewModel.FlushPendingChangesAsync();
 			await ViewModel.FlushLibraryIndexAsync();
         }
@@ -483,6 +484,8 @@ public partial class MainWindow : Window
     private void BuildCommandPaletteItems()
     {
         _commandPaletteItems.Clear();
+
+        AddCommand("action:help", "Getting started and controls", "First steps, shortcuts, Horizon controls, and troubleshooting · F1", "Help", "\uE897", "help tutorial beginner guide manual keyboard learn setup");
 
         AddCommand("page:home", "Home", "Resume, recommendations, and library health", "Navigate", "\uE80F", "dashboard overview resume");
         AddCommand("page:library", "Library", "Browse, filter, and manage every game", "Navigate", "\uE8F1", "games collection browse");
@@ -613,6 +616,7 @@ public partial class MainWindow : Window
 
         switch (item.Id)
         {
+            case "action:help": new QuickGuideWindow { Owner = this }.ShowDialog(); return;
             case "page:home": ViewModel.SelectedPrimaryPage = 0; break;
             case "page:library": ViewModel.SelectedPrimaryPage = 1; ViewModel.SelectedWorkspaceTab = 0; break;
             case "page:achievements": ViewModel.SelectedPrimaryPage = 3; break;
@@ -776,23 +780,26 @@ public partial class MainWindow : Window
     {
         try
         {
-            var candidates = await ViewModel.GetScanCandidatesAsync(folderPath, romsOnly);
+            var preview = await ViewModel.GetScanPreviewAsync(
+                [folderPath],
+                romsOnly,
+                romsOnly ? "Preview ROM import" : "Preview game import");
+            var candidates = preview.Candidates;
 
             if (candidates.Count == 0)
             {
                 _sound.PlayWarning();
-                ViewModel.StatusMessage = $"No {(romsOnly ? "ROMs" : "games")} found in {folderPath}.";
-                return;
+                ViewModel.StatusMessage = preview.Report.IntakeSummary;
             }
 
-            var previewWindow = new ScanPreviewWindow(ViewModel, candidates) { Owner = this };
+            var previewWindow = new ScanPreviewWindow(ViewModel, candidates, preview.Report) { Owner = this };
             var confirmed = previewWindow.ShowDialog();
 
             if (confirmed == true && previewWindow.ConfirmedCandidates.Count > 0)
             {
-                var importedCount = previewWindow.ConfirmedCandidates.Count;
+                var importedCount = await ViewModel.ImportCandidatesFromPreviewAsync(previewWindow.ConfirmedCandidates);
+                if (importedCount == 0) return;
                 var leftOverCount = candidates.Count - importedCount;
-                await ViewModel.ImportCandidatesFromPreviewAsync(previewWindow.ConfirmedCandidates);
                 _sound.PlaySuccess();
 
                 var summary = leftOverCount > 0
@@ -805,6 +812,10 @@ public partial class MainWindow : Window
                 _sound.PlaySoftClick();
                 ViewModel.StatusMessage = "Scan cancelled — nothing imported.";
             }
+        }
+        catch (OperationCanceledException)
+        {
+            ViewModel.StatusMessage = "Scan cancelled. No games were imported.";
         }
         catch (Exception ex)
         {
@@ -822,64 +833,27 @@ public partial class MainWindow : Window
     {
         try
         {
-            var merged = new List<ImportCandidateViewModel>();
-            var seenIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            void MergeCandidate(ImportCandidateViewModel candidate)
-            {
-                var identities = candidate.IdentityKeys
-                    .Append(candidate.DeduplicationKey)
-                    .Append(candidate.InstallPath)
-                    .Where(identity => !string.IsNullOrWhiteSpace(identity))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                if (identities.Any(seenIdentities.Contains))
-                {
-                    return;
-                }
-
-                foreach (var identity in identities)
-                {
-                    seenIdentities.Add(identity);
-                }
-
-                if (!string.IsNullOrEmpty(sourceKindOverride) && !candidate.IsRom &&
-                    candidate.SourceKind.Equals("Folder Scan", StringComparison.OrdinalIgnoreCase))
-                {
-                    candidate.SourceKind = sourceKindOverride;
-                }
-
-                merged.Add(candidate);
-            }
-
-            foreach (var candidate in await ViewModel.GetLauncherManifestCandidatesAsync(manifestProvider))
-            {
-                MergeCandidate(candidate);
-            }
-
-            foreach (var folderPath in folderPaths.Where(path => !string.IsNullOrWhiteSpace(path)))
-            {
-                var candidates = await ViewModel.GetScanCandidatesAsync(folderPath, romsOnly);
-                foreach (var candidate in candidates)
-                {
-                    MergeCandidate(candidate);
-                }
-            }
+            var preview = await ViewModel.GetAutomaticDiscoveryPreviewAsync(
+                folderPaths,
+                romsOnly,
+                scanLabel,
+                sourceKindOverride,
+                manifestProvider);
+            var merged = preview.Candidates;
 
             if (merged.Count == 0)
             {
-                ViewModel.StatusMessage = $"No {(romsOnly ? "ROMs" : "games")} were found in {scanLabel}.";
-                return;
+                ViewModel.StatusMessage = preview.Report.IntakeSummary;
             }
 
-            var previewWindow = new ScanPreviewWindow(ViewModel, merged) { Owner = this };
+            var previewWindow = new ScanPreviewWindow(ViewModel, merged, preview.Report) { Owner = this };
             var confirmed = previewWindow.ShowDialog();
 
             if (confirmed == true && previewWindow.ConfirmedCandidates.Count > 0)
             {
-                var importedCount = previewWindow.ConfirmedCandidates.Count;
+                var importedCount = await ViewModel.ImportCandidatesFromPreviewAsync(previewWindow.ConfirmedCandidates);
+                if (importedCount == 0) return;
                 var leftOverCount = merged.Count - importedCount;
-                await ViewModel.ImportCandidatesFromPreviewAsync(previewWindow.ConfirmedCandidates);
 
                 var summary = leftOverCount > 0
                     ? $"Imported {importedCount} game{(importedCount == 1 ? "" : "s")} from {scanLabel} \u2014 {leftOverCount} found but left for later."
@@ -890,6 +864,10 @@ public partial class MainWindow : Window
             {
                 ViewModel.StatusMessage = "Scan cancelled — nothing imported.";
             }
+        }
+        catch (OperationCanceledException)
+        {
+            ViewModel.StatusMessage = "Discovery cancelled. No games were imported.";
         }
         catch (Exception ex)
         {
@@ -1881,6 +1859,12 @@ public partial class MainWindow : Window
 
     private void ClearFiltersClick(object sender, RoutedEventArgs e)                    => ViewModel.ClearLibraryFilters();
 
+    private void ClearLibrarySearchClick(object sender, RoutedEventArgs e)
+    {
+        ViewModel.SearchText = string.Empty;
+        LibrarySearchBox.Focus();
+    }
+
     private void ReviewDuplicatesClick(object sender, RoutedEventArgs e)
     {
         var duplicatesWindow = new DuplicateOwnershipWindow(ViewModel) { Owner = this };
@@ -2369,8 +2353,17 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OpenQuickGuideClick(object sender, RoutedEventArgs e) =>
+        new QuickGuideWindow { Owner = this }.ShowDialog();
+
     private async void WindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.F1)
+        {
+            new QuickGuideWindow { Owner = this }.ShowDialog();
+            e.Handled = true;
+            return;
+        }
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.K)
         {
             OpenCommandPalette();
@@ -2483,7 +2476,7 @@ public partial class MainWindow : Window
         if (e.Key == Key.Enter &&
             ViewModel.SelectedPrimaryPage == 1 &&
             ViewModel.SelectedWorkspaceTab == 0 &&
-            e.OriginalSource is not TextBox)
+            (GameLibraryList.IsKeyboardFocusWithin || GameLibraryGridList.IsKeyboardFocusWithin))
         {
             await LaunchGameWithHandoffAsync(ViewModel.SelectedGame);
             e.Handled = true;

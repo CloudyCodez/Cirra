@@ -14,6 +14,11 @@ public partial class GuideReaderWindow : Window
 {
     private readonly GameGuidebook _guidebook;
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly HorizonControllerRouter _controller = new();
+    private readonly System.Windows.Threading.DispatcherTimer _controllerTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(50)
+    };
     private PdfSpreadRenderer? _renderer;
     private bool _opening;
     private bool _closed;
@@ -35,13 +40,44 @@ public partial class GuideReaderWindow : Window
         }
 
         Loaded += ReaderLoaded;
+        _controller.Suspend();
+        _controllerTimer.Tick += PollController;
+        Loaded += (_, _) => _controllerTimer.Start();
         PreviewKeyDown += ReaderKeyDown;
         Closed += (_, _) =>
         {
             _closed = true;
+            _controllerTimer.Stop();
+            _controllerTimer.Tick -= PollController;
             _lifetime.Cancel();
             _renderer?.Dispose();
+            LeftPageImage.Source = null;
+            RightPageImage.Source = null;
         };
+    }
+
+    private void PollController(object? sender, EventArgs e)
+    {
+        if (_closed || !IsActive)
+        {
+            _controller.Suspend();
+            return;
+        }
+
+        var input = _controller.Poll(Environment.TickCount64);
+        if (!input.IsAnyConnected) return;
+        if ((input.NewButtons & ControllerButtons.B) != 0)
+        {
+            Close();
+            return;
+        }
+        if (_opening || _rendering || Keyboard.FocusedElement is TextBox) return;
+        if (input.Direction == FocusNavigationDirection.Left ||
+            (input.NewButtons & ControllerButtons.LeftShoulder) != 0)
+            PreviousSpreadClick(this, new RoutedEventArgs());
+        else if (input.Direction == FocusNavigationDirection.Right ||
+            (input.NewButtons & ControllerButtons.RightShoulder) != 0)
+            NextSpreadClick(this, new RoutedEventArgs());
     }
 
     private async void ReaderLoaded(object sender, RoutedEventArgs e)
@@ -100,6 +136,7 @@ public partial class GuideReaderWindow : Window
             ? $"Page {right} of {_renderer.PageCount}"
             : rightImage is null ? $"Page {left} of {_renderer.PageCount}" : $"Pages {left}-{right} of {_renderer.PageCount}";
         ReaderStatusPanel.Visibility = Visibility.Collapsed;
+        RetryButton.Visibility = Visibility.Collapsed;
         PageJumpInput.Text = _spreadStart.ToString();
         SetReaderEnabled(true);
         }
@@ -113,6 +150,13 @@ public partial class GuideReaderWindow : Window
             SetReaderEnabled(true);
         }
         finally { _rendering = false; }
+    }
+
+    private async void RetryClick(object sender, RoutedEventArgs e)
+    {
+        if (_closed || _opening || _rendering) return;
+        if (_renderer is not null) await ShowSpreadAsync();
+        else ReaderLoaded(sender, e);
     }
 
     private uint LastSpread => _renderer is null || _renderer.PageCount <= 1
@@ -168,6 +212,7 @@ public partial class GuideReaderWindow : Window
         if (_renderer is null || _opening || _rendering || _closed) return;
         if (!uint.TryParse(PageJumpInput.Text, out uint page) || page < 1 || page > _renderer.PageCount)
         {
+            PageCounterText.Text = $"Enter a page from 1 to {_renderer.PageCount}";
             PageJumpInput.Text = _spreadStart.ToString();
             PageJumpInput.SelectAll();
             return;
@@ -185,9 +230,12 @@ public partial class GuideReaderWindow : Window
 
     private void ReaderKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape) { e.Handled = true; Close(); return; }
         if (_renderer is null || _opening || _rendering || e.Handled || Keyboard.FocusedElement is TextBox) return;
         if (e.Key is Key.Right or Key.PageDown) { e.Handled = true; NextSpreadClick(sender, new RoutedEventArgs()); }
         if (e.Key is Key.Left or Key.PageUp) { e.Handled = true; PreviousSpreadClick(sender, new RoutedEventArgs()); }
+        if (e.Key == Key.Home) { e.Handled = true; FirstSpreadClick(sender, new RoutedEventArgs()); }
+        if (e.Key == Key.End) { e.Handled = true; LastSpreadClick(sender, new RoutedEventArgs()); }
     }
 
     private void TitleBarDrag(object sender, MouseButtonEventArgs e)

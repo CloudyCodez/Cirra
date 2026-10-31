@@ -117,6 +117,7 @@ public sealed class MainViewModel : ViewModelBase
 	private readonly LaunchPreflightService _launchPreflightService = new LaunchPreflightService();
 
 	private readonly LaunchOrchestrator _launchOrchestrator = new LaunchOrchestrator();
+	private readonly InFlightOperations _inFlightOperations = new();
 
 	private readonly ActivityCenterService _activityCenter = new ActivityCenterService();
 
@@ -128,6 +129,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	private readonly Dictionary<Guid, GameLaunchSession> _activeSessions = new Dictionary<Guid, GameLaunchSession>();
 	private ExternalGameProcessMonitor? _externalProcessMonitor;
+	private bool _isShuttingDown;
 
 	private readonly Dictionary<Guid, CancellationTokenSource> _achievementPollingSessions = new Dictionary<Guid, CancellationTokenSource>();
 
@@ -5290,6 +5292,17 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task ImportSelectedAsync()
 	{
+		using var operation = _inFlightOperations.TryBegin("library.import");
+		if (operation is null)
+		{
+			StatusMessage = "An import is already being saved. Please wait for it to finish.";
+			return;
+		}
+		await ImportSelectedCoreAsync();
+	}
+
+	private async Task<int> ImportSelectedCoreAsync()
+	{
 		List<GameEntryViewModel> addedGames = [];
 		List<ImportCandidateViewModel> removedCandidates = [];
 		try
@@ -5330,7 +5343,7 @@ public sealed class MainViewModel : ViewModelBase
 				StatusMessage = duplicatesPrevented > 0
 					? "Those selected games are already represented in your Cirra library. Nothing was imported."
 					: "Choose at least one candidate to import.";
-				return;
+				return 0;
 			}
 			List<GameEntryViewModel> list = new List<GameEntryViewModel>(selectedCandidates.Count);
 			foreach (ImportCandidateViewModel item in selectedCandidates)
@@ -5360,6 +5373,7 @@ public sealed class MainViewModel : ViewModelBase
 			RefreshDerivedState();
 			StatusMessage = $"Imported {selectedCandidates.Count} game{((selectedCandidates.Count == 1) ? string.Empty : "s")} into Cirra." +
 				(duplicatesPrevented > 0 ? $" Prevented {duplicatesPrevented} duplicate import{(duplicatesPrevented == 1 ? string.Empty : "s")}." : string.Empty);
+			return selectedCandidates.Count;
 		}
 		catch (Exception ex)
 		{
@@ -5380,6 +5394,7 @@ public sealed class MainViewModel : ViewModelBase
 			RefreshDerivedState();
 			_diagnostics.WriteException("import", ex);
 			StatusMessage = "Cirra couldn't commit that import. The library and review list were restored.";
+			return 0;
 		}
 	}
 
@@ -6750,6 +6765,8 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task SearchMetadataAsync()
 	{
+		var searchGame = SelectedGame;
+		string searchPlatform = searchGame?.Platform ?? string.Empty;
 		if (!(await _metadataSearchGate.WaitAsync(0)))
 		{
 			MetadataStatusMessage = "A metadata search is already running.";
@@ -6767,12 +6784,14 @@ public sealed class MainViewModel : ViewModelBase
 		MetadataStatusMessage = $"Searching {SelectedMetadataProvider.DisplayName} for '{query}'...";
 		try
 		{
-			List<GameMetadataRecord> obj = await SearchMetadataCandidatesAsync(query, SelectedGame?.Platform ?? string.Empty, 12);
+			List<GameMetadataRecord> obj = await SearchMetadataCandidatesAsync(query, searchPlatform, 12);
+			if (!ReferenceEquals(searchGame, SelectedGame) ||
+				(!string.IsNullOrWhiteSpace(MetadataSearchText) && MetadataSearchText.Trim() != query)) return;
 			MetadataResults.Clear();
 			// Score and order best-first so the strongest match leads the list instead of trusting
 			// whatever order the provider's raw search response happened to return, and label each
 			// result's confidence so the user isn't left guessing which one CloudBerry actually trusts.
-			var scoredResults = _metadataMatchSelector.ScoreCandidates(query, SelectedGame?.Platform ?? string.Empty, obj);
+			var scoredResults = _metadataMatchSelector.ScoreCandidates(query, searchPlatform, obj);
 			foreach (var (record, score) in scoredResults)
 			{
 				var resultViewModel = new MetadataSearchResultViewModel(record)
@@ -6815,6 +6834,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task SearchMediaMetadataForSelectedGameAsync(string mediaKind)
 	{
+		var searchGame = SelectedGame;
 		if (!(await _mediaSearchGate.WaitAsync(0)))
 		{
 			MediaSearchStatusMessage = "A media search is already running.";
@@ -6834,7 +6854,11 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			MediaSearchResults.Clear();
 			OnPropertyChanged("HasMediaSearchResults");
-			foreach (MediaImageCandidate item in await _webImageSearchService.SearchAsync(string.IsNullOrWhiteSpace(MediaSearchText) ? SelectedGame.Title : MediaSearchText, SelectedMediaSearchKind, default(CancellationToken)))
+			string query = string.IsNullOrWhiteSpace(MediaSearchText) ? searchGame!.Title : MediaSearchText;
+			string kind = SelectedMediaSearchKind;
+			var images = await _webImageSearchService.SearchAsync(query, kind, default(CancellationToken));
+			if (!ReferenceEquals(searchGame, SelectedGame) || kind != SelectedMediaSearchKind || query != MediaSearchText) return;
+			foreach (MediaImageCandidate item in images)
 			{
 				MediaSearchResults.Add(new MediaSearchResultViewModel(item));
 			}
@@ -6856,9 +6880,11 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task ApplySelectedMediaSearchResultAsync()
 	{
+		if (IsMetadataBusy) return;
 		GameEntryViewModel? selectedGame = SelectedGame;
 		MediaSearchResultViewModel? selectedMediaSearchResult = SelectedMediaSearchResult;
 		string mediaKind = SelectedMediaSearchKind;
+		var metadataAtStart = SelectedMetadataResult;
 		if (selectedGame == null)
 		{
 			MediaSearchStatusMessage = "Pick a game first before applying manual media.";
@@ -6878,9 +6904,9 @@ public sealed class MainViewModel : ViewModelBase
 			string mediaKind2 = mediaKind;
 			string imageUrl2 = imageUrl;
 			ApplyManualMediaSelection(game, mediaKind2, imageUrl2, await TryCacheMetadataImageAsync(imageUrl, key, mediaKind));
-			if (SelectedMetadataResult != null)
+			if (metadataAtStart != null && ReferenceEquals(selectedGame, SelectedGame) && ReferenceEquals(metadataAtStart, SelectedMetadataResult))
 			{
-				ApplyManualMediaSelection(SelectedMetadataResult, mediaKind, imageUrl);
+				ApplyManualMediaSelection(metadataAtStart, mediaKind, imageUrl);
 			}
 			await PersistWithHistoryAsync(new LibraryHistoryContext(
 				"artwork.apply",
@@ -6904,6 +6930,7 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task ApplySelectedMetadataAsync()
 	{
+		if (IsMetadataBusy) return;
 		GameEntryViewModel? selectedGame = SelectedGame;
 		MetadataSearchResultViewModel? selectedMetadataResult = SelectedMetadataResult;
 		if (selectedGame == null)
@@ -7368,6 +7395,23 @@ public sealed class MainViewModel : ViewModelBase
 	}
 
 	public async Task LaunchGameAsync(GameEntryViewModel? game)
+	{
+		if (_isShuttingDown) return;
+		if (game is null)
+		{
+			StatusMessage = "Pick a game before launching it.";
+			return;
+		}
+		using var operation = _inFlightOperations.TryBegin("launch:" + game.Id);
+		if (operation is null)
+		{
+			StatusMessage = game.Title + " is already preparing to launch.";
+			return;
+		}
+		await LaunchGameCoreAsync(game);
+	}
+
+	private async Task LaunchGameCoreAsync(GameEntryViewModel? game)
 	{
 		if (game == null)
 		{
@@ -8010,7 +8054,10 @@ public sealed class MainViewModel : ViewModelBase
 		}
 	}
 
-	private async Task<ScanReport> ScanWithActivityAsync(string folderPath, string title)
+	private Task<ScanReport> ScanWithActivityAsync(string folderPath, string title) =>
+		ScanWithActivityAsync([folderPath], title);
+
+	private async Task<ScanReport> ScanWithActivityAsync(IEnumerable<string> folderPaths, string title)
 	{
 		ActivityOperationHandle activity = _activityCenter.Begin(
 			"library.scan",
@@ -8019,7 +8066,7 @@ public sealed class MainViewModel : ViewModelBase
 		try
 		{
 			activity.Report(null, "Discovering launchable games and checking artifact identity...");
-			ScanReport report = await _gameScanner.ScanFolderAsync(folderPath, activity.CancellationToken);
+			ScanReport report = await _gameScanner.ScanFoldersAsync(folderPaths, activity.CancellationToken);
 			activity.Complete(report.IntakeSummary);
 			return report;
 		}
@@ -11311,7 +11358,7 @@ public sealed class MainViewModel : ViewModelBase
 		try
 		{
 			GameMetadataRecord? val = await _metadataProviderRegistry.GetProvider(SelectedMetadataProviderId).GetDetailsAsync(selectedMetadataResult.ToModel(), _settings, default(CancellationToken));
-			if (val != null)
+			if (val != null && ReferenceEquals(selectedMetadataResult, SelectedMetadataResult))
 			{
 				selectedMetadataResult.ApplyDetails(val);
 				double? communityRating = val.CommunityRating;
@@ -11889,6 +11936,7 @@ public sealed class MainViewModel : ViewModelBase
 		{
 			value.Cancel();
 			_achievementPollingSessions.Remove(gameId);
+			value.Dispose();
 		}
 		if (_fsWatchers.TryGetValue(gameId, out FileSystemAchievementWatcher? value2))
 		{
@@ -12758,8 +12806,20 @@ public sealed class MainViewModel : ViewModelBase
 	/// </summary>
 	private void OnExternalGameDetected(object? sender, ExternalGameDetectedEventArgs e)
 	{
+		if (_isShuttingDown)
+		{
+			e.Process.Dispose();
+			return;
+		}
+
 		Application.Current.Dispatcher.InvokeAsync(delegate
 		{
+			if (_isShuttingDown)
+			{
+				e.Process.Dispose();
+				return;
+			}
+
 			GameEntryViewModel? game = Games.FirstOrDefault(g => g.Id == e.GameId);
 			if (game is null || game.IsRunning || _activeSessions.ContainsKey(game.Id))
 			{
@@ -12804,6 +12864,49 @@ public sealed class MainViewModel : ViewModelBase
 		});
 	}
 
+	public void PrepareForShutdown()
+	{
+		if (_isShuttingDown)
+		{
+			return;
+		}
+
+		_isShuttingDown = true;
+		StopExternalProcessMonitoring();
+
+		_indexedSearchCancellation?.Cancel();
+		_indexedSearchCancellation?.Dispose();
+		_indexedSearchCancellation = null;
+
+		foreach (Guid gameId in _achievementPollingSessions.Keys
+			.Concat(_fsWatchers.Keys)
+			.Distinct()
+			.ToList())
+		{
+			StopAchievementPollingIfRunning(gameId);
+		}
+
+		foreach ((Guid gameId, GameLaunchSession session) in _activeSessions.ToList())
+		{
+			GameEntryViewModel? game = Games.FirstOrDefault(candidate => candidate.Id == gameId);
+			if (game?.IsRunning == true)
+			{
+				TimeSpan duration = DateTime.Now - session.StartedAtLocal;
+				game.MarkSessionEnded();
+				AppendRecentActivity(
+					"session.app-close",
+					game,
+					$"Cirra closed while the game remained open; saved {Math.Max(0, (int)duration.TotalMinutes)} tracked minutes.");
+			}
+
+			session.Dispose();
+		}
+
+		_activeSessions.Clear();
+		SetGamePerformanceMode(isActive: false);
+		RefreshDerivedState();
+	}
+
 	private static void ReportStartup(IProgress<StartupProgressUpdate>? progress, double progressRatio, string statusText, string detailText)
 	{
 		progress?.Report(new StartupProgressUpdate
@@ -12816,18 +12919,122 @@ public sealed class MainViewModel : ViewModelBase
 
 	public async Task<IReadOnlyList<ImportCandidateViewModel>> GetScanCandidatesAsync(string folderPath, bool romsOnly)
 	{
-		IEnumerable<ImportCandidate> source = (await ScanWithActivityAsync(
-			folderPath,
-			romsOnly ? "Preview ROM import" : "Preview game import")).Candidates ?? new List<ImportCandidate>();
-		source = ((!romsOnly) ? source.Where((ImportCandidate c) => !GameLauncher.IsRomFile(c.InstallPath)) : source.Where((ImportCandidate c) => GameLauncher.IsRomFile(c.InstallPath)));
-		List<ImportCandidate> candidates = source
+		return (await GetScanPreviewAsync(
+			[folderPath],
+			romsOnly,
+			romsOnly ? "Preview ROM import" : "Preview game import")).Candidates;
+	}
+
+	public async Task<ScanPreviewResult> GetScanPreviewAsync(
+		IEnumerable<string> folderPaths,
+		bool romsOnly,
+		string activityTitle)
+	{
+		ScanReport report = await ScanWithActivityAsync(folderPaths, activityTitle);
+		return await BuildScanPreviewAsync(report, romsOnly);
+	}
+
+	public async Task<ScanPreviewResult> GetAutomaticDiscoveryPreviewAsync(
+		IEnumerable<string> folderPaths,
+		bool romsOnly,
+		string scanLabel,
+		string? sourceKindOverride = null,
+		string? manifestProvider = null)
+	{
+		ActivityOperationHandle activity = _activityCenter.Begin(
+			"library.scan",
+			$"Scan {scanLabel}",
+			canCancel: true);
+		try
+		{
+			activity.Report(0.05, "Reading installed-launcher manifests...");
+			List<ImportCandidate> manifestCandidates = (await Task.Run(
+				_gameScanner.DiscoverLauncherCandidates,
+				activity.CancellationToken))
+				.Where(candidate => string.IsNullOrWhiteSpace(manifestProvider) ||
+					candidate.SourceKind.Equals(manifestProvider, StringComparison.OrdinalIgnoreCase))
+				.ToList();
+
+			activity.CancellationToken.ThrowIfCancellationRequested();
+			activity.Report(0.2, "Scanning normalized library roots for launchable games...");
+			ScanReport report = await _gameScanner.ScanFoldersAsync(folderPaths, activity.CancellationToken);
+			var merged = new List<ImportCandidate>(manifestCandidates.Count + report.Candidates.Count);
+			var knownIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+			void MergeCandidate(ImportCandidate candidate)
+			{
+				var identities = GetCandidateIdentityKeys(candidate)
+					.Append(candidate.InstallPath)
+					.Where(identity => !string.IsNullOrWhiteSpace(identity))
+					.Distinct(StringComparer.OrdinalIgnoreCase)
+					.ToList();
+				if (identities.Any(knownIdentities.Contains))
+				{
+					report.DuplicateCandidatesCollapsed++;
+					return;
+				}
+
+				foreach (string identity in identities)
+				{
+					knownIdentities.Add(identity);
+				}
+
+				if (!string.IsNullOrWhiteSpace(sourceKindOverride) &&
+					!GameLauncher.IsRomFile(candidate.InstallPath) &&
+					candidate.SourceKind.Equals("Folder Scan", StringComparison.OrdinalIgnoreCase))
+				{
+					candidate.SourceKind = sourceKindOverride;
+				}
+
+				merged.Add(candidate);
+			}
+
+			foreach (ImportCandidate candidate in manifestCandidates)
+			{
+				MergeCandidate(candidate);
+			}
+
+			foreach (ImportCandidate candidate in report.Candidates)
+			{
+				MergeCandidate(candidate);
+			}
+
+			report.Candidates = merged;
+			activity.CancellationToken.ThrowIfCancellationRequested();
+			activity.Report(0.82, "Reconciling discovered games with the current library...");
+			ScanPreviewResult preview = await BuildScanPreviewAsync(report, romsOnly);
+			activity.Complete(report.IntakeSummary);
+			return preview;
+		}
+		catch (OperationCanceledException) when (activity.CancellationToken.IsCancellationRequested)
+		{
+			activity.Cancelled("Library discovery cancelled. No games were imported.");
+			throw;
+		}
+		catch
+		{
+			activity.Fail("Library discovery could not be completed.");
+			throw;
+		}
+	}
+
+	private async Task<ScanPreviewResult> BuildScanPreviewAsync(ScanReport report, bool romsOnly)
+	{
+		List<ImportCandidate> allCandidates = report.Candidates ?? [];
+		List<ImportCandidate> matchingCandidates = ((!romsOnly)
+			? allCandidates.Where((ImportCandidate c) => !GameLauncher.IsRomFile(c.InstallPath))
+			: allCandidates.Where((ImportCandidate c) => GameLauncher.IsRomFile(c.InstallPath)))
+			.ToList();
+		report.CandidatesFilteredByMode = allCandidates.Count - matchingCandidates.Count;
+		List<ImportCandidate> candidates = matchingCandidates
 			.DistinctBy(candidate => candidate.InstallPath, StringComparer.OrdinalIgnoreCase)
 			.ToList();
+		report.Candidates = candidates;
 		HashSet<string> existingLaunchKeys = BuildExistingLaunchKeySet();
 		HashSet<string> existingIdentityKeys = BuildExistingImportIdentitySet();
 		IReadOnlyDictionary<string, ArtifactReconciliationResult> artifactMatches =
 			await ReconcileArtifactsAsync(candidates);
-		return candidates.Select(delegate(ImportCandidate candidate)
+		var previewCandidates = candidates.Select(delegate(ImportCandidate candidate)
 		{
 			artifactMatches.TryGetValue(candidate.InstallPath, out ArtifactReconciliationResult? artifactMatch);
 			bool needsReview = artifactMatch?.Kind == ArtifactReconciliationKind.ProbableMovedArtifact;
@@ -12842,6 +13049,7 @@ public sealed class MainViewModel : ViewModelBase
 				IsSelected = (candidate.Confidence >= 0.62 && !flag && !needsReview)
 			};
 		}).ToList();
+		return new ScanPreviewResult(previewCandidates, report);
 	}
 
 	public async Task<IReadOnlyList<ImportCandidateViewModel>> GetLauncherManifestCandidatesAsync(string? provider = null)
@@ -12873,14 +13081,20 @@ public sealed class MainViewModel : ViewModelBase
 		}).ToList();
 	}
 
-	public async Task ImportCandidatesFromPreviewAsync(IEnumerable<ImportCandidateViewModel> candidates)
+	public async Task<int> ImportCandidatesFromPreviewAsync(IEnumerable<ImportCandidateViewModel> candidates)
 	{
-		ImportCandidates.Clear();
+		using var operation = _inFlightOperations.TryBegin("library.import");
+		if (operation is null)
+		{
+			StatusMessage = "An import is already being saved. Please wait for it to finish.";
+			return 0;
+		}
+		ClearImportCandidates();
 		foreach (ImportCandidateViewModel item in candidates ?? Array.Empty<ImportCandidateViewModel>())
 		{
-			ImportCandidates.Add(item);
+			AddCandidateInternal(item);
 		}
-		await ImportSelectedAsync();
+		return await ImportSelectedCoreAsync();
 	}
 
 	public async Task<IReadOnlyList<MetadataSearchResultViewModel>> SearchMetadataForTitleAsync(string query, string platform)

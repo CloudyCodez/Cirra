@@ -63,9 +63,11 @@ public partial class App : Application
         try
         {
             await WindowPresentation.ShowFirstFrameAsync(splashWindow);
+            _diagnostics.WriteInfo("startup-timing", $"Splash first frame: {startupTimer.ElapsedMilliseconds} ms");
             var mainViewModel = new MainViewModel();
             var progress = new Progress<StartupProgressUpdate>(splashViewModel.Apply);
             await mainViewModel.InitializeAsync(progress);
+            _diagnostics.WriteInfo("startup-timing", $"Library initialized: {startupTimer.ElapsedMilliseconds} ms");
 
             var remainingDelay = MinimumSplashDurationMilliseconds - (int)startupTimer.ElapsedMilliseconds;
             if (remainingDelay > 0)
@@ -77,11 +79,13 @@ public partial class App : Application
             MainWindow = mainWindow;
             mainWindow.Opacity = 0;
             await WindowPresentation.ShowFirstFrameAsync(mainWindow);
+            _diagnostics.WriteInfo("startup-timing", $"Desktop first frame: {startupTimer.ElapsedMilliseconds} ms");
             splashViewModel.ProgressValue = 100;
             await Task.WhenAll(
                 splashWindow.PlayCloseTransitionAsync(),
                 mainWindow.PlayStartupRevealAsync());
             splashWindow.Close();
+            _diagnostics.WriteInfo("startup-timing", $"Desktop ready: {startupTimer.ElapsedMilliseconds} ms");
         }
         catch (Exception exception)
         {

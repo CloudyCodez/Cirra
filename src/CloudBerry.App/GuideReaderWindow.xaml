@@ -114,7 +114,7 @@
                                Text="Opening the original PDF..."/>
                     <Button x:Name="RetryButton" Content="Retry" Margin="0,16,0,0"
                             HorizontalAlignment="Center" Visibility="Collapsed"
-                            Style="{StaticResource SecondaryButtonStyle}" Click="ReaderLoaded"/>
+                            Style="{StaticResource SecondaryButtonStyle}" Click="RetryClick"/>
                 </StackPanel>
             </Border>
         </Grid>

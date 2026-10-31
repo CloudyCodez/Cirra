@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using CloudBerry.App.ViewModels;
+using CloudBerry.Core.Models;
 
 namespace CloudBerry.App;
 
@@ -8,9 +9,12 @@ public partial class ScanPreviewWindow : Window
 {
     private ScanPreviewViewModel ViewModel { get; }
 
-    public ScanPreviewWindow(MainViewModel mainVm, IReadOnlyList<ImportCandidateViewModel> candidates)
+    public ScanPreviewWindow(
+        MainViewModel mainVm,
+        IReadOnlyList<ImportCandidateViewModel> candidates,
+        ScanReport? report = null)
     {
-        ViewModel = new ScanPreviewViewModel(mainVm, candidates);
+        ViewModel = new ScanPreviewViewModel(mainVm, candidates, report);
         InitializeComponent();
         DataContext = ViewModel;
     }
@@ -74,6 +78,7 @@ public partial class ScanPreviewWindow : Window
 
     private void ImportClick(object sender, RoutedEventArgs e)
     {
+        if (!ViewModel.CanImport) return;
         ConfirmedCandidates = ViewModel.BuildConfirmedCandidates();
         DialogResult = true;
         Close();

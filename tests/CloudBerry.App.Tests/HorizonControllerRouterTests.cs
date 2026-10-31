@@ -85,6 +85,22 @@ public sealed class HorizonControllerRouterTests
     private static ControllerRawState Connected(ControllerButtons buttons = ControllerButtons.None) =>
         new(true, Buttons: buttons);
 
+    [Fact]
+    public void ReturningFromGameRequiresAnalogNeutralBeforeNavigating()
+    {
+        var source = new FakeControllerSource();
+        source.States[0] = new ControllerRawState(true, LeftThumbX: 20000);
+        var router = new HorizonControllerRouter(source);
+        router.Poll(1000);
+        router.Suspend();
+        Assert.Null(router.Poll(1100).Direction);
+        Assert.Null(router.Poll(1500).Direction);
+        source.States[0] = Connected();
+        Assert.Null(router.Poll(1600).Direction);
+        source.States[0] = new ControllerRawState(true, LeftThumbX: 20000);
+        Assert.Equal(System.Windows.Input.FocusNavigationDirection.Right, router.Poll(1700).Direction);
+    }
+
     private sealed class FakeControllerSource : IControllerInputSource
     {
         public Dictionary<int, ControllerRawState> States { get; } = [];

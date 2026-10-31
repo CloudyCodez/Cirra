@@ -19,9 +19,13 @@ public sealed class ScanPreviewViewModel : ViewModelBase
     private string _statusMessage = "Scan results ready.";
     private bool _isBusy;
 
-    public ScanPreviewViewModel(MainViewModel mainVm, IReadOnlyList<ImportCandidateViewModel> candidates)
+    public ScanPreviewViewModel(
+        MainViewModel mainVm,
+        IReadOnlyList<ImportCandidateViewModel> candidates,
+        ScanReport? report = null)
     {
         _mainVm = mainVm;
+        ScanReport = report ?? new ScanReport { Candidates = [] };
 
         foreach (var candidate in candidates)
         {
@@ -41,7 +45,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
     {
         if (Candidates.Count == 0)
         {
-            return "No games found in that folder.";
+            return "No matching games found. Review the scan details and warnings before choosing another folder or import type.";
         }
 
         var newCount = Candidates.Count - AlreadyOwnedCount - NeedsReviewCount;
@@ -54,6 +58,16 @@ public sealed class ScanPreviewViewModel : ViewModelBase
     }
 
     public ObservableCollection<ImportCandidateViewModel> Candidates { get; } = [];
+
+    public ScanReport ScanReport { get; }
+
+    public string IntakeSummary => ScanReport.IntakeSummary;
+
+    public string IntakeDetail => $"{AlreadyOwnedCount} already owned · {ScanReport.FilesSkipped} file filters · {ScanReport.CandidatesFilteredByMode} outside this import type · {ScanReport.LowConfidenceCandidatesSkipped} low confidence · {ScanReport.DirectoriesSkipped} folders skipped";
+
+    public string ScanWarningsLabel => ScanReport.Warnings.Count == 0
+        ? "No scan warnings"
+        : $"{ScanReport.Warnings.Count} recoverable {Pluralize(ScanReport.Warnings.Count, "warning", "warnings")}";
 
     public string AppearanceThemeKey => _mainVm.AppearanceThemeKey;
 
@@ -140,11 +154,18 @@ public sealed class ScanPreviewViewModel : ViewModelBase
     public bool IsBusy
     {
         get => _isBusy;
-        set => SetProperty(ref _isBusy, value);
+        set
+        {
+            if (SetProperty(ref _isBusy, value)) OnPropertyChanged(nameof(CanImport));
+        }
     }
+
+    public bool CanImport => !IsBusy && CandidatesSelected > 0;
 
     public async Task SearchMetadataAsync()
     {
+        if (IsBusy) return;
+        var candidate = SelectedCandidate;
         var query = MetadataSearchText.Trim();
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -159,6 +180,8 @@ public sealed class ScanPreviewViewModel : ViewModelBase
         {
             var platform = SelectedCandidate?.Platform ?? string.Empty;
             var results = await _mainVm.SearchMetadataForTitleAsync(query, platform);
+
+            if (!ReferenceEquals(candidate, SelectedCandidate) || query != MetadataSearchText.Trim()) return;
 
             MetadataResults.Clear();
             foreach (var result in results)
@@ -184,6 +207,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
 
     public async Task ApplySelectedMetadataAsync()
     {
+        if (IsBusy) return;
         if (SelectedCandidate is null)
         {
             StatusMessage = "Select a scanned game before staging metadata.";
@@ -196,20 +220,23 @@ public sealed class ScanPreviewViewModel : ViewModelBase
             return;
         }
 
+        var candidate = SelectedCandidate;
+        var metadata = SelectedMetadataResult;
         IsBusy = true;
-        StatusMessage = $"Loading full metadata for '{SelectedMetadataResult.Title}'...";
+        StatusMessage = $"Loading full metadata for '{metadata.Title}'...";
 
         try
         {
-            var details = await _mainVm.ResolveMetadataDetailsAsync(SelectedMetadataResult);
+            var details = await _mainVm.ResolveMetadataDetailsAsync(metadata);
+            if (!ReferenceEquals(candidate, SelectedCandidate) || !ReferenceEquals(metadata, SelectedMetadataResult)) return;
             if (details is null)
             {
                 StatusMessage = $"Cirra could not load details for '{SelectedMetadataResult.Title}'.";
                 return;
             }
 
-            SelectedMetadataResult.ApplyDetails(details);
-            SelectedCandidate.ApplyMetadata(details);
+            metadata.ApplyDetails(details);
+            candidate.ApplyMetadata(details);
             StatusMessage = $"Staged {details.ProviderName} metadata for '{SelectedCandidate.Title}'.";
             NotifyPreparationChanged();
         }
@@ -225,6 +252,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
 
     public async Task AutoPrepareSelectedAsync()
     {
+        if (IsBusy) return;
         var selected = Candidates
             .Where(candidate => candidate.IsSelected && !candidate.AlreadyExists)
             .Take(60)
@@ -292,6 +320,10 @@ public sealed class ScanPreviewViewModel : ViewModelBase
 
     public async Task SearchMediaAsync()
     {
+        if (IsBusy) return;
+        var candidate = SelectedCandidate;
+        var metadata = SelectedMetadataResult;
+        var kind = SelectedMediaKind;
         var title = SelectedMetadataResult?.Title
                     ?? SelectedCandidate?.Title
                     ?? MetadataSearchText.Trim();
@@ -307,7 +339,8 @@ public sealed class ScanPreviewViewModel : ViewModelBase
 
         try
         {
-            var results = await _mainVm.SearchMediaForTitleAsync(title, SelectedMediaKind);
+            var results = await _mainVm.SearchMediaForTitleAsync(title, kind);
+            if (!ReferenceEquals(candidate, SelectedCandidate) || !ReferenceEquals(metadata, SelectedMetadataResult) || kind != SelectedMediaKind) return;
 
             MediaResults.Clear();
             foreach (var result in results)
@@ -383,7 +416,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
             }
         }
 
-        OnPropertyChanged(nameof(CandidatesSelected));
+        NotifyCandidateSelectionChanged();
     }
 
     public void SelectAll()
@@ -393,7 +426,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
             candidate.IsSelected = true;
         }
 
-        OnPropertyChanged(nameof(CandidatesSelected));
+        NotifyCandidateSelectionChanged();
     }
 
     public void ClearSelection()
@@ -403,7 +436,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
             candidate.IsSelected = false;
         }
 
-        OnPropertyChanged(nameof(CandidatesSelected));
+        NotifyCandidateSelectionChanged();
     }
 
     public IReadOnlyList<ImportCandidateViewModel> BuildConfirmedCandidates()
@@ -416,6 +449,7 @@ public sealed class ScanPreviewViewModel : ViewModelBase
     public void NotifyCandidateSelectionChanged()
     {
         OnPropertyChanged(nameof(CandidatesSelected));
+        OnPropertyChanged(nameof(CanImport));
     }
 
     private void NotifyPreparationChanged()

@@ -72,7 +72,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Vertical" VerticalAlignment="Center">
+                <StackPanel Grid.Column="0" Orientation="Vertical" VerticalAlignment="Center" MaxWidth="760">
                     <TextBlock
                         Text="Import Games from Scan"
                         FontFamily="{DynamicResource ThemeDisplayFontFamily}"
@@ -84,6 +84,27 @@
                         FontSize="12"
                         Foreground="{DynamicResource TextMutedBrush}"
                         Margin="0,4,0,0" />
+                    <TextBlock
+                        Text="{Binding IntakeSummary}"
+                        FontSize="11"
+                        Foreground="{DynamicResource TextSecondaryBrush}"
+                        TextWrapping="Wrap"
+                        Margin="0,7,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                        <TextBlock Text="{Binding IntakeDetail}" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Text="  ·  " FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Text="{Binding ScanWarningsLabel}" FontSize="10" Foreground="{DynamicResource TextMutedBrush}">
+                            <TextBlock.ToolTip>
+                                <ItemsControl ItemsSource="{Binding ScanReport.Warnings}" MaxWidth="480">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,3"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </TextBlock.ToolTip>
+                        </TextBlock>
+                    </StackPanel>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -573,7 +594,7 @@
                     Content="Import Selected"
                     Style="{StaticResource PrimaryButtonStyle}"
                     Click="ImportClick"
-                    IsEnabled="{Binding CandidatesSelected,Converter={StaticResource IsGreaterThanZeroConverter}}"
+                    IsEnabled="{Binding CanImport}"
                     Margin="0,0,8,0" />
 
                 <!-- Cancel Button -->

@@ -15,10 +15,20 @@ public sealed class ControllerDirectionRepeater
             : (buttons & 2) != 0 ? FocusNavigationDirection.Down
             : (buttons & 4) != 0 ? FocusNavigationDirection.Left
             : (buttons & 8) != 0 ? FocusNavigationDirection.Right : null;
-        if (direction is null && Math.Max(Math.Abs((int)x), Math.Abs((int)y)) >= 9000)
-            direction = Math.Abs((int)x) > Math.Abs((int)y)
+        int horizontal = Math.Abs((int)x);
+        int vertical = Math.Abs((int)y);
+        int releaseThreshold = _held.HasValue ? 7000 : 9000;
+        if (direction is null && Math.Max(horizontal, vertical) >= releaseThreshold)
+        {
+            // Retain the axis near a diagonal instead of rapidly alternating rows and columns.
+            bool keepHorizontal = _held is FocusNavigationDirection.Left or FocusNavigationDirection.Right &&
+                horizontal >= releaseThreshold && vertical < horizontal * 1.2;
+            bool keepVertical = _held is FocusNavigationDirection.Up or FocusNavigationDirection.Down &&
+                vertical >= releaseThreshold && horizontal < vertical * 1.2;
+            direction = keepHorizontal || (!keepVertical && horizontal > vertical)
                 ? x > 0 ? FocusNavigationDirection.Right : FocusNavigationDirection.Left
                 : y > 0 ? FocusNavigationDirection.Up : FocusNavigationDirection.Down;
+        }
         if (direction is null) { Reset(); return null; }
         if (direction != _held)
         {

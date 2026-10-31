@@ -73,15 +73,25 @@ P0 defects discovered in any later pass interrupt feature expansion. Release ass
 - [x] Make artwork downloads shared, atomic, bounded, and cancellation-safe. A dismissed view may stop awaiting an asset without cancelling another active consumer.
 - [x] Bound the on-disk media cache and evict the least-recently-used assets after a successful write.
 - [x] Add a low-allocation full-quality ambient flow layer to Horizon and Cloudscape themes, disabled automatically with reduced-motion or efficient effects.
-- [ ] Add a scan-operation summary to every preview surface: inspected roots, candidates accepted, already-owned identities, companion media suppressed, and recoverable errors.
-- [ ] Replace one-folder-at-a-time automatic discovery with one cancellable operation that collects launch manifests before heuristic executable scanning.
+- [x] Add a scan-operation summary to every preview surface: inspected roots, candidates accepted, already-owned identities, companion media suppressed, and recoverable errors.
+- [x] Replace one-folder-at-a-time automatic discovery with one cancellable operation that collects launch manifests before heuristic executable scanning.
 - [ ] Add deterministic fixture libraries for store installs, ROM sets, playlists, moved drives, symlink/junction loops, and repeated scan/import passes.
 - [ ] Prewarm the selected Horizon card's small artwork set off the interaction path, with cancellation and a measured memory budget.
 - [ ] Audit each desktop and Horizon surface against the hierarchy contract: one page-level task, stable selection, focused actions, readable empty/loading/error states, and no redundant framed containers.
 
 **Acceptance:** Repeating the same automatic scan produces no new preview candidates after the first import. A CUE/BIN pair, an M3U-backed multi-disc game, and an alternate desktop executable each produce exactly one importable game. Two distinct discs without a playlist remain available. A cancelled artwork request leaves no partial file and does not interrupt another caller awaiting the same remote asset.
 
-**Evidence:** Scanner and cache regression tests cover the current cases. Installed-library validation, full Horizon visual capture, and hardware performance traces remain required before this pass is considered complete.
+**Evidence:** Scanner and cache regression tests cover the current cases. The October 31 hardening pass added one manifest-first, multi-root Activity Center operation; normalized root aggregation; cross-root identity collapse; visited-directory and reparse-point protection; cancellation coverage; and a truthful intake summary in scan review. Release builds complete with zero warnings, all 292 automated tests pass, and the built desktop executable remains healthy through an eight-second startup smoke test. Installed-library validation, full Horizon visual capture, and hardware performance traces remain required before this pass is considered complete.
+
+### P11 Delivery Log - October 31, 2026
+
+- Library toolbar refinement: full-width accessible search with a clear action, wrapping action controls, theme-aware rounded view switches, and a dedicated advanced-filter row that preserves collection-tab space. Collection overflow is reachable through a visible horizontal scrollbar.
+- Empty scans retain their report for review, scan warnings expose readable messages, and requested cancellation returns quietly to the library instead of displaying a scan-failure dialog.
+- Playnite shipped-artifact inspection confirmed the value of separating scanner settings, import exclusions, database buffering, metadata download, process tracking, controller ownership, and updater verification into focused services. LaunchBox inspection reinforced durable launch identity, cached path checks, startup/shutdown monitoring, and local search models. These are architectural observations from local binaries, not copied implementation.
+- Automatic library discovery now reads authoritative launcher manifests before fallback folder heuristics, executes normalized roots under one cancellable operation, and reconciles the merged result against the current library before preview.
+- Scan traversal now records inspected roots, refuses reparse-point recursion, tracks visited normalized directories, and suppresses duplicate identities across separate roots.
+- Scan review permanently displays inspected files/folders/roots, accepted candidates, already-owned identities, filtered and low-confidence entries, skipped folders, duplicate/companion collapses, and recoverable warning counts.
+- Verification: Release build, zero compiler warnings, 182 Core/Data tests, 110 application tests, and a built-executable startup smoke check.
 
 ## P01 - Reliable Interaction And Loading
 
@@ -227,6 +237,12 @@ P0 defects discovered in any later pass interrupt feature expansion. Release ass
 
 **Acceptance:** A broken launch produces the smallest actionable repair and keeps focus on the affected game. Save restoration is previewable and reversible. Returning from a game restores the exact browsing context. At least one real title per supported emulator family validates each claimed launch path.
 
+### P06 Delivery Log - October 31, 2026
+
+- Main-window shutdown now stops new external-session claims before persistence, closes achievement polling and file watchers, cancels indexed search, disposes tracked process handles, and records active session time before the final library/index flush.
+- External process detection now disposes unclaimed process handles when shutdown has detached its subscriber and contains subscriber failures inside the monitor callback.
+- The change preserves games that remain open after Cirra exits; Cirra ends only its own tracking boundary and does not terminate the player's game.
+
 ## P07 - A Curator's Workspace
 
 **Outcome:** Large collections become easier to maintain without risking years of personal edits.
@@ -322,6 +338,34 @@ The blueprint does not authorize copying competitor code, assets, or visual iden
 The platform slice now includes domain identities, a versioned SQLite sidecar, dry-run/idempotent migration, exact and moved-artifact reconciliation, cancellable scan operations, synchronized indexed search, field-level metadata provenance and locks, shared launch orchestration, bounded Horizon artwork loading, schema-backup recovery, and 10,000-title fixtures. `library.json` intentionally remains authoritative while the indexed store proves itself through beta upgrades. Delivery evidence and the next boundary are recorded in `CIRRA_PLATFORM_BLUEPRINT.md`.
 
 ## Pass Completion Contract
+
+### App-wide follow-through - October 31, 2026
+
+v0.4.4 release candidate: 307 tests pass (182 Core/Data, 125 application). The guide reader now accepts left/right and bumper page turns plus B to close through the existing controller router, suspended when inactive and stopped on close. Shared analog direction handling uses separate engage/release thresholds and axis retention near diagonals; regression cases cover deliberate turns and dead-zone noise. The wider visual/hardware review remains open after this incremental release.
+
+Launch/import follow-through: pending launches now reserve their game identity across preparation and session registration, preventing rapid repeated actions from starting the same game twice. Imports share an exclusive operation boundary across preview transfer, reconciliation, mutation, and persistence; transferring preview candidates now uses the standard event-subscription helpers. Guards release after faults so retries remain available. Scan success feedback uses the actual committed count and does not play success or announce imports after a rejected or rolled-back transaction. Three new operation-ownership tests cover independent work, repeat disposal, and failure/retry.
+
+Usability follow-through: a themed, scrollable Getting Started window is reachable through a visible Help button, F1, and command search. It explains importing, filtering, metadata, guides, emulator setup, desktop shortcuts, couch controls, and common recovery steps. Enter-to-launch is now scoped to the game list/grid so focused toolbar controls retain their normal behavior. Emulator discovery actions use explicit labels and explanations.
+
+Reader follow-through: page rasterization preserves aspect ratio with bounded dimensions and an eight-million-pixel page budget; the six-page cache also has a 24-million-pixel aggregate budget. Invalid page dimensions fail clearly. Render retries preserve the current spread. Eight new geometry/budget regression cases pass.
+
+Metadata follow-through: library metadata and artwork searches discard results after their original game/query changes; detail previews check result ownership before updating status; applying artwork no longer changes a newly selected metadata result. Shared segmented tabs use theme corner tokens and show keyboard focus and disabled states.
+
+The user explicitly expanded this work to the whole product. Individual deliveries below do not close the overall pass. Review every surface in desktop and Horizon with keyboard, mouse, and the supported controller route; include populated, empty, loading, failure, cancellation, and offline behavior where applicable.
+
+| Area | Delivered in this working pass | Remaining validation/work |
+| --- | --- | --- |
+| Shared controls | Text-field hints now render from existing Tag values; hint visibility follows text without intercepting input | Full-screen captures, scaling and all-theme review |
+| Library and intake | Responsive toolbar, visible collection overflow, readable reports and warnings, cancellation handling | Installed-library scan/import/repeat fixtures and visual review |
+| Metadata review | Concurrent commands guarded; late metadata/artwork responses checked against their original candidate and result; import disabled during preparation | Provider failure fixtures and selection-change integration checks |
+| Horizon input | Returning to Horizon waits for neutral buttons and analog input before navigation resumes | Physical-controller checks and every page/navigation scope |
+| Guides | Escape closes; Home/End navigate to boundaries; invalid page input explains the valid range | Discovery accuracy, real PDFs, reader scaling and controller route |
+| Startup | Logs splash frame, initialized library, desktop frame, and usable desktop milestones | Collect comparative timings on large real libraries |
+| Shutdown and sessions | Active time committed before final flush; monitor/watchers/session resources released | Live game/session close and reopen validation |
+| Home, achievements, friends, emulation, settings, recovery | Existing behavior retained pending review | Individual layout, workflow, accessibility and error-state passes |
+| Themes, effects, audio, Horizon presentation | Existing tested rendering contracts retained pending review | Complete-screen visual evidence and performance measurements |
+
+Latest application suite: 112 tests passing, including shared hint behavior and analog neutral suppression. Release build has zero warnings/errors. These results verify specific changes and do not establish app-wide completion.
 
 Every approved pass must produce:
 

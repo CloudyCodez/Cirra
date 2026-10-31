@@ -9,6 +9,7 @@ internal sealed class PdfSpreadRenderer : IDisposable
 {
     private readonly PdfDocument _document;
     private readonly Dictionary<uint, BitmapSource> _cache = [];
+    private const long MaximumCachedPixels = 24_000_000;
     private static readonly object NativeLock = new();
     private bool _disposed;
 
@@ -49,19 +50,36 @@ internal sealed class PdfSpreadRenderer : IDisposable
             {
             ObjectDisposedException.ThrowIf(_disposed, this);
             cancellationToken.ThrowIfCancellationRequested();
-            if (_cache.TryGetValue(pageNumber, out BitmapSource? cached) && cached.PixelHeight == (int)Math.Clamp(destinationHeight, 600u, 2400u)) return cached;
             PdfPage page = _document.Pages[(int)pageNumber - 1];
-            int height = (int)Math.Clamp(destinationHeight, 600u, 2400u);
-            int width = Math.Max(300, (int)Math.Round(height * page.Width / page.Height));
+            var (width, height) = CalculateRenderSize(page.Width, page.Height, destinationHeight);
+            if (_cache.TryGetValue(pageNumber, out BitmapSource? cached) && cached.PixelHeight == height && cached.PixelWidth == width) return cached;
             var image = new WriteableBitmap(width, height, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null);
             page.Render(image, PageOrientations.Normal, RenderingFlags.LcdText);
             image.Freeze();
             cancellationToken.ThrowIfCancellationRequested();
-            if (_cache.Count >= 6) _cache.Remove(_cache.Keys.First());
+            _cache.Remove(pageNumber);
+            while (_cache.Count > 0 && (_cache.Count >= 6 ||
+                _cache.Values.Sum(bitmap => (long)bitmap.PixelWidth * bitmap.PixelHeight) + (long)width * height > MaximumCachedPixels))
+            {
+                _cache.Remove(_cache.Keys.First());
+            }
             _cache[pageNumber] = image;
             return (BitmapSource)image;
             }
         }, cancellationToken);
+    }
+
+    internal static (int Width, int Height) CalculateRenderSize(double pageWidth, double pageHeight, uint destinationHeight)
+    {
+        if (!double.IsFinite(pageWidth) || !double.IsFinite(pageHeight) || pageWidth <= 0 || pageHeight <= 0)
+            throw new InvalidDataException("The PDF contains a page with invalid dimensions.");
+        double height = Math.Clamp(destinationHeight, 600u, 2400u);
+        double width = height * (pageWidth / pageHeight);
+        // Preserve the original aspect ratio while bounding both dimensions and bitmap memory.
+        double scale = Math.Min(1, Math.Min(4096 / width, Math.Sqrt(8_000_000 / (width * height))));
+        if (!double.IsFinite(width) || !double.IsFinite(scale) || scale <= 0)
+            throw new InvalidDataException("The PDF page dimensions cannot be rendered.");
+        return (Math.Max(1, (int)Math.Round(width * scale)), Math.Max(1, (int)Math.Round(height * scale)));
     }
 
     public void Dispose()

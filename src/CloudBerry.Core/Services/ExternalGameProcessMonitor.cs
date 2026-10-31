@@ -135,8 +135,25 @@ public sealed class ExternalGameProcessMonitor : IDisposable
                 // doesn't fire the event twice for a game that's already been claimed this pass.
                 byPath.Remove(path);
 
-                // Ownership of `process` passes to the subscriber from here.
-                GameDetected?.Invoke(this, new ExternalGameDetectedEventArgs(gameId, process));
+                // Ownership of `process` passes to the single subscriber from here. If shutdown
+                // has already detached it, dispose immediately rather than leaking the process handle.
+                var handler = GameDetected;
+                if (handler is null)
+                {
+                    process.Dispose();
+                    continue;
+                }
+
+                try
+                {
+                    handler.Invoke(this, new ExternalGameDetectedEventArgs(gameId, process));
+                }
+                catch
+                {
+                    // A subscriber failed before it could wrap the process. The monitor owns the
+                    // handle again in that failure path; timer callbacks must never escape either.
+                    process.Dispose();
+                }
             }
         }
         finally

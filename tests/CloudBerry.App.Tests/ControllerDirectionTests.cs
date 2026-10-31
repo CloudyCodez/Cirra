@@ -5,6 +5,26 @@ namespace CloudBerry.App.Tests;
 
 public sealed class ControllerDirectionTests
 {
+    [Fact]
+    public void DiagonalNoiseDoesNotSwitchAxisUntilMovementIsDeliberate()
+    {
+        var input = new ControllerDirectionRepeater();
+        Assert.Equal(FocusNavigationDirection.Right, input.Read(0, 14000, 12000, 0));
+        Assert.Null(input.Read(0, 13000, 14000, 100));
+        Assert.Equal(FocusNavigationDirection.Up, input.Read(0, 10000, 16000, 150));
+    }
+
+    [Fact]
+    public void DeadzoneNoiseDoesNotRetriggerAnImmediateStep()
+    {
+        var input = new ControllerDirectionRepeater();
+        Assert.Equal(FocusNavigationDirection.Right, input.Read(0, 9500, 0, 0));
+        Assert.Null(input.Read(0, 8500, 0, 100));
+        Assert.Null(input.Read(0, 9500, 0, 150));
+        Assert.Null(input.Read(0, 6000, 0, 180));
+        Assert.Equal(FocusNavigationDirection.Right, input.Read(0, 9500, 0, 200));
+    }
+
     [Theory]
     [InlineData(1, FocusNavigationDirection.Up)]
     [InlineData(2, FocusNavigationDirection.Down)]

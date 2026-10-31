@@ -12,6 +12,24 @@ namespace CloudBerry.App.Tests;
 
 public sealed class ThemeVisualTests
 {
+    [Fact]
+    public void SharedInputHintsFollowTextWithoutBlockingEditing() => OnSta(() =>
+    {
+        var input = new TextBox { Tag = "Search your library" };
+        input.Resources.MergedDictionaries.Add((ResourceDictionary)Application.LoadComponent(
+            new Uri("/Cirra;component/Resources/CloudBerryTheme.xaml", UriKind.Relative)));
+        input.Style = (Style)input.FindResource("TextFieldStyle");
+        RenderElement(input, 360, 54);
+        var hint = (TextBlock)input.Template.FindName("InputHint", input);
+        Assert.Equal("Search your library", hint.Text);
+        Assert.Equal(Visibility.Visible, hint.Visibility);
+        Assert.False(hint.IsHitTestVisible);
+        input.Text = "Celeste";
+        Assert.Equal(Visibility.Collapsed, hint.Visibility);
+        input.Clear();
+        Assert.Equal(Visibility.Visible, hint.Visibility);
+    });
+
     public static IEnumerable<object[]> Themes => ThemeVisualProfile.All.Select(profile => new object[] { profile.Key });
 
     [Theory]

@@ -911,7 +911,7 @@
                           TextElement.FontFamily="{DynamicResource ThemeBodyFontFamily}"
                           TextElement.FontSize="{TemplateBinding FontSize}">
                         <Border x:Name="PillBg"
-                                CornerRadius="0"
+                                CornerRadius="{DynamicResource ThemeCornerRadiusControl}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 Background="{DynamicResource ThemePillFillBrush}"
                                 BorderBrush="{DynamicResource ThemePillBorderBrush}"/>
@@ -929,6 +929,14 @@
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="PillBg" Property="Background" Value="{DynamicResource ThemePillSelectedFillBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="PillBg" Property="BorderBrush" Value="{DynamicResource BerryBrush}"/>
+                            <Setter TargetName="PillBg" Property="BorderThickness" Value="2"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                         <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
                             <Setter TargetName="ActiveBar" Property="Opacity" Value="1"/>
@@ -1635,11 +1643,28 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="{DynamicResource ThemeCornerRadiusControl}">
-                        <ScrollViewer x:Name="PART_ContentHost"
-                                      Margin="{TemplateBinding Padding}"
-                                      VerticalAlignment="Center"/>
+                        <Grid>
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                            <TextBlock x:Name="InputHint"
+                                       Text="{TemplateBinding Tag}"
+                                       Margin="{TemplateBinding Padding}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       TextTrimming="CharacterEllipsis"
+                                       IsHitTestVisible="False"
+                                       Focusable="False"
+                                       Visibility="Collapsed"/>
+                        </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="Text" Value="">
+                            <Setter TargetName="InputHint" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="Tag" Value="{x:Null}">
+                            <Setter TargetName="InputHint" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="InputBorder" Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}"/>
                         </Trigger>

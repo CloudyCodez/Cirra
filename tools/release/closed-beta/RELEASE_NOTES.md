@@ -1,8 +1,19 @@
-## Cirra v0.4.3 Closed Beta
+## Cirra v0.4.4 Closed Beta
 
 This is a prerelease for invited Windows testers. It is not a general public build.
 
-### Included
+### New in this update
+
+- Clearer library search, wrapping controls, reachable collection overflow, and shared field hints.
+- Help from the title bar, F1, or command search, covering setup, desktop, Horizon, and troubleshooting.
+- Unified multi-root scanning, retained empty-result reports, and readable warnings.
+- Guards against overlapping imports and repeated launches; notifications report committed imports.
+- Late metadata and artwork responses respect the game and result that requested them.
+- Steadier Horizon analog navigation around diagonals and dead-zone boundaries.
+- Manual-reader controller page turns and B to close, bounded raster/cache memory, and current-spread retry.
+- Active tracked time saved before shutdown, with background resources released.
+
+### Retained from earlier releases
 
 - Steam's registered Windows install path is now honored, including clients installed on another drive or under a custom nested folder.
 - Newly installed games are read from authoritative Steam manifests by App ID and title even when the executable uses an internal codename.
@@ -36,6 +47,6 @@ This is a prerelease for invited Windows testers. It is not a general public bui
 
 ### Verification
 
-SHA-256 for the ZIP is included as a separate `.sha256` release asset. All 289 automated tests pass: 110 application tests and 179 Core/Data tests. The protected package excludes readable source and debugging artifacts; it does not include an invitation-key gate.
+SHA-256 for the ZIP is included as a separate `.sha256` release asset. The release pipeline runs the automated tests before packaging. The protected package excludes readable source and debugging artifacts; it does not include an invitation-key gate. The wider visual and hardware-validation roadmap remains in progress.
 
 Please report issues with reproducible steps, your Windows version, and the affected game/platform or controller where relevant.

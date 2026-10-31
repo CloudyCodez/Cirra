@@ -1,8 +1,8 @@
 {
-  "version": "0.4.3",
-  "installerUrl": "https://github.com/CloudyCodez/Cirra/releases/download/v0.4.3/Cirra-Setup-v0.4.3.exe",
-  "notes": "Cirra 0.4.3 fixes discovery of new Steam games, including Castlevania: Belmont's Curse, when Steam is installed outside Program Files.",
-  "publishedAtUtc": "2026-10-25T05:39:18.3919859Z",
-  "sha256": "a713f1052516150d822a1bee7591b83176af734f1978f714cfff208e60f45869",
-  "packageSizeBytes": 58092680
+  "version": "0.4.4",
+  "installerUrl": "https://github.com/CloudyCodez/Cirra/releases/download/v0.4.4/Cirra-Setup-v0.4.4.exe",
+  "notes": "Cirra 0.4.4 is ready.",
+  "publishedAtUtc": "2026-10-31T17:37:57.9920089Z",
+  "sha256": "6c7cf3172dbf1134ae247b85a5840e66856ef4ec7e5ac0fb820e4e27b4b1377b",
+  "packageSizeBytes": 58105085
 }

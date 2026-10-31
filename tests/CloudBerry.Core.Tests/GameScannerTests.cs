@@ -307,6 +307,35 @@ public sealed class GameScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task ScanFoldersAsync_AggregatesRootsAndCollapsesRepeatedInputs()
+    {
+        var first = Path.Combine(_rootPath, "Games", "Celeste");
+        var second = Path.Combine(_rootPath, "ROMs", "SNES");
+        Directory.CreateDirectory(first);
+        Directory.CreateDirectory(second);
+        await File.WriteAllTextAsync(Path.Combine(first, "Celeste.exe"), "test");
+        await File.WriteAllTextAsync(Path.Combine(second, "Chrono Trigger.sfc"), "test");
+
+        var report = await new GameScanner().ScanFoldersAsync([first, first, second]);
+
+        Assert.Equal(2, report.RootsInspected.Count);
+        Assert.Equal(2, report.Candidates.Count);
+        Assert.Contains(report.Candidates, candidate => candidate.Title == "Celeste");
+        Assert.Contains(report.Candidates, candidate => candidate.Title == "Chrono Trigger");
+    }
+
+    [Fact]
+    public async Task ScanFoldersAsync_HonorsCancellationBeforeTraversal()
+    {
+        Directory.CreateDirectory(_rootPath);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new GameScanner().ScanFoldersAsync([_rootPath], cancellation.Token));
+    }
+
+    [Fact]
     public void NormalizeTitleFromPath_RemovesNoiseTokensAndBrackets()
     {
         var title = GameNameNormalizer.NormalizeTitleFromPath(@"C:\ROMs\SNES\Chrono_Trigger_(USA)_[v1.0].sfc");

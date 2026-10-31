@@ -230,6 +230,54 @@ public sealed class GameScanner
         return await Task.Run(() => ScanFolder(folderPath, cancellationToken), cancellationToken);
     }
 
+    public async Task<ScanReport> ScanFoldersAsync(
+        IEnumerable<string> folderPaths,
+        CancellationToken cancellationToken = default)
+    {
+        var roots = NormalizeScanRoots(folderPaths);
+        return await Task.Run(() =>
+        {
+            var combined = new ScanReport();
+            var knownIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var root in roots)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var report = ScanFolder(root, cancellationToken);
+                var candidates = report.Candidates;
+                report.Candidates = [];
+                combined.MergeFrom(report);
+
+                foreach (var candidate in candidates)
+                {
+                    var identities = candidate.IdentityKeys
+                        .Append(candidate.DeduplicationKey)
+                        .Append(candidate.InstallPath)
+                        .Where(identity => !string.IsNullOrWhiteSpace(identity))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (identities.Any(knownIdentities.Contains))
+                    {
+                        combined.DuplicateCandidatesCollapsed++;
+                        continue;
+                    }
+
+                    combined.Candidates.Add(candidate);
+                    foreach (var identity in identities)
+                    {
+                        knownIdentities.Add(identity);
+                    }
+                }
+            }
+
+            combined.Candidates = combined.Candidates
+                .OrderByDescending(candidate => candidate.Confidence)
+                .ThenBy(candidate => candidate.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return combined;
+        }, cancellationToken);
+    }
+
     /// <summary>
     /// Reads authoritative storefront manifests before the broader filesystem scan. Storefront
     /// identity and title are treated as primary evidence, so a game is not lost merely because its
@@ -473,7 +521,12 @@ public sealed class GameScanner
         }
 
         var normalizedScanRoot = Path.GetFullPath(folderPath);
+        report.RootsInspected.Add(normalizedScanRoot);
         var pendingDirectories = new Queue<string>();
+        var visitedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            normalizedScanRoot
+        };
         var rawCandidates = new List<EvaluatedCandidate>();
         pendingDirectories.Enqueue(normalizedScanRoot);
 
@@ -487,14 +540,32 @@ public sealed class GameScanner
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (ShouldSkipDirectory(subDirectory))
+                if (ShouldSkipDirectory(subDirectory) || IsReparsePoint(subDirectory))
                 {
-                    report.FilesSkipped++;
                     report.DirectoriesSkipped++;
                     continue;
                 }
 
-                pendingDirectories.Enqueue(subDirectory);
+                string normalizedDirectory;
+                try
+                {
+                    normalizedDirectory = Path.GetFullPath(subDirectory);
+                }
+                catch (Exception exception) when (IsExpectedScanException(exception))
+                {
+                    report.ErrorsSkipped++;
+                    AddWarning(report, $"Skipped a folder with an invalid path inside '{currentDirectory}'.");
+                    continue;
+                }
+
+                if (visitedDirectories.Add(normalizedDirectory))
+                {
+                    pendingDirectories.Enqueue(normalizedDirectory);
+                }
+                else
+                {
+                    report.DirectoriesSkipped++;
+                }
             }
 
             foreach (var filePath in EnumerateFilesSafely(currentDirectory, report))
@@ -541,6 +612,18 @@ public sealed class GameScanner
             .ToList();
 
         return report;
+    }
+
+    private static bool IsReparsePoint(string directoryPath)
+    {
+        try
+        {
+            return (File.GetAttributes(directoryPath) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception exception) when (IsExpectedScanException(exception))
+        {
+            return true;
+        }
     }
 
     private static IEnumerable<ImportCandidate> CollapseCandidates(IEnumerable<EvaluatedCandidate> rawCandidates, ScanReport report)
